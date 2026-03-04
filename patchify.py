@@ -30,6 +30,7 @@ from preprocess import (
     compute_thresholds,
     make_colors,
 )
+from tissue_mask import tissue_fraction_rgb
 
 PATCH_SIZE = 256
 MARKERS = ["Keratin", "CD45", "aSMA", "CD31", "CD8a", "CD68", "FOXP3", "CD4", "CD20"]
@@ -207,7 +208,7 @@ def main():
 
     index = []
     kept = 0
-    for i in range(45, 46):#n_rows):
+    for i in range(n_rows):
         for j in range(n_cols):
             y0 = i * stride
             x0 = j * stride
@@ -216,7 +217,7 @@ def main():
 
             # Read H&E patch
             patch_rgb = read_region(y0, x0, PATCH_SIZE, PATCH_SIZE)
-            if tissue_fraction(patch_rgb, args.background_threshold) < args.tissue_min:
+            if tissue_fraction_rgb(patch_rgb) < args.tissue_min:
                 continue
 
             # Cells in this patch (x_col, y_col in image pixel space)

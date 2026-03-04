@@ -12,7 +12,18 @@ import uvicorn
 app = FastAPI(title="Patch viewer")
 G: dict = {}
 
-ALLOWED_LAYERS = {"he", "overlay_cells", "cell_mask", "vasculature", "immune"}
+ALLOWED_LAYERS = {
+    "he",
+    "mux_rgb",
+    "overlay_cells",
+    "cell_mask",
+    "cellvit_mask",
+    "cell_state",
+    "vasculature",
+    "immune",
+    "oxygen",
+    "glucose",
+}
 
 
 @app.get("/")

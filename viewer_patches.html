@@ -84,10 +84,15 @@ main {
 </aside>
 <main>
   <div class="controls">
+    <label><input type="checkbox" id="mux_rgb"> Multiplex (RGB)</label>
     <label><input type="checkbox" id="overlay" checked> Overlay (cells)</label>
     <label><input type="checkbox" id="cell_mask"> Cell mask</label>
+    <label><input type="checkbox" id="cellvit_mask"> CellViT mask</label>
+    <label><input type="checkbox" id="cell_state"> Cell state</label>
     <label><input type="checkbox" id="vasculature"> Vasculature</label>
     <label><input type="checkbox" id="immune"> Immune</label>
+    <label><input type="checkbox" id="oxygen"> Oxygen</label>
+    <label><input type="checkbox" id="glucose"> Glucose</label>
     <span style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
       <button type="button" id="btn-prev" class="nav-btn">Prev</button>
       <input type="number" id="patch-index" min="0" value="0" style="width: 60px; padding: 4px; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 3px; font-family: var(--mono);">
@@ -98,10 +103,15 @@ main {
   <div id="view-area">
     <div class="stack" id="stack" style="display:none;">
       <img id="img-he" alt="H&E" />
+      <img id="img-mux_rgb" class="overlay" alt="Multiplex RGB" />
       <img id="img-overlay" class="overlay" alt="Overlay" />
       <img id="img-cell_mask" class="overlay" alt="Cell mask" />
+      <img id="img-cellvit_mask" class="overlay" alt="CellViT mask" />
+      <img id="img-cell_state" class="overlay" alt="Cell state" />
       <img id="img-vasculature" class="overlay" alt="Vasculature" />
       <img id="img-immune" class="overlay" alt="Immune" />
+      <img id="img-oxygen" class="overlay" alt="Oxygen" />
+      <img id="img-glucose" class="overlay" alt="Glucose" />
     </div>
     <p id="no-patch" style="color: var(--muted);">Load index, then select a patch.</p>
   </div>
@@ -116,28 +126,45 @@ main {
   const noPatchEl = document.getElementById('no-patch');
   const statusEl = document.getElementById('status');
   const imgHe = document.getElementById('img-he');
+  const imgMux = document.getElementById('img-mux_rgb');
   const imgOverlay = document.getElementById('img-overlay');
   const layerImgs = {
+    mux_rgb: document.getElementById('img-mux_rgb'),
     cell_mask: document.getElementById('img-cell_mask'),
+    cellvit_mask: document.getElementById('img-cellvit_mask'),
+    cell_state: document.getElementById('img-cell_state'),
     vasculature: document.getElementById('img-vasculature'),
     immune: document.getElementById('img-immune'),
+    oxygen: document.getElementById('img-oxygen'),
+    glucose: document.getElementById('img-glucose'),
   };
   const layerChecks = {
+    mux_rgb: document.getElementById('mux_rgb'),
     overlay: document.getElementById('overlay'),
     cell_mask: document.getElementById('cell_mask'),
+    cellvit_mask: document.getElementById('cellvit_mask'),
+    cell_state: document.getElementById('cell_state'),
     vasculature: document.getElementById('vasculature'),
     immune: document.getElementById('immune'),
+    oxygen: document.getElementById('oxygen'),
+    glucose: document.getElementById('glucose'),
   };
 
   function patchId(p) { return p.i + '_' + p.j; }
 
   function setPatchVisibility() {
+    if (layerChecks.mux_rgb && layerChecks.mux_rgb.checked) {
+      imgMux.style.display = 'block';
+    } else {
+      imgMux.style.display = 'none';
+    }
     imgOverlay.style.display = layerChecks.overlay.checked ? 'block' : 'none';
     Object.keys(layerImgs).forEach(function (k) {
       layerImgs[k].style.display = layerChecks[k] && layerChecks[k].checked ? 'block' : 'none';
     });
   }
 
+  if (layerChecks.mux_rgb) layerChecks.mux_rgb.addEventListener('change', setPatchVisibility);
   layerChecks.overlay.addEventListener('change', setPatchVisibility);
   Object.keys(layerChecks).filter(function (k) { return k !== 'overlay'; }).forEach(function (k) {
     if (layerChecks[k]) layerChecks[k].addEventListener('change', setPatchVisibility);
@@ -164,11 +191,15 @@ main {
     statusEl.innerHTML = 'Patch <span class="patch-id">' + id + '</span> (x0=' + p.x0 + ', y0=' + p.y0 + ')';
 
     imgHe.src = base + '/patches/he/' + id + '.png';
+    imgMux.src = base + '/patches/mux_rgb/' + id + '.png';
+    imgMux.onerror = function () { imgMux.style.display = 'none'; };
+    imgMux.onload = function () { imgMux.style.display = layerChecks.mux_rgb && layerChecks.mux_rgb.checked ? 'block' : 'none'; };
     imgOverlay.src = base + '/patches/overlay_cells/' + id + '.png';
     imgOverlay.onerror = function () { imgOverlay.style.display = 'none'; };
     imgOverlay.onload = function () { imgOverlay.style.display = layerChecks.overlay.checked ? 'block' : 'none'; };
 
-    ['cell_mask', 'vasculature', 'immune'].forEach(function (layer) {
+    ['mux_rgb', 'cell_mask', 'cellvit_mask', 'cell_state', 'vasculature', 'immune', 'oxygen', 'glucose'].forEach(function (layer) {
+      if (layer === 'mux_rgb') return;
       const img = layerImgs[layer];
       const check = layerChecks[layer];
       img.src = base + '/patches/' + layer + '/' + id + '.png';
