@@ -258,7 +258,8 @@ def test_read_multiplex_patch_selects_channels(tmp_path):
         img_h=img_h,
         y0=0,
         x0=0,
-        size=256,
+        size_y=256,
+        size_x=256,
         channel_indices=[2, 5, 9],
     )
 

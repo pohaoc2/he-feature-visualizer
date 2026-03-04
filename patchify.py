@@ -31,6 +31,7 @@ python patchify.py --he-image PATH --multiplex-image PATH --metadata-csv PATH
 
 import argparse
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
@@ -39,6 +40,41 @@ import pandas as pd
 from PIL import Image
 import tifffile
 import zarr
+
+
+# ---------------------------------------------------------------------------
+# OME physical pixel size (mpp)
+# ---------------------------------------------------------------------------
+
+OME_NS = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
+
+
+def _safe_float(x: str | None) -> float | None:
+    if x is None:
+        return None
+    try:
+        return float(x)
+    except (ValueError, TypeError):
+        return None
+
+
+def get_ome_mpp(tif) -> tuple[float | None, float | None]:
+    """Return (mpp_x, mpp_y) in µm/pixel from OME-XML, or (None, None) if missing."""
+    ome_xml = getattr(tif, "ome_metadata", None)
+    if not ome_xml and hasattr(tif, "pages") and len(tif.pages) > 0:
+        ome_xml = getattr(tif.pages[0], "description", None)
+    if not ome_xml:
+        return None, None
+    try:
+        root = ET.fromstring(ome_xml)
+    except ET.ParseError:
+        return None, None
+    pixels = root.find(".//ome:Pixels", OME_NS)
+    if pixels is None:
+        return None, None
+    psx = _safe_float(pixels.get("PhysicalSizeX"))
+    psy = _safe_float(pixels.get("PhysicalSizeY"))
+    return psx, psy
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +164,7 @@ def _open_zarr_store(tif):
 
 
 def _clip_and_read(store, axes: str, img_w: int, img_h: int,
-                   y0: int, x0: int, size: int):
+                   y0: int, x0: int, size_y: int, size_x: int):
     """Read a clipped region from the store and return (arr, dy, dx, rh, rw).
 
     dy, dx: offsets within the output patch where valid data begins (for zero-padding).
@@ -141,8 +177,8 @@ def _clip_and_read(store, axes: str, img_w: int, img_h: int,
 
     y0c = max(0, int(y0))
     x0c = max(0, int(x0))
-    y1c = min(img_h, y0c + size)
-    x1c = min(img_w, x0c + size)
+    y1c = min(img_h, y0c + size_y)
+    x1c = min(img_w, x0c + size_x)
 
     sl = []
     for ax in axes:
@@ -171,7 +207,7 @@ def read_he_patch(zarr_store, axes: str, img_w: int, img_h: int,
     If store dtype != uint8: percentile normalize (p1/p99) to uint8.
     Clip to image bounds, zero-pad if needed.
     """
-    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size)
+    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size, size)
 
     # Bring channel axis last (-> YXC) if it exists and is first
     if arr.ndim == 3:
@@ -210,15 +246,15 @@ def read_he_patch(zarr_store, axes: str, img_w: int, img_h: int,
 
 
 def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
-                         y0: int, x0: int, size: int,
+                         y0: int, x0: int, size_y: int, size_x: int,
                          channel_indices: list[int]) -> np.ndarray:
     """Read multiplex patch for specific channel indices.
 
-    Returns (C, size, size) uint16 where C = len(channel_indices).
+    Returns (C, size_y, size_x) uint16 where C = len(channel_indices).
     Handle axes permutations (CYX, YXC, etc.).
     Clip to image bounds, zero-pad if needed.
     """
-    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size)
+    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size_y, size_x)
 
     # Build the set of active axes (those whose slices were slice objects, not scalars)
     active_axes = [ax for ax in axes if ax in ("C", "Y", "X")]
@@ -237,10 +273,10 @@ def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
     # Cast to uint16
     arr = arr.astype(np.uint16)
 
-    # Zero-pad to (C_sel, size, size)
+    # Zero-pad to (C_sel, size_y, size_x)
     n_ch = arr.shape[0]
-    if arr.shape[1] != size or arr.shape[2] != size:
-        out = np.zeros((n_ch, size, size), dtype=np.uint16)
+    if arr.shape[1] != size_y or arr.shape[2] != size_x:
+        out = np.zeros((n_ch, size_y, size_x), dtype=np.uint16)
         out[:, dy: dy + rh, dx: dx + rw] = arr[:, :rh, :rw]
         return out
 
@@ -379,6 +415,33 @@ def main():
     mx_store = _open_zarr_store(mx_tif)
     print(f"  Multiplex: {mx_w} x {mx_h}, axes={mx_axes}, dtype={mx_store.dtype}")
 
+    # --- Shape / physical size check and alignment ---
+    he_mpp_x, he_mpp_y = get_ome_mpp(he_tif)
+    mx_mpp_x, mx_mpp_y = get_ome_mpp(mx_tif)
+
+    use_physical_alignment = False
+    scale_he_to_mx_y = 1.0
+    scale_he_to_mx_x = 1.0
+
+    print("Shape / physical size check:")
+    print(f"  H&E:       {he_w} x {he_h} px  mpp=({he_mpp_x}, {he_mpp_y})")
+    print(f"  Multiplex: {mx_w} x {mx_h} px  mpp=({mx_mpp_x}, {mx_mpp_y})")
+    if (he_w, he_h) != (mx_w, mx_h):
+        if he_mpp_x is not None and he_mpp_y is not None and mx_mpp_x is not None and mx_mpp_y is not None:
+            use_physical_alignment = True
+            scale_he_to_mx_x = he_mpp_x / mx_mpp_x
+            scale_he_to_mx_y = he_mpp_y / mx_mpp_y
+            phys_he_w = he_w * he_mpp_x
+            phys_he_h = he_h * he_mpp_y
+            phys_mx_w = mx_w * mx_mpp_x
+            phys_mx_h = mx_h * mx_mpp_y
+            print(f"  Physical size: H&E {phys_he_w:.1f} x {phys_he_h:.1f} µm  Multiplex {phys_mx_w:.1f} x {phys_mx_h:.1f} µm")
+            print(f"  Using physical alignment: HE (y0,x0) -> MX (y0*{scale_he_to_mx_y:.4f}, x0*{scale_he_to_mx_x:.4f}), patch size scaled then resized to {patch_size}x{patch_size}")
+        else:
+            print("  WARNING: Pixel dimensions differ but OME mpp missing for one or both; using 1:1 pixel coords (multiplex may go out of bounds).")
+    else:
+        print("  Same pixel dimensions; using 1:1 coordinates.")
+
     # Use H&E dimensions for the patch grid
     grid = get_patch_grid(he_w, he_h, patch_size, stride)
     total = len(grid)
@@ -405,11 +468,30 @@ def main():
         if frac < args.tissue_min:
             continue
 
-        # Read matching multiplex patch
-        mx_patch = read_multiplex_patch(
-            mx_store, mx_axes, mx_w, mx_h,
-            y0, x0, patch_size, channel_indices,
-        )
+        # Read matching multiplex patch (in multiplex pixel coords if physical alignment)
+        if use_physical_alignment:
+            y0_mx = int(y0 * scale_he_to_mx_y)
+            x0_mx = int(x0 * scale_he_to_mx_x)
+            size_mx_y = max(1, round(patch_size * scale_he_to_mx_y))
+            size_mx_x = max(1, round(patch_size * scale_he_to_mx_x))
+            mx_patch = read_multiplex_patch(
+                mx_store, mx_axes, mx_w, mx_h,
+                y0_mx, x0_mx, size_mx_y, size_mx_x, channel_indices,
+            )
+            if mx_patch.shape[1] != patch_size or mx_patch.shape[2] != patch_size:
+                # Resize (C, Hy, Wx) -> (C, patch_size, patch_size)
+                resized = np.zeros((mx_patch.shape[0], patch_size, patch_size), dtype=mx_patch.dtype)
+                for c in range(mx_patch.shape[0]):
+                    resized[c] = cv2.resize(
+                        mx_patch[c], (patch_size, patch_size),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
+                mx_patch = resized
+        else:
+            mx_patch = read_multiplex_patch(
+                mx_store, mx_axes, mx_w, mx_h,
+                y0, x0, patch_size, patch_size, channel_indices,
+            )
 
         # Save H&E as PNG
         Image.fromarray(he_patch).save(he_dir / f"{i}_{j}.png")
