@@ -29,17 +29,19 @@ Enable viewing H&E and cell/vasculature/immune overlays on hardware that cannot 
 ## Empty-patch filter
 
 - For each 256×256 H&E crop: convert to grayscale, compute fraction of pixels below a background threshold (tissue).
-- If tissue fraction &lt; `tissue_min` (e.g. 0.1): skip the patch (write no files for that `(i,j)`).
+- If tissue fraction < `tissue_min` (e.g. 0.1): skip the patch (write no files for that `(i,j)`).
 
 ## Output layout under `processed/`
 
-| Path | When written | Content |
-|------|----------------|--------|
-| `he/{i}_{j}.png` | Always (if not empty) | 256×256 RGB H&E crop |
-| `overlay_cells/{i}_{j}.png` | If any feature requested | Transparent overlay: all cell-type dots (for blending on H&E) |
-| `cell_mask/{i}_{j}.png` | If `cell_mask` in `--features` | Cells colored by type (tumor/immune/stromal/other), isolated |
-| `vasculature/{i}_{j}.png` | If `vasculature` in `--features` | CD31⁺ cells only, isolated |
-| `immune/{i}_{j}.png` | If `immune` in `--features` | CD45⁺ cells colored by subtype (CD8a, CD68, FOXP3, CD4, CD20, other), single raster |
+
+| Path                        | When written                     | Content                                                                             |
+| --------------------------- | -------------------------------- | ----------------------------------------------------------------------------------- |
+| `he/{i}_{j}.png`            | Always (if not empty)            | 256×256 RGB H&E crop                                                                |
+| `overlay_cells/{i}_{j}.png` | If any feature requested         | Transparent overlay: all cell-type dots (for blending on H&E)                       |
+| `cell_mask/{i}_{j}.png`     | If `cell_mask` in `--features`   | Cells colored by type (tumor/immune/stromal/other), isolated                        |
+| `vasculature/{i}_{j}.png`   | If `vasculature` in `--features` | CD31⁺ cells only, isolated                                                          |
+| `immune/{i}_{j}.png`        | If `immune` in `--features`      | CD45⁺ cells colored by subtype (CD8a, CD68, FOXP3, CD4, CD20, other), single raster |
+
 
 - **Index:** `processed/index.json` (or `.parquet`) listing kept patches: `(i, j, x0, y0, x1, y1)` and optionally stride, tissue_min, for the viewer.
 
@@ -54,7 +56,7 @@ Enable viewing H&E and cell/vasculature/immune overlays on hardware that cannot 
 **Algorithm (per patch):**
 
 1. Read 256×256 H&E window at `(x0, y0)`.
-2. If tissue fraction &lt; `tissue_min`, skip.
+2. If tissue fraction < `tissue_min`, skip.
 3. Write `he/{i}_{j}.png`.
 4. Filter CSV rows with `Xt`, `Yt` in `[x0, x0+256) x [y0, y0+256)`; map to local 0–255 in the 256×256 patch.
 5. For each requested feature, draw dots (same colors as current pipeline) into a 256×256 RGBA PNG; save under `{feature}/{i}_{j}.png`.
@@ -71,3 +73,4 @@ Enable viewing H&E and cell/vasculature/immune overlays on hardware that cannot 
 - Per–immune-subtype isolated folders (single `immune/` raster only).
 - DZI / multi-resolution for patches (flat 256×256 only).
 - Changes to existing whole-slide viewer or cache layout.
+
