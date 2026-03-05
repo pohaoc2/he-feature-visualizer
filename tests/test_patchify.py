@@ -194,7 +194,7 @@ def test_patchify_cli_same_size_he_multiplex(tmp_path):
 
     # At least one HE PNG and one multiplex .npy
     p0 = data["patches"][0]
-    patch_id = f"{p0['i']}_{p0['j']}"
+    patch_id = f"{p0['x0']}_{p0['y0']}"
     assert (out_dir / "he" / f"{patch_id}.png").exists()
     npy_path = out_dir / "multiplex" / f"{patch_id}.npy"
     assert npy_path.exists()
@@ -239,7 +239,8 @@ def test_patchify_cli_different_size_with_mock_mpp(tmp_path, monkeypatch):
 
     data = json.loads((out_dir / "index.json").read_text())
     assert len(data["patches"]) >= 1
-    patch_id = f"{data['patches'][0]['i']}_{data['patches'][0]['j']}"
+    p0 = data["patches"][0]
+    patch_id = f"{p0['x0']}_{p0['y0']}"
     patch_arr = np.load(out_dir / "multiplex" / f"{patch_id}.npy")
     assert patch_arr.shape == (4, 256, 256)
 
@@ -279,3 +280,64 @@ def test_build_tissue_mask_detects_tissue(tmp_path):
     # Tissue region is rows 5-9, cols 5-9 in mask (40//8=5, 80//8=10)
     assert mask[5:10, 5:10].any(), "Expected tissue in tissue region"
     assert not mask[:3, :3].any(), "Expected no tissue in blank corner"
+
+
+def test_build_tissue_mask_yxc(tmp_path):
+    """build_tissue_mask works correctly with a YXC layout."""
+    h, w = 128, 192
+    # Shape (H, W, 3) -- YXC layout
+    arr = np.zeros((h, w, 3), dtype=np.uint8)
+    p = tmp_path / "yxc.ome.tif"
+    tifffile.imwrite(str(p), arr, ome=True, metadata={"axes": "YXC"})
+    tif = tifffile.TiffFile(str(p))
+    store = m._open_zarr_store(tif)
+    img_w, img_h, axes = m._get_image_dims(tif)
+
+    mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=16)
+    assert mask.shape == (h // 16, w // 16)  # (8, 12)
+    assert mask.dtype == bool
+
+
+def test_build_tissue_mask_uint16(tmp_path):
+    """build_tissue_mask accepts uint16 input and returns a bool ndarray."""
+    h, w = 128, 128
+    # All-zero uint16 array -> no tissue; dtype is preserved through tifffile
+    arr = np.zeros((3, h, w), dtype=np.uint16)
+    p = tmp_path / "uint16.ome.tif"
+    tifffile.imwrite(str(p), arr, ome=True, metadata={"axes": "CYX"})
+    tif = tifffile.TiffFile(str(p))
+    store = m._open_zarr_store(tif)
+    img_w, img_h, axes = m._get_image_dims(tif)
+
+    mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=16)
+    assert isinstance(mask, np.ndarray)
+    assert mask.dtype == bool
+
+
+def test_build_tissue_mask_non_multiple_dims(tmp_path):
+    """Output shape is exactly (img_h // downsample, img_w // downsample) for non-multiple dimensions."""
+    # 130 and 197 are not multiples of 16
+    h, w = 130, 197
+    arr = np.zeros((3, h, w), dtype=np.uint8)
+    store, axes, img_w, img_h = _make_cyx_tif(tmp_path, arr)
+
+    downsample = 16
+    mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=downsample)
+    expected_rows = h // downsample   # 130 // 16 = 8
+    expected_cols = w // downsample   # 197 // 16 = 12
+    assert mask.shape == (expected_rows, expected_cols), (
+        f"Expected ({expected_rows}, {expected_cols}), got {mask.shape}"
+    )
+    assert mask.dtype == bool
+
+
+def test_build_tissue_mask_invalid_axes(tmp_path):
+    """build_tissue_mask raises ValueError when axes string is missing 'Y' or 'X'."""
+    arr = np.zeros((3, 64, 64), dtype=np.uint8)
+    store, _, img_w, img_h = _make_cyx_tif(tmp_path, arr)
+
+    with pytest.raises(ValueError, match="axes must contain both"):
+        m.build_tissue_mask(store, "CZT", img_w, img_h, downsample=8)
+
+    with pytest.raises(ValueError, match="axes must contain both"):
+        m.build_tissue_mask(store, "CX", img_w, img_h, downsample=8)

@@ -139,16 +139,25 @@ def build_tissue_mask(
 
     Returns
     -------
-    bool ndarray of shape (img_h // downsample, img_w // downsample).
+    bool ndarray of shape exactly (img_h // downsample, img_w // downsample).
     """
     axes = axes.upper()
+    if "Y" not in axes or "X" not in axes:
+        raise ValueError(
+            f"axes must contain both 'Y' and 'X'; got {axes!r}"
+        )
     c_first = "C" in axes and axes.index("C") < axes.index("Y")
 
+    # Truncate dimensions to exact multiples of downsample so that
+    # ceil(trunc / downsample) == trunc // downsample == img_h // downsample.
+    img_h_trunc = (img_h // downsample) * downsample
+    img_w_trunc = (img_w // downsample) * downsample
+
     if c_first:
-        raw = np.array(store[:, ::downsample, ::downsample])  # (C, H//ds, W//ds)
-        overview = np.moveaxis(raw, 0, -1)                    # (H//ds, W//ds, C)
+        raw = np.array(store[:, :img_h_trunc:downsample, :img_w_trunc:downsample])  # (C, H//ds, W//ds)
+        overview = np.moveaxis(raw, 0, -1)                                            # (H//ds, W//ds, C)
     else:
-        overview = np.array(store[::downsample, ::downsample, :])
+        overview = np.array(store[:img_h_trunc:downsample, :img_w_trunc:downsample, :])
 
     if overview.shape[-1] > 3:
         overview = overview[..., :3]
@@ -535,10 +544,10 @@ def main():
             )
 
         # Save H&E as PNG
-        Image.fromarray(he_patch).save(he_dir / f"{i}_{j}.png")
+        Image.fromarray(he_patch).save(he_dir / f"{x0}_{y0}.png")
 
         # Save multiplex as .npy (C, H, W) uint16
-        np.save(mx_dir / f"{i}_{j}.npy", mx_patch)
+        np.save(mx_dir / f"{x0}_{y0}.npy", mx_patch)
 
         index.append({
             "i": i, "j": j,
