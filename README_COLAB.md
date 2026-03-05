@@ -1,5 +1,7 @@
 # Running Stage 2 (CellViT) on Google Colab
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/he-feature-visualizer/blob/main/notebooks/cellvit_colab_stage2.ipynb)
+
 This guide explains how to run the CellViT cell segmentation stage of the
 he-feature-visualizer pipeline on Google Colab, which provides free GPU access
 when a local GPU is not available.

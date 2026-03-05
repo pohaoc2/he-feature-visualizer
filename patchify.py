@@ -175,8 +175,8 @@ def _clip_and_read(store, axes: str, img_w: int, img_h: int,
         raw = zarr.open(store, mode="r")
         store = raw if isinstance(raw, zarr.Array) else raw["0"]
 
-    y0c = max(0, int(y0))
-    x0c = max(0, int(x0))
+    y0c = max(0, min(int(y0), img_h))
+    x0c = max(0, min(int(x0), img_w))
     y1c = min(img_h, y0c + size_y)
     x1c = min(img_w, x0c + size_x)
 
@@ -239,7 +239,8 @@ def read_he_patch(zarr_store, axes: str, img_w: int, img_h: int,
     # Zero-pad to (size, size, 3)
     if arr.shape[0] != size or arr.shape[1] != size:
         out = np.zeros((size, size, 3), dtype=np.uint8)
-        out[dy: dy + rh, dx: dx + rw] = arr[:rh, :rw]
+        if rh > 0 and rw > 0:
+            out[dy: dy + rh, dx: dx + rw] = arr[:rh, :rw]
         return out
 
     return arr
@@ -277,7 +278,8 @@ def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
     n_ch = arr.shape[0]
     if arr.shape[1] != size_y or arr.shape[2] != size_x:
         out = np.zeros((n_ch, size_y, size_x), dtype=np.uint16)
-        out[:, dy: dy + rh, dx: dx + rw] = arr[:, :rh, :rw]
+        if rh > 0 and rw > 0:
+            out[:, dy: dy + rh, dx: dx + rw] = arr[:, :rh, :rw]
         return out
 
     return arr
@@ -452,13 +454,12 @@ def main():
     index: list[dict] = []
     kept = 0
     last_row = -1
-
     for _idx_g, (i, j) in enumerate(grid):
         y0 = i * stride
         x0 = j * stride
 
         # Progress: print at start of each new block of 50 rows
-        if i != last_row and i % 50 == 0:
+        if i != last_row and i % 10 == 0:
             print(f"  Row {i} ... kept {kept} so far")
             last_row = i
 
