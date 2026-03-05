@@ -123,18 +123,18 @@ def test_assign_type_priority_order():
         "aSMA":    500.0,
     }
 
-    # All markers above threshold → vasculature wins
+    # All markers above threshold → tumor wins (vasculature removed as cell type)
     all_high = pd.Series({
         "CD31": 1000.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0
     })
-    assert assign_type(all_high, thresholds) == "vasculature", (
-        "When all markers are high, vasculature must win"
+    assert assign_type(all_high, thresholds) == "tumor", (
+        "When all markers are high, tumor (Keratin) wins"
     )
 
-    # Only Keratin (no CD31) → tumor
+    # Only Keratin → tumor
     tumor_row = pd.Series({"CD31": 0.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0})
     assert assign_type(tumor_row, thresholds) == "tumor", (
-        "Without CD31, Keratin should win over CD45/aSMA"
+        "Keratin should win over CD45/aSMA"
     )
 
     # Only CD45 → immune
@@ -151,9 +151,9 @@ def test_assign_type_priority_order():
     other_row = pd.Series({"CD31": 0.0, "Keratin": 0.0, "CD45": 0.0, "aSMA": 0.0})
     assert assign_type(other_row, thresholds) == "other"
 
-    # Each type in isolation
+    # Each type in isolation (CD31 now maps to stromal, no vasculature cell type)
     for marker, expected_type in [
-        ("CD31",    "vasculature"),
+        ("CD31",    "stromal"),
         ("Keratin", "tumor"),
         ("CD45",    "immune"),
         ("aSMA",    "stromal"),
