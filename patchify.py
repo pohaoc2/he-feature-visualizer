@@ -172,6 +172,37 @@ def build_tissue_mask(
     return tissue_mask_hsv(overview)
 
 
+def get_tissue_patches(
+    mask: np.ndarray,
+    img_w: int, img_h: int,
+    patch_size: int, stride: int,
+    tissue_min: float,
+    downsample: int,
+) -> list[tuple[int, int]]:
+    """Return list of (x0, y0) level-0 patch coords that meet tissue threshold.
+
+    Only patches satisfying x0+patch_size <= img_w and y0+patch_size <= img_h
+    are considered (no padding).
+    """
+    kept = []
+    y0 = 0
+    while y0 + patch_size <= img_h:
+        x0 = 0
+        while x0 + patch_size <= img_w:
+            my0 = y0 // downsample
+            mx0 = x0 // downsample
+            my1 = max(my0 + 1, (y0 + patch_size) // downsample)
+            mx1 = max(mx0 + 1, (x0 + patch_size) // downsample)
+            my1 = min(my1, mask.shape[0])
+            mx1 = min(mx1, mask.shape[1])
+            region = mask[my0:my1, mx0:mx1]
+            if region.size > 0 and float(region.mean()) >= tissue_min:
+                kept.append((x0, y0))
+            x0 += stride
+        y0 += stride
+    return kept
+
+
 # ---------------------------------------------------------------------------
 # Patch grid
 # ---------------------------------------------------------------------------
@@ -411,172 +442,192 @@ def _get_image_dims(tif):
     return img_w, img_h, axes
 
 
+def _norm_to_uint8(arr: np.ndarray) -> np.ndarray:
+    """Scale a 2D array to uint8 using p1/p99 percentile normalization."""
+    p1  = float(np.percentile(arr, 1))
+    p99 = float(np.percentile(arr, 99))
+    if p99 > p1:
+        return ((arr.astype(np.float32) - p1) / (p99 - p1) * 255).clip(0, 255).astype(np.uint8)
+    return np.zeros_like(arr, dtype=np.uint8)
+
+
+def visualize(
+    he_overview: np.ndarray,
+    mx_overview: np.ndarray,
+    he_coords: list[tuple[int, int]],
+    mx_coords: list[tuple[int, int]],
+    vis_channels: list[int],
+    out_dir: Path,
+    patch_size_ov: int = 4,
+    gap: int = 10,
+) -> None:
+    """Save side-by-side vis_patches.jpg to out_dir.
+
+    Parameters
+    ----------
+    he_overview:    (H_ov, W_ov, 3) uint8 H&E overview.
+    mx_overview:    (C, H_mx_ov, W_mx_ov) uint16 multiplex overview.
+    he_coords:      (x0, y0) in overview pixel coords for H&E panel.
+    mx_coords:      Corresponding coords in multiplex overview pixels.
+    vis_channels:   3 channel indices for multiplex RGB composite.
+    patch_size_ov:  Box size in overview pixels (default 4).
+    gap:            White gap between panels in pixels (default 10).
+    """
+    import PIL.ImageDraw
+
+    he_panel = Image.fromarray(he_overview.astype(np.uint8), "RGB").copy()
+    draw_he  = PIL.ImageDraw.Draw(he_panel)
+    for x0, y0 in he_coords:
+        draw_he.rectangle([x0, y0, x0 + patch_size_ov - 1, y0 + patch_size_ov - 1],
+                          outline=(0, 200, 0), width=1)
+
+    c0 = _norm_to_uint8(mx_overview[vis_channels[0]])
+    c1 = _norm_to_uint8(mx_overview[vis_channels[1]])
+    c2 = _norm_to_uint8(mx_overview[vis_channels[2]])
+    mx_panel = Image.fromarray(np.stack([c0, c1, c2], axis=-1), "RGB").copy()
+    draw_mx  = PIL.ImageDraw.Draw(mx_panel)
+    for x0, y0 in mx_coords:
+        draw_mx.rectangle([x0, y0, x0 + patch_size_ov - 1, y0 + patch_size_ov - 1],
+                          outline=(0, 200, 0), width=1)
+
+    h   = max(he_panel.height, mx_panel.height)
+    w   = he_panel.width + gap + mx_panel.width
+    out = Image.new("RGB", (w, h), (255, 255, 255))
+    out.paste(he_panel, (0, 0))
+    out.paste(mx_panel, (he_panel.width + gap, 0))
+    out.save(str(out_dir / "vis_patches.jpg"), quality=90)
+    print(f"Saved vis_patches.jpg ({w}x{h} px, {len(he_coords)} patches shown)")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "Stage 1 -- Extract H&E and multiplex patches from OME-TIFFs "
-            "with CLAM-style tissue detection."
-        )
+        description="Stage 1 -- Extract H&E and multiplex patches from OME-TIFFs."
     )
-    parser.add_argument("--he-image", required=True, help="Path to H&E OME-TIFF")
-    parser.add_argument("--multiplex-image", required=True, help="Path to multiplex OME-TIFF")
-    parser.add_argument(
-        "--metadata-csv", required=True,
-        help="Channel metadata CSV with 'Channel ID' and 'Target Name' columns",
-    )
-    parser.add_argument("--out", default="processed", help="Output directory (default: processed/)")
-    parser.add_argument("--patch-size", type=int, default=256, help="Patch size in pixels (default: 256)")
-    parser.add_argument("--stride", type=int, default=256, help="Patch stride (default: 256, no overlap)")
-    parser.add_argument(
-        "--tissue-min", type=float, default=0.1,
-        help="Minimum tissue fraction to keep a patch (default: 0.1)",
-    )
-    parser.add_argument(
-        "--channels", nargs="+", default=["CD31", "Ki67", "CD45", "PCNA"],
-        metavar="NAME",
-        help="Multiplex channel Target Names to extract (default: CD31 Ki67 CD45 PCNA)",
-    )
+    parser.add_argument("--he-image",           required=True)
+    parser.add_argument("--multiplex-image",     required=True)
+    parser.add_argument("--metadata-csv",        required=True)
+    parser.add_argument("--out",                 default="processed")
+    parser.add_argument("--patch-size",          type=int,   default=256)
+    parser.add_argument("--stride",              type=int,   default=256)
+    parser.add_argument("--tissue-min",          type=float, default=0.1)
+    parser.add_argument("--channels",            nargs="+",  default=["CD31", "Ki67", "CD45", "PCNA"])
+    parser.add_argument("--overview-downsample", type=int,   default=64,
+                        help="Stride for H&E overview sampling (default 64)")
+    parser.add_argument("--vis-channels",        type=int,   nargs=3, default=[0, 10, 20],
+                        help="3 multiplex channel indices for RGB composite in vis")
     args = parser.parse_args()
 
-    out_dir = Path(args.out)
-    he_dir = out_dir / "he"
-    mx_dir = out_dir / "multiplex"
-    he_dir.mkdir(parents=True, exist_ok=True)
-    mx_dir.mkdir(parents=True, exist_ok=True)
-
+    out_dir    = Path(args.out)
+    ds         = args.overview_downsample
     patch_size = args.patch_size
-    stride = args.stride
+    (out_dir / "he").mkdir(parents=True, exist_ok=True)
+    (out_dir / "multiplex").mkdir(parents=True, exist_ok=True)
 
-    # --- Resolve channel indices from metadata CSV ---
-    print("Resolving channel indices from metadata CSV ...")
+    print("Resolving channel indices ...")
     channel_indices, resolved_names = load_channel_indices(args.metadata_csv, args.channels)
-    print(f"  Channels: {list(zip(resolved_names, channel_indices))}")
 
-    # --- Open H&E image ---
-    print("Opening H&E image (windowed) ...")
-    he_tif = tifffile.TiffFile(args.he_image)
+    print("Opening H&E image ...")
+    he_tif   = tifffile.TiffFile(args.he_image)
     he_w, he_h, he_axes = _get_image_dims(he_tif)
     he_store = _open_zarr_store(he_tif)
-    print(f"  H&E: {he_w} x {he_h}, axes={he_axes}, dtype={he_store.dtype}")
+    he_mpp_x, _ = get_ome_mpp(he_tif)
+    print(f"  {he_w} x {he_h}  axes={he_axes}  mpp={he_mpp_x}")
 
-    # --- Open multiplex image ---
-    print("Opening multiplex image (windowed) ...")
-    mx_tif = tifffile.TiffFile(args.multiplex_image)
+    print("Opening multiplex image ...")
+    mx_tif   = tifffile.TiffFile(args.multiplex_image)
     mx_w, mx_h, mx_axes = _get_image_dims(mx_tif)
     mx_store = _open_zarr_store(mx_tif)
-    print(f"  Multiplex: {mx_w} x {mx_h}, axes={mx_axes}, dtype={mx_store.dtype}")
+    mx_mpp_x, _ = get_ome_mpp(mx_tif)
+    print(f"  {mx_w} x {mx_h}  axes={mx_axes}  mpp={mx_mpp_x}")
 
-    # --- Shape / physical size check and alignment ---
-    he_mpp_x, he_mpp_y = get_ome_mpp(he_tif)
-    mx_mpp_x, mx_mpp_y = get_ome_mpp(mx_tif)
+    scale = (he_mpp_x / mx_mpp_x) if (he_mpp_x and mx_mpp_x) else (he_w / mx_w)
+    print(f"  scale H&E -> multiplex: {scale:.4f}")
 
-    use_physical_alignment = False
-    scale_he_to_mx_y = 1.0
-    scale_he_to_mx_x = 1.0
+    print(f"Building tissue mask (downsample={ds}) ...")
+    mask = build_tissue_mask(he_store, he_axes, he_w, he_h, downsample=ds)
+    print(f"  Tissue fraction: {mask.mean():.2%}")
 
-    print("Shape / physical size check:")
-    print(f"  H&E:       {he_w} x {he_h} px  mpp=({he_mpp_x}, {he_mpp_y})")
-    print(f"  Multiplex: {mx_w} x {mx_h} px  mpp=({mx_mpp_x}, {mx_mpp_y})")
-    if (he_w, he_h) != (mx_w, mx_h):
-        if he_mpp_x is not None and he_mpp_y is not None and mx_mpp_x is not None and mx_mpp_y is not None:
-            use_physical_alignment = True
-            scale_he_to_mx_x = he_mpp_x / mx_mpp_x
-            scale_he_to_mx_y = he_mpp_y / mx_mpp_y
-            phys_he_w = he_w * he_mpp_x
-            phys_he_h = he_h * he_mpp_y
-            phys_mx_w = mx_w * mx_mpp_x
-            phys_mx_h = mx_h * mx_mpp_y
-            print(f"  Physical size: H&E {phys_he_w:.1f} x {phys_he_h:.1f} µm  Multiplex {phys_mx_w:.1f} x {phys_mx_h:.1f} µm")
-            print(f"  Using physical alignment: HE (y0,x0) -> MX (y0*{scale_he_to_mx_y:.4f}, x0*{scale_he_to_mx_x:.4f}), patch size scaled then resized to {patch_size}x{patch_size}")
-        else:
-            print("  WARNING: Pixel dimensions differ but OME mpp missing for one or both; using 1:1 pixel coords (multiplex may go out of bounds).")
+    # Keep overview for visualization (already computed inside build_tissue_mask,
+    # but we re-read it here since build_tissue_mask doesn't return it)
+    he_axes_up = he_axes.upper()
+    c_first    = "C" in he_axes_up and he_axes_up.index("C") < he_axes_up.index("Y")
+    img_h_trunc = (he_h // ds) * ds
+    img_w_trunc = (he_w // ds) * ds
+    if c_first:
+        he_overview = np.moveaxis(
+            np.array(he_store[:, :img_h_trunc:ds, :img_w_trunc:ds]), 0, -1
+        ).astype(np.uint8)
     else:
-        print("  Same pixel dimensions; using 1:1 coordinates.")
+        he_overview = np.array(he_store[:img_h_trunc:ds, :img_w_trunc:ds, :]).astype(np.uint8)
+    if he_overview.shape[-1] > 3:
+        he_overview = he_overview[..., :3]
 
-    # Use H&E dimensions for the patch grid
-    grid = get_patch_grid(he_w, he_h, patch_size, stride)
-    total = len(grid)
-    n_rows = (he_h - patch_size) // stride + 1 if he_h >= patch_size else 0
-    n_cols = (he_w - patch_size) // stride + 1 if he_w >= patch_size else 0
-    print(f"Patch grid: stride={stride}, patch_size={patch_size} -> {n_rows}x{n_cols} = {total} candidates")
+    print("Selecting tissue patches ...")
+    coords = get_tissue_patches(mask, he_w, he_h, patch_size, args.stride, args.tissue_min, ds)
+    print(f"  {len(coords)} patches selected")
 
-    index: list[dict] = []
-    kept = 0
-    last_row = -1
-    for _idx_g, (i, j) in enumerate(grid):
-        y0 = i * stride
-        x0 = j * stride
+    print("Extracting patches ...")
+    index: list[dict]            = []
+    he_vis_coords: list[tuple[int, int]] = []
+    mx_vis_coords: list[tuple[int, int]] = []
 
-        # Progress: print at start of each new block of 50 rows
-        if i != last_row and i % 10 == 0:
-            print(f"  Row {i} ... kept {kept} so far")
-            last_row = i
+    for idx, (x0, y0) in enumerate(coords):
+        if idx % 500 == 0:
+            print(f"  {idx}/{len(coords)} ...")
 
-        # Read H&E patch and apply tissue filter
         he_patch = read_he_patch(he_store, he_axes, he_w, he_h, y0, x0, patch_size)
-        frac = tissue_fraction(he_patch)
-        if frac < args.tissue_min:
-            continue
+        Image.fromarray(he_patch).save(out_dir / "he" / f"{x0}_{y0}.png")
 
-        # Read matching multiplex patch (in multiplex pixel coords if physical alignment)
-        if use_physical_alignment:
-            y0_mx = int(y0 * scale_he_to_mx_y)
-            x0_mx = int(x0 * scale_he_to_mx_x)
-            size_mx_y = max(1, round(patch_size * scale_he_to_mx_y))
-            size_mx_x = max(1, round(patch_size * scale_he_to_mx_x))
+        x0_mx   = round(x0 * scale)
+        y0_mx   = round(y0 * scale)
+        size_mx = max(1, round(patch_size * scale))
+        has_mx  = (x0_mx + size_mx <= mx_w) and (y0_mx + size_mx <= mx_h)
+
+        if has_mx:
             mx_patch = read_multiplex_patch(
                 mx_store, mx_axes, mx_w, mx_h,
-                y0_mx, x0_mx, size_mx_y, size_mx_x, channel_indices,
+                y0_mx, x0_mx, size_mx, size_mx, channel_indices,
             )
             if mx_patch.shape[1] != patch_size or mx_patch.shape[2] != patch_size:
-                # Resize (C, Hy, Wx) -> (C, patch_size, patch_size)
                 resized = np.zeros((mx_patch.shape[0], patch_size, patch_size), dtype=mx_patch.dtype)
                 for c in range(mx_patch.shape[0]):
-                    resized[c] = cv2.resize(
-                        mx_patch[c], (patch_size, patch_size),
-                        interpolation=cv2.INTER_LINEAR,
-                    )
+                    resized[c] = cv2.resize(mx_patch[c], (patch_size, patch_size),
+                                            interpolation=cv2.INTER_LINEAR)
                 mx_patch = resized
-        else:
-            mx_patch = read_multiplex_patch(
-                mx_store, mx_axes, mx_w, mx_h,
-                y0, x0, patch_size, patch_size, channel_indices,
-            )
+            np.save(out_dir / "multiplex" / f"{x0}_{y0}.npy", mx_patch)
+            mx_vis_coords.append((x0_mx // ds, y0_mx // ds))
 
-        # Save H&E as PNG
-        Image.fromarray(he_patch).save(he_dir / f"{x0}_{y0}.png")
+        he_vis_coords.append((x0 // ds, y0 // ds))
+        index.append({"x0": x0, "y0": y0, "has_multiplex": has_mx})
 
-        # Save multiplex as .npy (C, H, W) uint16
-        np.save(mx_dir / f"{x0}_{y0}.npy", mx_patch)
+    n_mx = sum(p["has_multiplex"] for p in index)
+    print(f"  Done. {n_mx}/{len(index)} patches have multiplex.")
 
-        index.append({
-            "i": i, "j": j,
-            "x0": x0, "y0": y0,
-            "x1": x0 + patch_size,
-            "y1": y0 + patch_size,
-        })
-        kept += 1
+    print("Generating vis_patches.jpg ...")
+    mx_axes_up = mx_axes.upper()
+    mx_c_first = "C" in mx_axes_up and mx_axes_up.index("C") < mx_axes_up.index("Y")
+    mx_h_trunc = (mx_h // ds) * ds
+    mx_w_trunc = (mx_w // ds) * ds
+    if mx_c_first:
+        mx_overview = np.array(mx_store[:, :mx_h_trunc:ds, :mx_w_trunc:ds])
+    else:
+        mx_overview = np.moveaxis(np.array(mx_store[:mx_h_trunc:ds, :mx_w_trunc:ds, :]), -1, 0)
+    vis_ch = [min(c, mx_overview.shape[0] - 1) for c in args.vis_channels]
+    visualize(he_overview, mx_overview, he_vis_coords, mx_vis_coords, vis_ch, out_dir)
 
-    print(f"  Done. Kept {kept}/{total} patches.")
+    with open(out_dir / "index.json", "w") as f:
+        json.dump({
+            "patches": index,
+            "patch_size": patch_size,
+            "stride": args.stride,
+            "tissue_min": args.tissue_min,
+            "img_w": he_w, "img_h": he_h,
+            "he_mpp": he_mpp_x, "mx_mpp": mx_mpp_x,
+            "scale_he_to_mx": scale,
+            "channels": resolved_names,
+        }, f, indent=2)
 
-    # --- Write index.json ---
-    index_path = out_dir / "index.json"
-    with open(index_path, "w") as f:
-        json.dump(
-            {
-                "patches": index,
-                "stride": stride,
-                "patch_size": patch_size,
-                "tissue_min": args.tissue_min,
-                "img_w": he_w,
-                "img_h": he_h,
-                "channels": resolved_names,
-            },
-            f,
-            indent=2,
-        )
-
-    print(f"Index written to {index_path}")
+    print(f"Index written to {out_dir / 'index.json'}")
     print("Stage 1 complete.")
 
 
