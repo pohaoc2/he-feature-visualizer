@@ -242,3 +242,40 @@ def test_patchify_cli_different_size_with_mock_mpp(tmp_path, monkeypatch):
     patch_id = f"{data['patches'][0]['i']}_{data['patches'][0]['j']}"
     patch_arr = np.load(out_dir / "multiplex" / f"{patch_id}.npy")
     assert patch_arr.shape == (4, 256, 256)
+
+
+# ---------------------------------------------------------------------------
+# build_tissue_mask
+# ---------------------------------------------------------------------------
+
+def _make_cyx_tif(tmp_path, arr, name="test.ome.tif"):
+    """Write a CYX OME-TIFF and return (store, axes, img_w, img_h)."""
+    p = tmp_path / name
+    tifffile.imwrite(str(p), arr, ome=True, metadata={"axes": "CYX"})
+    tif = tifffile.TiffFile(str(p))
+    store = m._open_zarr_store(tif)
+    img_w, img_h, axes = m._get_image_dims(tif)
+    return store, axes, img_w, img_h
+
+
+def test_build_tissue_mask_shape(tmp_path):
+    """Mask shape should be (img_h//downsample, img_w//downsample)."""
+    arr = np.zeros((3, 128, 192), dtype=np.uint8)
+    store, axes, img_w, img_h = _make_cyx_tif(tmp_path, arr)
+    mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=16)
+    assert mask.shape == (128 // 16, 192 // 16)  # (8, 12)
+    assert mask.dtype == bool
+
+
+def test_build_tissue_mask_detects_tissue(tmp_path):
+    """High-saturation pixels (pink tissue) should be detected as tissue."""
+    arr = np.zeros((3, 128, 128), dtype=np.uint8)
+    # Paint a tissue-like region: high R, low G, medium B -> high HSV saturation
+    arr[0, 40:80, 40:80] = 220  # R
+    arr[1, 40:80, 40:80] = 60   # G
+    arr[2, 40:80, 40:80] = 100  # B
+    store, axes, img_w, img_h = _make_cyx_tif(tmp_path, arr)
+    mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=8)
+    # Tissue region is rows 5-9, cols 5-9 in mask (40//8=5, 80//8=10)
+    assert mask[5:10, 5:10].any(), "Expected tissue in tissue region"
+    assert not mask[:3, :3].any(), "Expected no tissue in blank corner"

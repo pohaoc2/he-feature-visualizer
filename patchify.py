@@ -123,6 +123,46 @@ def tissue_fraction(rgb: np.ndarray) -> float:
     return float(np.mean(mask))
 
 
+def build_tissue_mask(
+    store, axes: str, img_w: int, img_h: int, downsample: int = 64
+) -> np.ndarray:
+    """Build a boolean tissue mask from a downsampled H&E overview.
+
+    Downloads only ~(img_h/downsample * img_w/downsample * 3) bytes.
+
+    Parameters
+    ----------
+    store:      zarr Array opened from tifffile series.
+    axes:       Axes string (e.g. 'CYX' or 'YXC').
+    img_w/h:    Full-resolution image dimensions.
+    downsample: Stride for overview sampling (default 64).
+
+    Returns
+    -------
+    bool ndarray of shape (img_h // downsample, img_w // downsample).
+    """
+    axes = axes.upper()
+    c_first = "C" in axes and axes.index("C") < axes.index("Y")
+
+    if c_first:
+        raw = np.array(store[:, ::downsample, ::downsample])  # (C, H//ds, W//ds)
+        overview = np.moveaxis(raw, 0, -1)                    # (H//ds, W//ds, C)
+    else:
+        overview = np.array(store[::downsample, ::downsample, :])
+
+    if overview.shape[-1] > 3:
+        overview = overview[..., :3]
+    if overview.dtype != np.uint8:
+        p1 = float(np.percentile(overview, 1))
+        p99 = float(np.percentile(overview, 99))
+        if p99 > p1:
+            overview = ((overview.astype(np.float32) - p1) / (p99 - p1) * 255).clip(0, 255).astype(np.uint8)
+        else:
+            overview = np.zeros_like(overview, dtype=np.uint8)
+
+    return tissue_mask_hsv(overview)
+
+
 # ---------------------------------------------------------------------------
 # Patch grid
 # ---------------------------------------------------------------------------
