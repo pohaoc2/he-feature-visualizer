@@ -1,26 +1,210 @@
-# CRC02 TME Viewer
+# H&E + Multiplex Feature Generator
 
-Interactive H&E viewer with tumor microenvironment overlays for the Lin 2021 CRC Atlas.
+A pipeline for generating spatially-resolved, multi-channel feature maps from co-registered H&E and multiplex immunofluorescence (mIF) whole-slide images.
+
+## Goal
+
+Given a pair of H&E and multiplex OME-TIFF images, this pipeline:
+
+1. Extracts tissue patches and aligns multiplex channel arrays to each patch
+2. Runs GPU-accelerated cell segmentation (CellViT) to detect and classify cells
+3. Refines cell type assignments using multiplex marker intensities
+4. Produces per-patch feature layers (cell type maps, vasculature, signaling channels) suitable for downstream spatial analysis or model training
+
+## Pipeline Overview
+
+```
+Local machine                          Google Colab (GPU)
+─────────────────────────────          ──────────────────────────────────
+Stage 1: python patchify.py
+  → processed/he/*.png
+  → processed/multiplex/*.npy
+  → processed/index.json
+         │
+         │ upload patches
+         ▼
+      [AWS S3]                    ──►   cellvit_colab_stage2.ipynb
+                                          ↓
+                                   processed/cellvit/*.json
+         ◄─────────────────────────────────
+         │ download results
+         ▼
+Stage 3: python assign_cells.py
+Stage 4: python multiplex_layers.py
+```
+
+---
 
 ## Setup
 
 ```bash
+conda create -n he-multiplex python=3.13
+conda activate he-multiplex
 pip install -r requirements.txt
 ```
 
-## Directory layout expected
+### Directory layout
 
 ```
 lin-2021-crc-atlas/
 └── data/
     ├── CRC02-HE.ome.tif
-    └── crc02-features.csv        # or .xlsx (full ~600k rows)
+    ├── CRC02.ome.tif
+    └── CRC202105 HTAN channel metadata.csv
 ```
 
-Place all four files (`preprocess.py`, `server.py`, `viewer.html`, `requirements.txt`)
-in the same directory, e.g. `lin-2021-crc-atlas/`.
+---
 
-## Step 1 — Preprocess (run once, takes ~5–15 min)
+## Stage 1 — Patch Extraction
+
+Run `patchify.py` to extract 256×256 H&E patches and corresponding multiplex arrays:
+
+```bash
+python patchify.py \
+  --he-image data/CRC02-HE.ome.tif \
+  --multiplex-image data/CRC02.ome.tif \
+  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
+  --out processed/ \
+  --patch-size 256 \
+  --stride 256 \
+  --tissue-min 0.1 \
+  --channels CD31 Ki67 CD45 PCNA \
+  --overview-downsample 64 \
+  --vis-channels 0 10 20
+```
+
+| Output | Contents | Used in |
+|---|---|---|
+| `processed/he/` | RGB PNG patches | Stage 2 (Colab) |
+| `processed/multiplex/` | Per-channel `.npy` arrays (uint16) | Stage 4 |
+| `processed/index.json` | Patch coordinate index | All stages |
+| `processed/vis_patches.jpg` | H&E + multiplex overview with patch grid | QC |
+
+Only `processed/he/` needs to be uploaded to Colab for Stage 2.
+
+---
+
+## Stage 2 — Cell Segmentation on Google Colab
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pohaoc2/he-feature-visualizer/blob/main/notebooks/cellvit_colab_stage2.ipynb)
+
+Colab provides free T4 GPU access — sufficient for up to ~2000 patches.
+
+### Prerequisites
+
+- **AWS account** (for S3)
+- **Local:** Python environment with the pipeline installed (`pip install -r requirements.txt`)
+- **Colab:** T4 GPU runtime — the free tier is sufficient for up to approximately 2000 patches
+
+### Upload patches
+
+```bash
+aws s3 sync processed/he/ s3://YOUR-BUCKET/he-feature-visualizer/processed/he/ --storage-class STANDARD_IA
+```
+
+Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negligible on STANDARD_IA storage class.
+
+### Run the notebook
+
+1. Go to [https://colab.research.google.com](https://colab.research.google.com)
+2. **File → Upload notebook** → select `notebooks/cellvit_colab_stage2.ipynb`
+3. **Runtime → Change runtime type → T4 GPU → Save**
+4. Edit the **Configuration cell** (Cell 1) at the top:
+
+| Variable | Description | Example |
+|---|---|---|
+| `STORAGE_BACKEND` | Storage backend | `'s3'` |
+| `S3_BUCKET` | S3 bucket name | `'my-bucket'` |
+| `S3_HE_PREFIX` | S3 key prefix for patches | `'he-feature-visualizer/processed/he'` |
+| `MODEL_VARIANT` | `'CellViT-256'` or `'CellViT-SAM-H'` | `'CellViT-256'` |
+| `BATCH_SIZE` | Patches per GPU batch | `32` (reduce to 8 if OOM) |
+| `MAGNIFICATION` | Scan magnification | `40` (use `20` if 20x slide) |
+
+5. **Runtime → Run all**
+
+Expected timeline on a T4 GPU:
+
+| Step | Time |
+|---|---|
+| Install dependencies and clone CellViT repo | ~2 min |
+| Download model checkpoint (CellViT-256, ~400 MB) | ~1 min |
+| Copy patches from S3 to Colab local SSD | ~1 min per 500 patches |
+| Inference (CellViT-256 at batch size 32) | ~1 s per 32 patches |
+| Total for 1000 patches | ~20 min |
+
+### Download results
+
+```bash
+aws s3 sync s3://YOUR-BUCKET/he-feature-visualizer/processed/cellvit/ processed/cellvit/
+```
+
+### Resuming interrupted runs
+
+The notebook sets `SKIP_EXISTING = True` by default. If the Colab session disconnects or you stop inference early, re-running from Cell 5 onwards will skip any patch that already has a corresponding JSON output. It is safe to interrupt and resume without reprocessing completed patches.
+
+### Output schema (`cellvit/*.json`)
+
+Each JSON file corresponds to one 256×256 patch, named by patch coordinate (e.g., `3_7.json`):
+
+```json
+{
+  "patch": "3_7",
+  "cells": [
+    {
+      "centroid": [128.4, 95.1],
+      "contour":  [[120,88], [125,83], "..."],
+      "bbox":     [[83,118], [103,139]],
+      "type_cellvit": 2,
+      "type_name": "Inflammatory",
+      "type_prob": 0.87
+    }
+  ]
+}
+```
+
+Cell type IDs used by CellViT:
+
+| ID | Type |
+|---|---|
+| 1 | Neoplastic |
+| 2 | Inflammatory |
+| 3 | Connective |
+| 4 | Dead |
+| 5 | Epithelial |
+
+---
+
+## Stage 3 — Cell Type Assignment
+
+Assign cell types and states using CellViT detections combined with multiplex marker features:
+
+```bash
+python assign_cells.py \
+  --cellvit-dir processed/cellvit/ \
+  --features-csv data/CRC02.csv \
+  --out processed/
+```
+
+---
+
+## Stage 4 — Multiplex Layers
+
+Derive vasculature and oxygen/glucose layers from multiplex channels:
+
+```bash
+python multiplex_layers.py \
+  --multiplex-dir processed/multiplex/ \
+  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
+  --out processed/
+```
+
+---
+
+## Whole-Slide Viewer
+
+For machines that can handle the full WSI, preprocess and serve the slide directly.
+
+### Step 1 — Preprocess (run once, ~5–15 min)
 
 ```bash
 python preprocess.py \
@@ -29,20 +213,9 @@ python preprocess.py \
     --out      cache/
 ```
 
-If your features file is XLSX:
-```bash
-python preprocess.py \
-    --features data/crc02-features.xlsx \
-    --image    data/CRC02-HE.ome.tif \
-    --out      cache/
-```
+Outputs: `cache/features.parquet`, `cache/meta.json`, `cache/tiles/heatmap/…`
 
-This will generate:
-- `cache/features.parquet`         — indexed cell data with assigned types
-- `cache/meta.json`                — image dimensions + marker thresholds
-- `cache/tiles/heatmap/{mode}/…`   — pre-rendered PNG heatmap tiles
-
-## Step 2 — Start the viewer server
+### Step 2 — Start the viewer
 
 ```bash
 python server.py \
@@ -51,66 +224,28 @@ python server.py \
     --port  8000
 ```
 
-Then open **http://127.0.0.1:8000** in your browser.
+Open **http://127.0.0.1:8000**.
 
-## Usage
+### Overlay modes
 
-- **Toggle buttons** at the top switch between three overlay modes:
-  - **All Cells** — colored by inferred type (tumor / immune / stromal / other)
-  - **Vasculature** — CD31⁺ endothelial cells in red
-  - **Immune** — CD45⁺ cells colored by subtype (CD8a, CD68, FOXP3, CD4, CD20)
+- **All Cells** — colored by inferred type (tumor / immune / stromal / other)
+- **Vasculature** — CD31⁺ endothelial cells in red
+- **Immune** — CD45⁺ cells colored by subtype (CD8a, CD68, FOXP3, CD4, CD20)
 
-- At **low zoom**: a smooth kernel-density heatmap is shown.
-- **Zoom in past level 3**: switches to individual cell dots fetched live from the server.
+At low zoom a kernel-density heatmap is shown; zoom past level 3 for individual cell dots.
 
-## Cell type assignment logic
+### Cell type assignment
 
 Thresholds are the **95th percentile** of each marker across all cells.
 
 | Mode | Marker | Color |
 |---|---|---|
-| Cells → Tumor | Keratin > p95 | Pink |
-| Cells → Immune | CD45 > p95 | Green |
-| Cells → Stromal | aSMA > p95 | Orange |
+| Tumor | Keratin > p95 | Pink |
+| Immune | CD45 > p95 | Green |
+| Stromal | aSMA > p95 | Orange |
 | Vasculature | CD31 > p95 | Red |
-| Immune → CD8a | CD8a > p95 | Blue |
-| Immune → CD68 | CD68 > p95 | Green |
-| Immune → FOXP3 | FOXP3 > p95 | Purple |
-| Immune → CD4 | CD4 > p95 | Yellow |
-| Immune → CD20 | CD20 > p95 | Cyan |
-
----
-
-## Patch-based viewer (lightweight)
-
-If your machine cannot render the full whole-slide image, you can pre-crop into 256×256 patches and view one at a time.
-
-### Step 1 — Generate patches (run once)
-
-```bash
-python patchify.py \
-    --image data/CRC02-HE.ome.tif \
-    --features-csv data/CRC02.csv \
-    --out processed/ \
-    --stride 256 \
-    --features cell_mask vasculature immune
-```
-
-- **`--stride`**: step between patch top-lefts (256 = no overlap; 128 = 50% overlap).
-- **`--features`**: which layers to write (`cell_mask`, `vasculature`, `immune`; any subset).
-- **`--tissue-min`**: drop patches with tissue fraction below this (default 0.1).
-- **`--cache-meta`**: optional path to `cache/meta.json` to reuse image size and thresholds.
-
-Output under `processed/`:
-- `he/{i}_{j}.png` — H&E crops
-- `overlay_cells/{i}_{j}.png` — cell-type overlay (if any feature requested)
-- `cell_mask/`, `vasculature/`, `immune/` — isolated feature rasters (if requested)
-- `index.json` — list of kept patches
-
-### Step 2 — Start the patch viewer
-
-```bash
-python server_patches.py --processed processed/ --port 8000
-```
-
-Open **http://127.0.0.1:8000**. Use the sidebar to pick a patch; toggle Overlay and feature layers (cell mask, vasculature, immune). Prev/Next or the index input jump between patches.
+| CD8a | CD8a > p95 | Blue |
+| CD68 | CD68 > p95 | Green |
+| FOXP3 | FOXP3 > p95 | Purple |
+| CD4 | CD4 > p95 | Yellow |
+| CD20 | CD20 > p95 | Cyan |
