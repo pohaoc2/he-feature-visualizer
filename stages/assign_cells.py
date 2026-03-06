@@ -292,7 +292,8 @@ def compute_thresholds(
             logging.warning("Marker '%s' not found in CSV; threshold set to inf.", marker)
             thresholds[marker] = float("inf")
 
-    # State markers
+    # State markers — must not overlap with TYPE_MARKERS groups (would overwrite type threshold).
+    # Ki67, PCNA, Vimentin are currently state-only; Keratin/CD45/etc. are type-only.
     for marker in ["Ki67", "PCNA", "Vimentin"]:
         percentile = config_overrides.get(marker, default_state_percentile)
         if marker in df.columns:

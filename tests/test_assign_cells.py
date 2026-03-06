@@ -701,17 +701,23 @@ def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
 
 
 def test_compute_thresholds_default_percentile():
-    """compute_thresholds uses default_type_percentile for all type markers."""
+    """compute_thresholds uses default_type_percentile for all type markers present in df."""
     from stages.assign_cells import compute_thresholds
 
+    # Include a sample of new markers alongside the original ones
     df = pd.DataFrame({
-        "Keratin": [0.0, 50.0, 100.0],
-        "CD45":    [0.0, 50.0, 100.0],
+        "Keratin":   [0.0, 50.0, 100.0],
+        "CD45":      [0.0, 50.0, 100.0],
+        "NaKATPase": [0.0, 50.0, 100.0],
+        "CD8a":      [0.0, 50.0, 100.0],
+        "Desmin":    [0.0, 50.0, 100.0],
     })
     thresholds = compute_thresholds(df, default_type_percentile=50)
-    # 50th percentile of [0, 50, 100] == 50.0
-    assert thresholds["Keratin"] == pytest.approx(50.0)
-    assert thresholds["CD45"] == pytest.approx(50.0)
+    # 50th percentile of [0, 50, 100] == 50.0 for all present type markers
+    for marker in ["Keratin", "CD45", "NaKATPase", "CD8a", "Desmin"]:
+        assert thresholds[marker] == pytest.approx(50.0), (
+            f"Expected {marker} threshold at p50=50.0, got {thresholds[marker]}"
+        )
 
 
 def test_compute_thresholds_config_override():
@@ -728,7 +734,8 @@ def test_compute_thresholds_config_override():
         config_overrides={"Keratin": 50},
     )
     assert thresholds["Keratin"] == pytest.approx(50.0)  # overridden to p50
-    assert thresholds["CD45"] == pytest.approx(95.0)     # p95 of [0,50,100] (linear interpolation)
+    # p95 of uniformly-spaced [0, 50, 100]: 0 + 0.95*(100-0) = 95.0 (linear interpolation)
+    assert thresholds["CD45"] == pytest.approx(95.0)
 
 
 def test_compute_thresholds_new_markers_covered():
