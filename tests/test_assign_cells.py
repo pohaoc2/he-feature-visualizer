@@ -693,3 +693,63 @@ def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
     assert not (
         out_dir / "cell_types" / "0_1.png"
     ).exists(), "cell_types/0_1.png must NOT be created when its CellViT JSON is absent"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — compute_thresholds (expanded TYPE_MARKERS + tunable percentiles)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_thresholds_default_percentile():
+    """compute_thresholds uses default_type_percentile for all type markers."""
+    from stages.assign_cells import compute_thresholds
+
+    df = pd.DataFrame({
+        "Keratin": [0.0, 50.0, 100.0],
+        "CD45":    [0.0, 50.0, 100.0],
+    })
+    thresholds = compute_thresholds(df, default_type_percentile=50)
+    # 50th percentile of [0, 50, 100] == 50.0
+    assert thresholds["Keratin"] == pytest.approx(50.0)
+    assert thresholds["CD45"] == pytest.approx(50.0)
+
+
+def test_compute_thresholds_config_override():
+    """Per-marker config_overrides replace the default percentile for that marker."""
+    from stages.assign_cells import compute_thresholds
+
+    df = pd.DataFrame({
+        "Keratin": [0.0, 50.0, 100.0],
+        "CD45":    [0.0, 50.0, 100.0],
+    })
+    thresholds = compute_thresholds(
+        df,
+        default_type_percentile=95,
+        config_overrides={"Keratin": 50},
+    )
+    assert thresholds["Keratin"] == pytest.approx(50.0)  # overridden to p50
+    assert thresholds["CD45"] == pytest.approx(95.0)     # p95 of [0,50,100] (linear interpolation)
+
+
+def test_compute_thresholds_new_markers_covered():
+    """compute_thresholds produces thresholds for all expanded type markers."""
+    from stages.assign_cells import compute_thresholds
+
+    new_markers = ["NaKATPase", "CDX2", "CD3", "CD4", "CD8a", "CD20",
+                   "CD45RO", "CD68", "CD163", "FOXP3", "PD1", "Desmin", "Collagen"]
+    data = {m: [0.0, 50.0, 100.0] for m in new_markers}
+    df = pd.DataFrame(data)
+    thresholds = compute_thresholds(df)
+    for m in new_markers:
+        assert m in thresholds, f"Threshold missing for marker '{m}'"
+        assert thresholds[m] < float("inf"), f"Threshold for '{m}' should not be inf when column exists"
+
+
+def test_compute_thresholds_missing_marker_is_inf():
+    """Missing markers get threshold=inf (skipped without error)."""
+    from stages.assign_cells import compute_thresholds
+
+    df = pd.DataFrame({"Keratin": [0.0, 50.0, 100.0]})
+    thresholds = compute_thresholds(df)
+    assert thresholds["NaKATPase"] == float("inf")
+    assert thresholds["CD3"] == float("inf")

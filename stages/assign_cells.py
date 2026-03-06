@@ -46,8 +46,12 @@ CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
 # Marker lists
 # ---------------------------------------------------------------------------
 
-TYPE_MARKERS = ["Keratin", "CD45", "aSMA", "CD31"]
-STATE_MARKERS = ["Ki67", "PCNA", "Vimentin", "Ecadherin"]
+TYPE_MARKERS: dict[str, list[str]] = {
+    "tumor":   ["Keratin", "NaKATPase", "CDX2"],
+    "immune":  ["CD45", "CD3", "CD4", "CD8a", "CD20",
+                "CD45RO", "CD68", "CD163", "FOXP3", "PD1"],
+    "stromal": ["aSMA", "CD31", "Desmin", "Collagen"],
+}
 
 # ---------------------------------------------------------------------------
 # Module-level functions
@@ -250,57 +254,68 @@ def rasterize_cells(
     return canvas
 
 
-def compute_thresholds(df: pd.DataFrame) -> dict[str, float]:
+def compute_thresholds(
+    df: pd.DataFrame,
+    default_type_percentile: float = 95,
+    default_state_percentile: float = 75,
+    config_overrides: dict[str, float] | None = None,
+) -> dict[str, float]:
     """Compute per-marker thresholds from the full CSV.
 
-    Cell TYPE markers (exclusive classification — only top cells qualify):
-      Keratin, CD45, aSMA, CD31: 95th percentile
+    Type markers: each marker in TYPE_MARKERS groups uses default_type_percentile
+    unless overridden in config_overrides.
 
-    Cell STATE markers (broader, biologically common signals):
-      Ki67, PCNA, Vimentin: 75th percentile
-        → ~25% of cells are proliferating/migratory, matching CRC biology
-      Ecadherin low (EMT):  25th percentile (clearly lost E-cad)
-      Ecadherin high (healthy/quiescent): 50th percentile (median, intact junctions)
+    State markers:
+      Ki67, PCNA, Vimentin: default_state_percentile (default 75)
+      Ecadherin low (EMT):  25th percentile
+      Ecadherin high:       50th percentile
+
+    config_overrides: dict mapping marker name to percentile to use instead of default.
+    Missing columns get threshold=inf (silently skipped).
     """
+    if config_overrides is None:
+        config_overrides = {}
+
     thresholds: dict[str, float] = {}
 
-    for marker in TYPE_MARKERS:
+    # All type markers (flattened from groups)
+    all_type_markers = [m for markers in TYPE_MARKERS.values() for m in markers]
+    for marker in all_type_markers:
+        percentile = config_overrides.get(marker, default_type_percentile)
         if marker in df.columns:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 thresholds[marker] = float(
-                    np.nanpercentile(df[marker].to_numpy(dtype=float), 95)
+                    np.nanpercentile(df[marker].to_numpy(dtype=float), percentile)
                 )
         else:
-            logging.warning(
-                "Marker '%s' not found in CSV; threshold set to inf.", marker
-            )
+            logging.warning("Marker '%s' not found in CSV; threshold set to inf.", marker)
             thresholds[marker] = float("inf")
 
+    # State markers
     for marker in ["Ki67", "PCNA", "Vimentin"]:
+        percentile = config_overrides.get(marker, default_state_percentile)
         if marker in df.columns:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 thresholds[marker] = float(
-                    np.nanpercentile(df[marker].to_numpy(dtype=float), 75)
+                    np.nanpercentile(df[marker].to_numpy(dtype=float), percentile)
                 )
         else:
-            logging.warning(
-                "Marker '%s' not found in CSV; threshold set to inf.", marker
-            )
+            logging.warning("Marker '%s' not found in CSV; threshold set to inf.", marker)
             thresholds[marker] = float("inf")
 
-    # Ecadherin: 25th pct = low (EMT — clearly lost); 50th pct = high (intact junctions)
+    # Ecadherin: 25th pct = low (EMT); 50th pct = high (intact junctions)
+    ecad_low_pct = config_overrides.get("Ecadherin", 25)
+    ecad_high_pct = config_overrides.get("Ecadherin_high", 50)
     if "Ecadherin" in df.columns:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             vals = df["Ecadherin"].to_numpy(dtype=float)
-            thresholds["Ecadherin"] = float(np.nanpercentile(vals, 25))
-            thresholds["Ecadherin_high"] = float(np.nanpercentile(vals, 50))
+            thresholds["Ecadherin"] = float(np.nanpercentile(vals, ecad_low_pct))
+            thresholds["Ecadherin_high"] = float(np.nanpercentile(vals, ecad_high_pct))
     else:
-        logging.warning(
-            "Marker 'Ecadherin' not found in CSV; thresholds set to extremes."
-        )
+        logging.warning("Marker 'Ecadherin' not found in CSV; thresholds set to extremes.")
         thresholds["Ecadherin"] = float("-inf")
         thresholds["Ecadherin_high"] = float("inf")
 
