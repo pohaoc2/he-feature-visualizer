@@ -76,6 +76,20 @@ def _small_rect_contour(cx, cy, half=8):
     ]
 
 
+def _expanded_thresholds() -> dict:
+    """Full expanded thresholds dict for tests — all markers set to 500.0."""
+    from stages.assign_cells import TYPE_MARKERS
+    thresholds = {}
+    for markers in TYPE_MARKERS.values():
+        for m in markers:
+            thresholds[m] = 500.0
+    thresholds.update({
+        "Ki67": 500.0, "PCNA": 500.0, "Vimentin": 500.0,
+        "Ecadherin": 200.0, "Ecadherin_high": 400.0,
+    })
+    return thresholds
+
+
 # ---------------------------------------------------------------------------
 # Unit tests — build_csv_index
 # ---------------------------------------------------------------------------
@@ -254,29 +268,19 @@ def test_match_cells_finds_nearby_cell():
     - Patch origin is (x0=0, y0=0), so local centroid (128, 128) maps to
       global (128, 128) — distance to CSV cell is 0, well within max_dist=15.
 
-    Verifies: resulting cell dict contains cell_type == 'tumor'.
+    Verifies: resulting cell dict contains cell_type == 'tumor' and cell_type_confidence.
     """
-    from stages.assign_cells import build_csv_index, match_cells  # noqa: WPS433
+    from stages.assign_cells import build_csv_index, match_cells, TYPE_MARKERS
 
-    thresholds = {
-        "CD31": 500.0,
-        "Keratin": 500.0,
-        "CD45": 500.0,
-        "aSMA": 500.0,
-        "Ki67": 500.0,
-        "PCNA": 500.0,
-        "Vimentin": 500.0,
-        "Ecadherin": 200.0,
-    }
+    thresholds = _expanded_thresholds()
 
+    marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
+    marker_cols["Keratin"] = [5000.0]
     df = pd.DataFrame(
         {
             "Xt": [128.0],
             "Yt": [128.0],
-            "CD31": [0.0],
-            "Keratin": [5000.0],
-            "CD45": [0.0],
-            "aSMA": [0.0],
+            **marker_cols,
             "Ki67": [0.0],
             "PCNA": [0.0],
             "Vimentin": [0.0],
@@ -286,9 +290,11 @@ def test_match_cells_finds_nearby_cell():
 
     tree = build_csv_index(df, x_col="Xt", y_col="Yt")
 
+    # type_cellvit=1 (Neoplastic) maps to "tumor" — agrees with marker type
     cell = _make_cell(
         centroid=[128, 128],
         contour=_small_rect_contour(128, 128),
+        type_cellvit=1,
     )
 
     result = match_cells(
@@ -305,73 +311,25 @@ def test_match_cells_finds_nearby_cell():
     assert (
         result[0]["cell_type"] == "tumor"
     ), f"Expected cell_type='tumor', got '{result[0]['cell_type']}'"
+    assert "cell_type_confidence" in result[0], "cell_type_confidence field must be present"
 
 
 def test_match_cells_unmatched_when_far():
-    """
-    Contract: match_cells assigns cell_type='other' when the nearest CSV cell
-    is farther than max_dist.
+    """No CSV match within max_dist: cell_type comes from CELLVIT_TYPE_MAP (type 0 → 'other')."""
+    from stages.assign_cells import build_csv_index, match_cells, TYPE_MARKERS
 
-    Setup:
-    - CSV has one cell at global (500, 500).
-    - Patch origin is (x0=0, y0=0).
-    - CellViT cell centroid [10, 10] maps to global (10, 10).
-    - Distance ≈ 693 pixels >> max_dist=15.
+    thresholds = _expanded_thresholds()
+    marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
+    df = pd.DataFrame({"Xt": [500.0], "Yt": [500.0], **marker_cols,
+                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    tree = build_csv_index(df, "Xt", "Yt")
 
-    Verifies: cell_type == 'other', cell_state == 'other'.
-    """
-    from stages.assign_cells import build_csv_index, match_cells  # noqa: WPS433
-
-    thresholds = {
-        "CD31": 500.0,
-        "Keratin": 500.0,
-        "CD45": 500.0,
-        "aSMA": 500.0,
-        "Ki67": 500.0,
-        "PCNA": 500.0,
-        "Vimentin": 500.0,
-        "Ecadherin": 200.0,
-    }
-
-    df = pd.DataFrame(
-        {
-            "Xt": [500.0],
-            "Yt": [500.0],
-            "Keratin": [5000.0],
-            "CD31": [0.0],
-            "CD45": [0.0],
-            "aSMA": [0.0],
-            "Ki67": [0.0],
-            "PCNA": [0.0],
-            "Vimentin": [0.0],
-            "Ecadherin": [500.0],
-        }
-    )
-
-    tree = build_csv_index(df, x_col="Xt", y_col="Yt")
-
-    cell = _make_cell(
-        centroid=[10, 10],
-        contour=_small_rect_contour(10, 10),
-    )
-
-    result = match_cells(
-        cells=[cell],
-        kdtree=tree,
-        df=df,
-        thresholds=thresholds,
-        x0=0,
-        y0=0,
-        max_dist=15.0,
-    )
-
-    assert len(result) == 1
-    assert (
-        result[0]["cell_type"] == "other"
-    ), f"No CSV match within max_dist → expected 'other', got '{result[0]['cell_type']}'"
-    assert (
-        result[0]["cell_state"] == "other"
-    ), f"No CSV match within max_dist → expected state 'other', got '{result[0]['cell_state']}'"
+    # type_cellvit=0 (Unknown) → "other"
+    cell = _make_cell([10, 10], _small_rect_contour(10, 10), type_cellvit=0)
+    result = match_cells([cell], tree, df, thresholds, x0=0, y0=0, max_dist=15.0)
+    assert result[0]["cell_type"] == "other"
+    assert result[0]["cell_state"] == "other"
+    assert result[0]["cell_type_confidence"] == "low"
 
 
 # ---------------------------------------------------------------------------
@@ -794,3 +752,81 @@ def test_assign_type_tumor_beats_immune():
     row = pd.Series({**{m: 0.0 for m in thresholds},
                      "Keratin": 1000.0, "CD45": 1000.0})
     assert assign_type(row, thresholds) == "tumor"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — CELLVIT_TYPE_MAP fallback and cell_type_confidence
+# ---------------------------------------------------------------------------
+
+
+def test_match_cells_no_match_uses_cellvit_fallback():
+    """No-match cells get cell_type from CELLVIT_TYPE_MAP, not 'other'."""
+    from stages.assign_cells import build_csv_index, match_cells, TYPE_MARKERS
+
+    thresholds = _expanded_thresholds()
+    marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
+    df = pd.DataFrame({"Xt": [500.0], "Yt": [500.0], **marker_cols,
+                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    tree = build_csv_index(df, "Xt", "Yt")
+
+    # CellViT type 2 = Inflammatory → "immune"
+    cell = _make_cell([10, 10], _small_rect_contour(10, 10), type_cellvit=2)
+    result = match_cells([cell], tree, df, thresholds, x0=0, y0=0, max_dist=15.0)
+    assert result[0]["cell_type"] == "immune", (
+        f"No-match cell with cellvit type 2 should be 'immune', got '{result[0]['cell_type']}'"
+    )
+    assert result[0]["cell_type_confidence"] == "low"
+
+
+def test_match_cells_no_match_cellvit_type5_is_tumor():
+    """CellViT type 5 (Epithelial) → 'tumor' for no-match cells in CRC context."""
+    from stages.assign_cells import build_csv_index, match_cells, TYPE_MARKERS
+
+    thresholds = _expanded_thresholds()
+    marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
+    df = pd.DataFrame({"Xt": [500.0], "Yt": [500.0], **marker_cols,
+                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    tree = build_csv_index(df, "Xt", "Yt")
+
+    cell = _make_cell([10, 10], _small_rect_contour(10, 10), type_cellvit=5)
+    result = match_cells([cell], tree, df, thresholds, x0=0, y0=0, max_dist=15.0)
+    assert result[0]["cell_type"] == "tumor"
+    assert result[0]["cell_type_confidence"] == "low"
+
+
+def test_match_cells_matched_agreement_high_confidence():
+    """When marker type and CellViT type agree, confidence is 'high'."""
+    from stages.assign_cells import build_csv_index, match_cells, TYPE_MARKERS
+
+    thresholds = _expanded_thresholds()
+    # CSV cell at (128, 128) with high Keratin → marker type = "tumor"
+    marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
+    marker_cols["Keratin"] = [1000.0]
+    df = pd.DataFrame({"Xt": [128.0], "Yt": [128.0], **marker_cols,
+                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    tree = build_csv_index(df, "Xt", "Yt")
+
+    # CellViT type 1 = Neoplastic → maps to "tumor" — should agree with marker type
+    cell = _make_cell([128, 128], _small_rect_contour(128, 128), type_cellvit=1)
+    result = match_cells([cell], tree, df, thresholds, x0=0, y0=0, max_dist=15.0)
+    assert result[0]["cell_type"] == "tumor"
+    assert result[0]["cell_type_confidence"] == "high"
+
+
+def test_match_cells_matched_disagreement_markers_win():
+    """When marker type and CellViT type disagree, markers win with 'low' confidence."""
+    from stages.assign_cells import build_csv_index, match_cells, TYPE_MARKERS
+
+    thresholds = _expanded_thresholds()
+    # CSV cell with high Keratin → marker type = "tumor"
+    marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
+    marker_cols["Keratin"] = [1000.0]
+    df = pd.DataFrame({"Xt": [128.0], "Yt": [128.0], **marker_cols,
+                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    tree = build_csv_index(df, "Xt", "Yt")
+
+    # CellViT type 2 = Inflammatory → maps to "immune" — disagrees with marker type "tumor"
+    cell = _make_cell([128, 128], _small_rect_contour(128, 128), type_cellvit=2)
+    result = match_cells([cell], tree, df, thresholds, x0=0, y0=0, max_dist=15.0)
+    assert result[0]["cell_type"] == "tumor", "Markers win on conflict"
+    assert result[0]["cell_type_confidence"] == "low"

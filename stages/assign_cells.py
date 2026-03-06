@@ -42,6 +42,15 @@ CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "other": (80, 80, 80, 150),  # dark gray (visible on black background)
 }
 
+CELLVIT_TYPE_MAP: dict[int, str] = {
+    0: "other",    # Unknown
+    1: "tumor",    # Neoplastic
+    2: "immune",   # Inflammatory
+    3: "stromal",  # Connective
+    4: "other",    # Dead — state assignment handles apoptotic
+    5: "tumor",    # Epithelial → tumor in CRC context
+}
+
 # ---------------------------------------------------------------------------
 # Marker lists
 # ---------------------------------------------------------------------------
@@ -176,9 +185,16 @@ def match_cells(
     For CRC02: H&E is 0.325 µm/px, CSV coordinates are in multiplex space (0.650 µm/px),
     so coord_scale = 0.325 / 0.650 = 0.5.
 
-    If distance <= max_dist (in CSV pixel units), assigns type+state from matched row.
-    If no match, assigns cell_type='other', cell_state='other'.
-    Modifies and returns the cells list in-place."""
+    Matched cells (dist <= max_dist):
+      - cell_type from expanded marker panel (authoritative)
+      - cell_type_confidence = 'high' if marker_type == cellvit_type, else 'low'
+      - cell_state from assign_state()
+
+    No-match cells (dist > max_dist):
+      - cell_type from CELLVIT_TYPE_MAP[type_cellvit]
+      - cell_type_confidence = 'low' (no marker validation)
+      - cell_state = 'other' (state requires marker data)
+    """
     for cell in cells:
         try:
             centroid = cell.get("centroid", [0, 0])
@@ -188,16 +204,22 @@ def match_cells(
             gy = (y0 + ly) * coord_scale
 
             dist, idx = kdtree.query([gx, gy])
+            type_cellvit = int(cell.get("type_cellvit", 0))
+            cellvit_type = CELLVIT_TYPE_MAP.get(type_cellvit, "other")
+
             if dist <= max_dist:
                 matched_row = df.iloc[idx]
-                type_cellvit = int(cell.get("type_cellvit", 0))
-                cell["cell_type"] = assign_type(matched_row, thresholds)
+                marker_type = assign_type(matched_row, thresholds)
+                cell["cell_type"] = marker_type
+                cell["cell_type_confidence"] = "high" if marker_type == cellvit_type else "low"
                 cell["cell_state"] = assign_state(matched_row, thresholds, type_cellvit)
             else:
-                cell["cell_type"] = "other"
+                cell["cell_type"] = cellvit_type
+                cell["cell_type_confidence"] = "low"
                 cell["cell_state"] = "other"
         except Exception:
             cell["cell_type"] = "other"
+            cell["cell_type_confidence"] = "low"
             cell["cell_state"] = "other"
 
     return cells
