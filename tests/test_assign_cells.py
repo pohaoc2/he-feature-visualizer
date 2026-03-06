@@ -36,7 +36,10 @@ CELL_TYPE_COLORS = {
 CELL_STATE_COLORS = {
     "proliferating": (0, 255, 0, 200),
     "emt": (255, 165, 0, 200),
-    "other": (0, 0, 0, 0),
+    "apoptotic": (139, 0, 139, 200),
+    "quiescent": (100, 149, 237, 200),
+    "healthy": (144, 238, 144, 200),
+    "other": (80, 80, 80, 150),
 }
 
 
@@ -410,13 +413,12 @@ def test_rasterize_cells_produces_rgba_array():
 
 def test_rasterize_cells_state_other_is_transparent():
     """
-    Contract: rasterize_cells produces a fully transparent output when every
-    cell has cell_state='other' and color_key='cell_state'.
-
-    CELL_STATE_COLORS['other'] == (0, 0, 0, 0), so drawing it is equivalent
-    to drawing nothing — the entire alpha channel must remain 0.
+    Contract: rasterize_cells draws 'other' state cells using the production
+    CELL_STATE_COLORS['other'] color, which is dark gray (80, 80, 80, 150).
+    The alpha channel of an 'other' state cell must be 150, not 0.
+    Background pixels outside all cells must remain transparent (alpha=0).
     """
-    from stages.assign_cells import rasterize_cells  # noqa: WPS433
+    from stages.assign_cells import rasterize_cells, CELL_STATE_COLORS as PROD_STATE_COLORS
 
     cell = _make_cell(
         centroid=[128, 128],
@@ -429,17 +431,21 @@ def test_rasterize_cells_state_other_is_transparent():
         cells=[cell],
         patch_size=256,
         color_key="cell_state",
-        color_map=CELL_STATE_COLORS,
+        color_map=PROD_STATE_COLORS,
     )
 
-    assert output.shape == (
-        256,
-        256,
-        4,
-    ), f"Expected shape (256, 256, 4), got {output.shape}"
-    assert (
-        int(output[..., 3].max()) == 0
-    ), "All pixels should be transparent (alpha=0) when state='other'"
+    assert output.shape == (256, 256, 4), f"Expected shape (256, 256, 4), got {output.shape}"
+
+    # "other" state uses dark gray (80, 80, 80, 150) in production
+    center_pixel = output[128, 128]
+    expected_alpha = PROD_STATE_COLORS["other"][3]
+    assert center_pixel[3] == expected_alpha, (
+        f"'other' state cells should have alpha={expected_alpha} (production color), "
+        f"got alpha={center_pixel[3]}"
+    )
+
+    # Background pixels outside the cell must remain transparent
+    assert output[0, 0, 3] == 0, "Background pixel (0,0) should be transparent (alpha=0)"
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@ assign_cells.py — Stage 3 of the histopathology pipeline.
 
 Matches CellViT-segmented cells (from per-patch JSON files) to the nearest
 row in CRC02.csv using a KD-tree on image pixel coordinates. Assigns each cell
-a type (tumor/immune/stromal/vasculature/other) and state
+a type (tumor/immune/stromal/other) and state
 (proliferating/emt/other) from the matched row's marker intensities.
 Rasterizes the cell contours as filled RGBA PNG images saved to
 processed/cell_types/ and processed/cell_states/.
