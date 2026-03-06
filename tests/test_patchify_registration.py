@@ -32,6 +32,7 @@ _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 # Helpers shared across tests
 # ---------------------------------------------------------------------------
 
+
 def _write_ome(path: Path, arr: np.ndarray, axes: str) -> None:
     tifffile.imwrite(str(path), arr, ome=True, metadata={"axes": axes})
 
@@ -45,13 +46,13 @@ def _write_metadata_csv(path: Path, names: list[str]) -> None:
 
 def _identity_M() -> np.ndarray:
     """Return a 2×3 identity affine matrix (no transform)."""
-    return np.array([[1.0, 0.0, 0.0],
-                     [0.0, 1.0, 0.0]], dtype=np.float32)
+    return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
 
 
 # ===========================================================================
 # transform_he_to_mx_point
 # ===========================================================================
+
 
 class TestTransformHEToMXPoint:
     """Unit tests for the affine point-mapping helper."""
@@ -63,41 +64,35 @@ class TestTransformHEToMXPoint:
 
     def test_pure_x_translation(self):
         """Translation in x only shifts x-coordinate."""
-        M = np.array([[1.0, 0.0, 50.0],
-                      [0.0, 1.0,  0.0]], dtype=np.float32)
+        M = np.array([[1.0, 0.0, 50.0], [0.0, 1.0, 0.0]], dtype=np.float32)
         assert m.transform_he_to_mx_point(M, 0, 0) == (50, 0)
 
     def test_pure_y_translation(self):
         """Translation in y only shifts y-coordinate."""
-        M = np.array([[1.0, 0.0,  0.0],
-                      [0.0, 1.0, 30.0]], dtype=np.float32)
+        M = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 30.0]], dtype=np.float32)
         assert m.transform_he_to_mx_point(M, 0, 0) == (0, 30)
 
     def test_combined_translation(self):
         """Translation in x and y both applied correctly."""
-        M = np.array([[1.0, 0.0, 100.0],
-                      [0.0, 1.0,  75.0]], dtype=np.float32)
+        M = np.array([[1.0, 0.0, 100.0], [0.0, 1.0, 75.0]], dtype=np.float32)
         assert m.transform_he_to_mx_point(M, 0, 0) == (100, 75)
 
     def test_uniform_scale_down(self):
         """Scale of 0.5 maps (200, 400) -> (100, 200)."""
         s = 0.5
-        M = np.array([[s, 0.0, 0.0],
-                      [0.0,  s, 0.0]], dtype=np.float32)
+        M = np.array([[s, 0.0, 0.0], [0.0, s, 0.0]], dtype=np.float32)
         assert m.transform_he_to_mx_point(M, 200, 400) == (100, 200)
 
     def test_uniform_scale_up(self):
         """Scale of 2.0 maps (100, 50) -> (200, 100)."""
         s = 2.0
-        M = np.array([[s, 0.0, 0.0],
-                      [0.0,  s, 0.0]], dtype=np.float32)
+        M = np.array([[s, 0.0, 0.0], [0.0, s, 0.0]], dtype=np.float32)
         assert m.transform_he_to_mx_point(M, 100, 50) == (200, 100)
 
     def test_scale_with_translation(self):
         """Scale 0.5 plus translation: (256, 256) -> (128 + tx, 128 + ty)."""
         s, tx, ty = 0.5, 20.0, -10.0
-        M = np.array([[s, 0.0, tx],
-                      [0.0,  s, ty]], dtype=np.float32)
+        M = np.array([[s, 0.0, tx], [0.0, s, ty]], dtype=np.float32)
         x_mx, y_mx = m.transform_he_to_mx_point(M, 256, 256)
         assert x_mx == round(256 * s + tx)
         assert y_mx == round(256 * s + ty)
@@ -105,8 +100,7 @@ class TestTransformHEToMXPoint:
     def test_rounding_half_pixel(self):
         """Half-pixel offsets are rounded (standard Python round-half-to-even)."""
         # 0.5 scale on 1 -> 0.5, rounds to 0
-        M = np.array([[0.5, 0.0, 0.0],
-                      [0.0, 0.5, 0.0]], dtype=np.float32)
+        M = np.array([[0.5, 0.0, 0.0], [0.0, 0.5, 0.0]], dtype=np.float32)
         x_mx, y_mx = m.transform_he_to_mx_point(M, 1, 1)
         assert isinstance(x_mx, int)
         assert isinstance(y_mx, int)
@@ -114,22 +108,19 @@ class TestTransformHEToMXPoint:
     def test_origin_maps_to_translation(self):
         """Origin (0, 0) with any M maps to the translation column."""
         tx, ty = 333, 777
-        M = np.array([[2.0, 0.5, float(tx)],
-                      [0.3, 1.5, float(ty)]], dtype=np.float32)
+        M = np.array([[2.0, 0.5, float(tx)], [0.3, 1.5, float(ty)]], dtype=np.float32)
         x_mx, y_mx = m.transform_he_to_mx_point(M, 0, 0)
         assert x_mx == tx
         assert y_mx == ty
 
     def test_non_uniform_scale(self):
         """Different x and y scale factors are applied independently."""
-        M = np.array([[2.0, 0.0, 0.0],
-                      [0.0, 3.0, 0.0]], dtype=np.float32)
+        M = np.array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0]], dtype=np.float32)
         assert m.transform_he_to_mx_point(M, 10, 10) == (20, 30)
 
     def test_general_affine_shear(self):
         """General affine with shear: result matches numpy dot product."""
-        M = np.array([[1.2, 0.1, 15.0],
-                      [0.2, 0.9, 25.0]], dtype=np.float32)
+        M = np.array([[1.2, 0.1, 15.0], [0.2, 0.9, 25.0]], dtype=np.float32)
         x0, y0 = 100, 200
         pt = np.array([x0, y0, 1.0], dtype=np.float64)
         expected = M.astype(np.float64) @ pt
@@ -139,14 +130,12 @@ class TestTransformHEToMXPoint:
 
     def test_negative_translation(self):
         """Negative translation (MX is larger / shifted) handled correctly."""
-        M = np.array([[1.0, 0.0, -50.0],
-                      [0.0, 1.0, -30.0]], dtype=np.float32)
+        M = np.array([[1.0, 0.0, -50.0], [0.0, 1.0, -30.0]], dtype=np.float32)
         assert m.transform_he_to_mx_point(M, 100, 80) == (50, 50)
 
     def test_float32_matrix_used_correctly(self):
         """float32 matrix coerced to float64 for the dot product."""
-        M = np.array([[0.999, 0.0, 0.0],
-                      [0.0, 0.999, 0.0]], dtype=np.float32)
+        M = np.array([[0.999, 0.0, 0.0], [0.0, 0.999, 0.0]], dtype=np.float32)
         x_mx, y_mx = m.transform_he_to_mx_point(M, 1000, 1000)
         assert isinstance(x_mx, int)
         assert isinstance(y_mx, int)
@@ -158,6 +147,7 @@ class TestTransformHEToMXPoint:
 # register_he_mx_affine — output contract and fallback
 # ===========================================================================
 
+
 class TestRegisterHEMXAffine:
     """Tests for the ECC-based registration function."""
 
@@ -166,8 +156,9 @@ class TestRegisterHEMXAffine:
         # Use small identical masks so ECC has a chance to converge
         mask = np.zeros((8, 8), dtype=bool)
         mask[2:6, 2:6] = True
-        M = m.register_he_mx_affine(mask, mask, ds=16, he_h=128, he_w=128,
-                                    mx_h=128, mx_w=128)
+        M = m.register_he_mx_affine(
+            mask, mask, ds=16, he_h=128, he_w=128, mx_h=128, mx_w=128
+        )
         assert M.shape == (2, 3)
         assert M.dtype == np.float32
 
@@ -177,9 +168,9 @@ class TestRegisterHEMXAffine:
         mx_mask = np.zeros((8, 8), dtype=bool)
         # he_w=256, mx_w=128 → expected fallback scale = he_w/mx_w = 2.0
         # M_full = [[1/scale, 0, 0], [0, 1/scale, 0]] = [[0.5, 0, 0], [0, 0.5, 0]]
-        M = m.register_he_mx_affine(he_mask, mx_mask, ds=16,
-                                    he_h=128, he_w=256,
-                                    mx_h=64, mx_w=128)
+        M = m.register_he_mx_affine(
+            he_mask, mx_mask, ds=16, he_h=128, he_w=256, mx_h=64, mx_w=128
+        )
         assert M.shape == (2, 3)
         # Scale is 1/2 since HE is 2x larger than MX
         assert abs(M[0, 0] - 0.5) < 0.01, f"Expected scale ~0.5, got {M[0, 0]}"
@@ -192,9 +183,9 @@ class TestRegisterHEMXAffine:
         """Fallback on same-size images produces scale=1 (identity) matrix."""
         he_mask = np.zeros((8, 8), dtype=bool)
         mx_mask = np.zeros((8, 8), dtype=bool)
-        M = m.register_he_mx_affine(he_mask, mx_mask, ds=16,
-                                    he_h=128, he_w=128,
-                                    mx_h=128, mx_w=128)
+        M = m.register_he_mx_affine(
+            he_mask, mx_mask, ds=16, he_h=128, he_w=128, mx_h=128, mx_w=128
+        )
         assert abs(M[0, 0] - 1.0) < 0.01
         assert abs(M[1, 1] - 1.0) < 0.01
 
@@ -204,8 +195,9 @@ class TestRegisterHEMXAffine:
         # 32x32 mask with a large centered blob — gives ECC enough signal
         mask = np.zeros((32, 32), dtype=bool)
         mask[8:24, 8:24] = True
-        M = m.register_he_mx_affine(mask, mask, ds=4, he_h=128, he_w=128,
-                                    mx_h=128, mx_w=128)
+        M = m.register_he_mx_affine(
+            mask, mask, ds=4, he_h=128, he_w=128, mx_h=128, mx_w=128
+        )
         assert M.shape == (2, 3)
         # Diagonal should be close to 1.0 (near-identity warp)
         assert abs(M[0, 0] - 1.0) < 0.2, f"M[0,0]={M[0,0]}: expected ~1.0"
@@ -228,14 +220,28 @@ class TestRegisterHEMXAffine:
         _write_metadata_csv(csv_path, ["CD31", "Ki67", "CD45", "PCNA"])
 
         cmd = [
-            sys.executable, "-m", "stages.patchify",
-            "--he-image", str(he_path),
-            "--multiplex-image", str(mx_path),
-            "--metadata-csv", str(csv_path),
-            "--out", str(out_dir),
-            "--patch-size", "256", "--stride", "256",
-            "--tissue-min", "0.05",
-            "--channels", "CD31", "Ki67", "CD45", "PCNA",
+            sys.executable,
+            "-m",
+            "stages.patchify",
+            "--he-image",
+            str(he_path),
+            "--multiplex-image",
+            str(mx_path),
+            "--metadata-csv",
+            str(csv_path),
+            "--out",
+            str(out_dir),
+            "--patch-size",
+            "256",
+            "--stride",
+            "256",
+            "--tissue-min",
+            "0.05",
+            "--channels",
+            "CD31",
+            "Ki67",
+            "CD45",
+            "PCNA",
             "--no-register",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
@@ -270,14 +276,33 @@ class TestRegisterHEMXAffine:
         for flag in ["--register", "--no-register"]:
             out = tmp_path / flag.lstrip("-")
             cmd = [
-                sys.executable, "-m", "stages.patchify",
-                "--he-image", str(he_path), "--multiplex-image", str(mx_path),
-                "--metadata-csv", str(csv_path), "--out", str(out),
-                "--patch-size", "256", "--stride", "256",
-                "--tissue-min", "0.05",
-                "--channels", "CD31", "Ki67", "CD45", "PCNA", flag,
+                sys.executable,
+                "-m",
+                "stages.patchify",
+                "--he-image",
+                str(he_path),
+                "--multiplex-image",
+                str(mx_path),
+                "--metadata-csv",
+                str(csv_path),
+                "--out",
+                str(out),
+                "--patch-size",
+                "256",
+                "--stride",
+                "256",
+                "--tissue-min",
+                "0.05",
+                "--channels",
+                "CD31",
+                "Ki67",
+                "CD45",
+                "PCNA",
+                flag,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT
+            )
             assert result.returncode == 0, f"Failed with {flag}:\n{result.stderr}"
             data = json.loads((out / "index.json").read_text())
             M = np.array(data["warp_matrix"])
@@ -287,6 +312,7 @@ class TestRegisterHEMXAffine:
 # ===========================================================================
 # build_mx_tissue_mask
 # ===========================================================================
+
 
 class TestBuildMXTissueMask:
     """Tests for the MX DNA-channel tissue mask used as ECC input."""
@@ -324,14 +350,16 @@ class TestBuildMXTissueMask:
     def test_uses_only_channel_zero(self):
         """Only channel 0 (DNA) matters; other channels don't affect the mask."""
         arr_dna = np.zeros((4, 64, 64), dtype=np.uint16)
-        arr_dna[0, 16:48, 16:48] = 3000   # ch0 has signal vs dark background
+        arr_dna[0, 16:48, 16:48] = 3000  # ch0 has signal vs dark background
         arr_nodna = np.zeros((4, 64, 64), dtype=np.uint16)
         arr_nodna[1:, 16:48, 16:48] = 3000  # only non-ch0 channels bright; ch0 zero
 
         mask_dna = m.build_mx_tissue_mask(zarr.array(arr_dna), "CYX", 64, 64, 8)
         mask_nodna = m.build_mx_tissue_mask(zarr.array(arr_nodna), "CYX", 64, 64, 8)
 
-        assert mask_dna.any(), "Bright ch0 with dark background should produce tissue mask"
+        assert (
+            mask_dna.any()
+        ), "Bright ch0 with dark background should produce tissue mask"
         assert not mask_nodna.any(), "All-zero ch0 should produce no-tissue mask"
 
     def test_cyx_vs_yxc_gives_same_shape(self, tmp_path):
@@ -346,8 +374,9 @@ class TestBuildMXTissueMask:
 
         # YXC via tifffile
         p = tmp_path / "yxc.ome.tif"
-        tifffile.imwrite(str(p), np.moveaxis(signal, 0, -1), ome=True,
-                         metadata={"axes": "YXC"})
+        tifffile.imwrite(
+            str(p), np.moveaxis(signal, 0, -1), ome=True, metadata={"axes": "YXC"}
+        )
         tif = tifffile.TiffFile(str(p))
         store_yxc = m.open_zarr_store(tif)
         mask_yxc = m.build_mx_tissue_mask(store_yxc, "YXC", mx_h=h, mx_w=w, ds=8)
@@ -359,6 +388,7 @@ class TestBuildMXTissueMask:
 # get_tissue_patches
 # ===========================================================================
 
+
 class TestGetTissuePatches:
     """Tests for tissue-threshold coordinate selection."""
 
@@ -366,9 +396,15 @@ class TestGetTissuePatches:
         """Full-tissue mask with tissue_min=0.0 returns every valid patch position."""
         mask = np.ones((8, 8), dtype=bool)
         # img: 512×512, patch=256, stride=256, ds=64 → 2×2 grid = 4 patches
-        coords = m.get_tissue_patches(mask, img_w=512, img_h=512,
-                                      patch_size=256, stride=256,
-                                      tissue_min=0.0, downsample=64)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=512,
+            img_h=512,
+            patch_size=256,
+            stride=256,
+            tissue_min=0.0,
+            downsample=64,
+        )
         assert len(coords) == 4
         assert (0, 0) in coords
         assert (256, 0) in coords
@@ -378,17 +414,29 @@ class TestGetTissuePatches:
     def test_no_tissue_returns_empty(self):
         """All-background mask returns empty list for any threshold > 0."""
         mask = np.zeros((8, 8), dtype=bool)
-        coords = m.get_tissue_patches(mask, img_w=512, img_h=512,
-                                      patch_size=256, stride=256,
-                                      tissue_min=0.1, downsample=64)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=512,
+            img_h=512,
+            patch_size=256,
+            stride=256,
+            tissue_min=0.1,
+            downsample=64,
+        )
         assert coords == []
 
     def test_threshold_zero_includes_background(self):
         """tissue_min=0.0 includes even background patches."""
         mask = np.zeros((8, 8), dtype=bool)
-        coords = m.get_tissue_patches(mask, img_w=512, img_h=512,
-                                      patch_size=256, stride=256,
-                                      tissue_min=0.0, downsample=64)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=512,
+            img_h=512,
+            patch_size=256,
+            stride=256,
+            tissue_min=0.0,
+            downsample=64,
+        )
         assert len(coords) == 4
 
     def test_only_top_left_patch_has_tissue(self):
@@ -396,9 +444,15 @@ class TestGetTissuePatches:
         mask = np.zeros((8, 8), dtype=bool)
         # Top-left 4×4 is tissue (corresponds to top-left patch in 512×512 at ds=64)
         mask[:4, :4] = True
-        coords = m.get_tissue_patches(mask, img_w=512, img_h=512,
-                                      patch_size=256, stride=256,
-                                      tissue_min=0.5, downsample=64)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=512,
+            img_h=512,
+            patch_size=256,
+            stride=256,
+            tissue_min=0.5,
+            downsample=64,
+        )
         assert (0, 0) in coords
         assert (256, 0) not in coords
         assert (0, 256) not in coords
@@ -407,18 +461,30 @@ class TestGetTissuePatches:
         """Patches whose right/bottom edge goes past image boundary are excluded."""
         mask = np.ones((8, 8), dtype=bool)
         # img_w=400, img_h=400, patch=256: only (0,0) fits; (256,0) would end at 512 > 400
-        coords = m.get_tissue_patches(mask, img_w=400, img_h=400,
-                                      patch_size=256, stride=256,
-                                      tissue_min=0.0, downsample=64)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=400,
+            img_h=400,
+            patch_size=256,
+            stride=256,
+            tissue_min=0.0,
+            downsample=64,
+        )
         assert len(coords) == 1
         assert coords[0] == (0, 0)
 
     def test_coords_are_x0_y0_tuples(self):
         """Returned coordinates are (x0, y0) pixel positions, not (i, j) indices."""
         mask = np.ones((4, 4), dtype=bool)
-        coords = m.get_tissue_patches(mask, img_w=256, img_h=256,
-                                      patch_size=256, stride=256,
-                                      tissue_min=0.0, downsample=64)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=256,
+            img_h=256,
+            patch_size=256,
+            stride=256,
+            tissue_min=0.0,
+            downsample=64,
+        )
         assert len(coords) == 1
         x0, y0 = coords[0]
         assert x0 == 0 and y0 == 0
@@ -428,9 +494,15 @@ class TestGetTissuePatches:
         mask = np.ones((16, 16), dtype=bool)
         # img=512×512, patch=256, stride=128: should get (0,0), (128,0), (256,0),
         #                                                   (0,128), ..., (256,256)
-        coords = m.get_tissue_patches(mask, img_w=512, img_h=512,
-                                      patch_size=256, stride=128,
-                                      tissue_min=0.0, downsample=32)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=512,
+            img_h=512,
+            patch_size=256,
+            stride=128,
+            tissue_min=0.0,
+            downsample=32,
+        )
         # x0 in {0, 128, 256}, y0 in {0, 128, 256} → 3×3 = 9 patches
         assert len(coords) == 9
         assert all(x0 + 256 <= 512 and y0 + 256 <= 512 for x0, y0 in coords)
@@ -445,15 +517,22 @@ class TestGetTissuePatches:
         mask = np.zeros((8, 8), dtype=bool)
         # Top 2 rows of the 4×4 patch region → mean = 8/16 = 0.5
         mask[:2, :4] = True
-        coords = m.get_tissue_patches(mask, img_w=512, img_h=512,
-                                      patch_size=256, stride=256,
-                                      tissue_min=1.0, downsample=64)
+        coords = m.get_tissue_patches(
+            mask,
+            img_w=512,
+            img_h=512,
+            patch_size=256,
+            stride=256,
+            tissue_min=1.0,
+            downsample=64,
+        )
         assert coords == []
 
 
 # ===========================================================================
 # read_he_patch
 # ===========================================================================
+
 
 class TestReadHEPatch:
     """Tests for windowed H&E patch reading with boundary handling."""
@@ -495,7 +574,9 @@ class TestReadHEPatch:
         patch = m.read_he_patch(store, axes, img_w, img_h, y0=0, x0=150, size=128)
         assert patch.shape == (128, 128, 3)
         # The right portion (where image ran out) should be zero
-        assert patch[:, 50:, :].sum() == 0, "Expected zero-padding in out-of-bounds region"
+        assert (
+            patch[:, 50:, :].sum() == 0
+        ), "Expected zero-padding in out-of-bounds region"
         # The left portion (valid data) should be non-zero
         assert patch[:, :50, :].sum() > 0, "Expected valid pixel data in-bounds region"
 
@@ -512,8 +593,9 @@ class TestReadHEPatch:
         arr = np.zeros((3, 128, 128), dtype=np.uint16)
         arr[:, 20:100, 20:100] = 50000  # bright region
         store = zarr.array(arr)
-        patch = m.read_he_patch(store, "CYX", img_w=128, img_h=128,
-                                y0=0, x0=0, size=128)
+        patch = m.read_he_patch(
+            store, "CYX", img_w=128, img_h=128, y0=0, x0=0, size=128
+        )
         assert patch.dtype == np.uint8
         # Bright region should map to high uint8 values
         assert patch[20:100, 20:100].max() > 200
@@ -554,6 +636,7 @@ class TestReadHEPatch:
 # read_multiplex_patch
 # ===========================================================================
 
+
 class TestReadMultiplexPatch:
     """Tests for multiplex windowed patch reading."""
 
@@ -563,9 +646,17 @@ class TestReadMultiplexPatch:
         for c in range(6):
             arr[c] = c * 100  # each channel has a distinct constant value
         store = zarr.array(arr)
-        patch = m.read_multiplex_patch(store, "CYX", img_w=128, img_h=128,
-                                       y0=0, x0=0, size_y=64, size_x=64,
-                                       channel_indices=[0, 2, 4])
+        patch = m.read_multiplex_patch(
+            store,
+            "CYX",
+            img_w=128,
+            img_h=128,
+            y0=0,
+            x0=0,
+            size_y=64,
+            size_x=64,
+            channel_indices=[0, 2, 4],
+        )
         assert patch.shape == (3, 64, 64)
         assert patch.dtype == np.uint16
         # Channel 0 maps to arr[0] = 0, channel 2 → 200, channel 4 → 400
@@ -578,9 +669,17 @@ class TestReadMultiplexPatch:
         arr = np.full((4, 128, 128), 1000, dtype=np.uint16)
         store = zarr.array(arr)
         # x0=110, size_x=64: only 18 valid columns (110..128)
-        patch = m.read_multiplex_patch(store, "CYX", img_w=128, img_h=128,
-                                       y0=0, x0=110, size_y=32, size_x=64,
-                                       channel_indices=[0, 1])
+        patch = m.read_multiplex_patch(
+            store,
+            "CYX",
+            img_w=128,
+            img_h=128,
+            y0=0,
+            x0=110,
+            size_y=32,
+            size_x=64,
+            channel_indices=[0, 1],
+        )
         assert patch.shape == (2, 32, 64)
         # Valid region (first 18 cols) should be 1000
         assert patch[:, :, :18].min() == 1000
@@ -591,9 +690,17 @@ class TestReadMultiplexPatch:
         """Patch extending past bottom image edge is zero-padded."""
         arr = np.full((4, 128, 128), 500, dtype=np.uint16)
         store = zarr.array(arr)
-        patch = m.read_multiplex_patch(store, "CYX", img_w=128, img_h=128,
-                                       y0=115, x0=0, size_y=64, size_x=32,
-                                       channel_indices=[0])
+        patch = m.read_multiplex_patch(
+            store,
+            "CYX",
+            img_w=128,
+            img_h=128,
+            y0=115,
+            x0=0,
+            size_y=64,
+            size_x=32,
+            channel_indices=[0],
+        )
         assert patch.shape == (1, 64, 32)
         assert patch[:, :13, :].min() == 500
         assert patch[:, 13:, :].sum() == 0
@@ -602,9 +709,17 @@ class TestReadMultiplexPatch:
         """Patch outside image returns all zeros."""
         arr = np.ones((4, 128, 128), dtype=np.uint16) * 999
         store = zarr.array(arr)
-        patch = m.read_multiplex_patch(store, "CYX", img_w=128, img_h=128,
-                                       y0=200, x0=200, size_y=64, size_x=64,
-                                       channel_indices=[0, 1])
+        patch = m.read_multiplex_patch(
+            store,
+            "CYX",
+            img_w=128,
+            img_h=128,
+            y0=200,
+            x0=200,
+            size_y=64,
+            size_x=64,
+            channel_indices=[0, 1],
+        )
         assert patch.shape == (2, 64, 64)
         assert patch.sum() == 0
 
@@ -613,9 +728,17 @@ class TestReadMultiplexPatch:
         arr = np.zeros((4, 64, 64), dtype=np.uint16)
         arr[2] = 777
         store = zarr.array(arr)
-        patch = m.read_multiplex_patch(store, "CYX", img_w=64, img_h=64,
-                                       y0=0, x0=0, size_y=32, size_x=32,
-                                       channel_indices=[2])
+        patch = m.read_multiplex_patch(
+            store,
+            "CYX",
+            img_w=64,
+            img_h=64,
+            y0=0,
+            x0=0,
+            size_y=32,
+            size_x=32,
+            channel_indices=[2],
+        )
         assert patch.shape == (1, 32, 32)
         assert patch[0].max() == 777
 
@@ -627,12 +750,20 @@ class TestReadMultiplexPatch:
         """
         h, w, c = 128, 128, 4
         arr = np.zeros((h, w, c), dtype=np.uint16)
-        arr[:, :, 1] = 300   # channel 1
-        arr[:, :, 3] = 700   # channel 3
+        arr[:, :, 1] = 300  # channel 1
+        arr[:, :, 3] = 700  # channel 3
         store = zarr.array(arr)  # shape (128, 128, 4) — true YXC layout
-        patch = m.read_multiplex_patch(store, "YXC", img_w=w, img_h=h,
-                                       y0=0, x0=0, size_y=64, size_x=64,
-                                       channel_indices=[1, 3])
+        patch = m.read_multiplex_patch(
+            store,
+            "YXC",
+            img_w=w,
+            img_h=h,
+            y0=0,
+            x0=0,
+            size_y=64,
+            size_x=64,
+            channel_indices=[1, 3],
+        )
         assert patch.shape == (2, 64, 64)
         assert patch[0].max() == 300
         assert patch[1].max() == 700
@@ -641,9 +772,17 @@ class TestReadMultiplexPatch:
         """size_y != size_x is supported; output shape matches requested dimensions."""
         arr = np.zeros((4, 256, 512), dtype=np.uint16)
         store = zarr.array(arr)
-        patch = m.read_multiplex_patch(store, "CYX", img_w=512, img_h=256,
-                                       y0=0, x0=0, size_y=100, size_x=200,
-                                       channel_indices=[0, 1])
+        patch = m.read_multiplex_patch(
+            store,
+            "CYX",
+            img_w=512,
+            img_h=256,
+            y0=0,
+            x0=0,
+            size_y=100,
+            size_x=200,
+            channel_indices=[0, 1],
+        )
         assert patch.shape == (2, 100, 200)
 
     def test_channel_values_preserved_exactly(self):
@@ -652,9 +791,17 @@ class TestReadMultiplexPatch:
         arr[0, 10:20, 10:20] = 12345
         arr[1, 30:40, 30:40] = 65535
         store = zarr.array(arr)
-        patch = m.read_multiplex_patch(store, "CYX", img_w=64, img_h=64,
-                                       y0=0, x0=0, size_y=64, size_x=64,
-                                       channel_indices=[0, 1])
+        patch = m.read_multiplex_patch(
+            store,
+            "CYX",
+            img_w=64,
+            img_h=64,
+            y0=0,
+            x0=0,
+            size_y=64,
+            size_x=64,
+            channel_indices=[0, 1],
+        )
         assert patch[0, 10:20, 10:20].min() == 12345
         assert patch[1, 30:40, 30:40].max() == 65535
 
@@ -662,6 +809,7 @@ class TestReadMultiplexPatch:
 # ===========================================================================
 # End-to-end: H&E coord → MX coord mapping through warp_matrix
 # ===========================================================================
+
 
 class TestEndToEndCoordMapping:
     """Integration test: warp_matrix from index.json correctly maps H&E → MX coords."""
@@ -687,11 +835,28 @@ class TestEndToEndCoordMapping:
         _write_metadata_csv(csv_path, ["CD31", "Ki67", "CD45", "PCNA"])
 
         cmd = [
-            sys.executable, "-m", "stages.patchify",
-            "--he-image", str(he_path), "--multiplex-image", str(mx_path),
-            "--metadata-csv", str(csv_path), "--out", str(out_dir),
-            "--patch-size", "256", "--stride", "256", "--tissue-min", "0.05",
-            "--channels", "CD31", "Ki67", "CD45", "PCNA",
+            sys.executable,
+            "-m",
+            "stages.patchify",
+            "--he-image",
+            str(he_path),
+            "--multiplex-image",
+            str(mx_path),
+            "--metadata-csv",
+            str(csv_path),
+            "--out",
+            str(out_dir),
+            "--patch-size",
+            "256",
+            "--stride",
+            "256",
+            "--tissue-min",
+            "0.05",
+            "--channels",
+            "CD31",
+            "Ki67",
+            "CD45",
+            "PCNA",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
         assert result.returncode == 0, result.stderr
@@ -732,18 +897,36 @@ class TestEndToEndCoordMapping:
 
         # Mock mpp so scale = 0.5 (HE 0.5 µm/px, MX 1.0 µm/px)
         import stages.patchify as pm
+
         calls = []
+
         def mock_mpp(tif):
             calls.append(1)
             return (0.5, 0.5) if len(calls) == 1 else (1.0, 1.0)
+
         monkeypatch.setattr(pm, "get_ome_mpp", mock_mpp)
 
         sys.argv = [
             "stages.patchify",
-            "--he-image", str(he_path), "--multiplex-image", str(mx_path),
-            "--metadata-csv", str(csv_path), "--out", str(out_dir),
-            "--patch-size", "256", "--stride", "256", "--tissue-min", "0.05",
-            "--channels", "CD31", "Ki67", "CD45", "PCNA",
+            "--he-image",
+            str(he_path),
+            "--multiplex-image",
+            str(mx_path),
+            "--metadata-csv",
+            str(csv_path),
+            "--out",
+            str(out_dir),
+            "--patch-size",
+            "256",
+            "--stride",
+            "256",
+            "--tissue-min",
+            "0.05",
+            "--channels",
+            "CD31",
+            "Ki67",
+            "CD45",
+            "PCNA",
             "--no-register",
         ]
         pm.main()

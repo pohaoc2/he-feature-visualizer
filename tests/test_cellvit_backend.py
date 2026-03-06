@@ -32,4 +32,3 @@ def test_cellvit_noop_writes_transparent_masks(tmp_path):
     rgba = np.array(im)
     assert rgba.shape == (16, 16, 4)
     assert int(rgba[..., 3].max()) == 0
-

@@ -1,0 +1,7 @@
+[MASTER]
+# Allow pylint to load cv2 C-extension for proper member resolution.
+extension-pkg-allow-list=cv2
+
+[TYPECHECK]
+# cv2 members are defined in C; pylint cannot introspect them at analysis time.
+generated-members=cv2.*

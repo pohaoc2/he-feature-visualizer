@@ -2,7 +2,6 @@
 
 [![Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml/badge.svg)](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer/branch/main/graph/badge.svg)](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 
 A pipeline for generating spatially-resolved, multi-channel feature maps from co-registered H&E and multiplex immunofluorescence (mIF) whole-slide images.
@@ -48,6 +47,7 @@ Local machine                          Google Colab (GPU)
 Stage 1: python -m stages.patchify
   → processed/he/*.png
   → processed/multiplex/*.npy
+  → processed/masks/*.npy   (optional, if --mask-image given)
   → processed/index.json
          │
          │ upload patches (aws s3 sync)
@@ -101,6 +101,7 @@ python -m stages.patchify \
   --overview-downsample 64 \
   --vis-channels 0 10 20
   # add --no-register to skip ECC and use mpp-ratio scaling only
+  # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed/masks/
 ```
 
 ### Registration
@@ -115,7 +116,8 @@ The resulting 2×3 `warp_matrix` (H&E full-res → MX full-res) is stored in `in
 | --------------------------- | ----------------------------------------------------- | --------------- |
 | `processed/he/`             | RGB PNG patches                                       | Stage 2 (Colab) |
 | `processed/multiplex/`      | Per-channel `.npy` arrays (uint16)                    | Stage 4         |
-| `processed/index.json`      | Patch coordinate index + `warp_matrix` + `registration` flag | All stages      |
+| `processed/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given | Downstream      |
+| `processed/index.json`      | Patch coordinate index + `warp_matrix` + `registration` + `has_mask` per patch | All stages      |
 | `processed/vis_patches.jpg` | H&E + multiplex overview with patch grid              | QC              |
 
 Only `processed/he/` needs to be uploaded to Colab for Stage 2.
@@ -362,14 +364,20 @@ Coverage is reported automatically on every CI run via [Codecov](https://codecov
 
 ## Code Style & Linting
 
-The project uses [Ruff](https://docs.astral.sh/ruff/) for linting. Ruff runs automatically in CI on every push and pull request.
+The project uses [Black](https://black.readthedocs.io/) for formatting and [Pylint](https://pylint.readthedocs.io/) for linting. Both run in CI on every push and pull request.
 
 ```bash
-# Check for lint errors
-ruff check stages/ utils/ tools/ tests/
+# Format check (CI runs this)
+black --check stages/ utils/ tools/ tests/
 
-# Auto-fix safe issues
-ruff check --fix stages/ utils/ tools/ tests/
+# Format code in place
+black stages/ utils/ tools/ tests/
+
+# Lint (CI runs errors-only)
+pylint stages/ utils/ tools/ --errors-only
+
+# Full lint report
+pylint stages/ utils/ tools/
 ```
 
-Ruff is configured to enforce PEP 8 style, flag unused imports, and catch common Python anti-patterns. No separate `pyproject.toml` or `.ruff.toml` is required — the defaults cover the project's conventions.
+Black enforces a consistent style (88‑char line length, no manual formatting). Pylint catches logical errors, unused imports, and common bugs; CI runs with `--errors-only` so only E/F-level issues fail the build.

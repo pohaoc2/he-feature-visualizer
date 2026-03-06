@@ -14,6 +14,7 @@ import json
 import logging
 import pathlib
 import warnings
+from collections import Counter
 
 import cv2
 import numpy as np
@@ -26,31 +27,32 @@ from PIL import Image
 # ---------------------------------------------------------------------------
 
 CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "tumor":   (220,  50,  50, 200),   # red
-    "immune":  ( 50, 100, 220, 200),   # blue
-    "stromal": ( 50, 180,  50, 200),   # green
-    "other":   (150, 150, 150, 150),   # gray
+    "tumor": (220, 50, 50, 200),  # red
+    "immune": (50, 100, 220, 200),  # blue
+    "stromal": (50, 180, 50, 200),  # green
+    "other": (150, 150, 150, 150),  # gray
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferating": (  0, 255,   0, 200),   # green   — Ki67/PCNA high
-    "emt":           (255, 165,   0, 200),   # orange  — Vimentin high + E-cad low
-    "apoptotic":     (139,   0, 139, 200),   # purple  — CellViT Dead (type 4)
-    "quiescent":     (100, 149, 237, 200),   # blue    — Keratin+ resting tumor
-    "healthy":       (144, 238, 144, 200),   # lime    — E-cad high, non-tumor, non-dividing
-    "other":         (  80,  80,  80, 150),   # dark gray (visible on black background)
+    "proliferating": (0, 255, 0, 200),  # green   — Ki67/PCNA high
+    "emt": (255, 165, 0, 200),  # orange  — Vimentin high + E-cad low
+    "apoptotic": (139, 0, 139, 200),  # purple  — CellViT Dead (type 4)
+    "quiescent": (100, 149, 237, 200),  # blue    — Keratin+ resting tumor
+    "healthy": (144, 238, 144, 200),  # lime    — E-cad high, non-tumor, non-dividing
+    "other": (80, 80, 80, 150),  # dark gray (visible on black background)
 }
 
 # ---------------------------------------------------------------------------
 # Marker lists
 # ---------------------------------------------------------------------------
 
-TYPE_MARKERS  = ["Keratin", "CD45", "aSMA", "CD31"]
+TYPE_MARKERS = ["Keratin", "CD45", "aSMA", "CD31"]
 STATE_MARKERS = ["Ki67", "PCNA", "Vimentin", "Ecadherin"]
 
 # ---------------------------------------------------------------------------
 # Module-level functions
 # ---------------------------------------------------------------------------
+
 
 def build_csv_index(df: pd.DataFrame, x_col: str, y_col: str) -> scipy.spatial.KDTree:
     """Build a KDTree from the cell coordinate columns of a DataFrame (global pixel space)."""
@@ -68,20 +70,37 @@ def assign_type(row: pd.Series, thresholds: dict[str, float]) -> str:
     multiplex_layers.py, not a cell type — endothelial cells are classified as stromal.
     Missing markers treated as 0. Never raises."""
     try:
-        keratin = float(row.get("Keratin", 0) if hasattr(row, "get") else getattr(row, "Keratin", 0) if hasattr(row, "Keratin") else 0)
-        cd45    = float(row.get("CD45",    0) if hasattr(row, "get") else getattr(row, "CD45",    0) if hasattr(row, "CD45")    else 0)
-        asma    = float(row.get("aSMA",    0) if hasattr(row, "get") else getattr(row, "aSMA",    0) if hasattr(row, "aSMA")    else 0)
-        cd31    = float(row.get("CD31",    0) if hasattr(row, "get") else getattr(row, "CD31",    0) if hasattr(row, "CD31")    else 0)
+        keratin = float(
+            row.get("Keratin", 0)
+            if hasattr(row, "get")
+            else getattr(row, "Keratin", 0) if hasattr(row, "Keratin") else 0
+        )
+        cd45 = float(
+            row.get("CD45", 0)
+            if hasattr(row, "get")
+            else getattr(row, "CD45", 0) if hasattr(row, "CD45") else 0
+        )
+        asma = float(
+            row.get("aSMA", 0)
+            if hasattr(row, "get")
+            else getattr(row, "aSMA", 0) if hasattr(row, "aSMA") else 0
+        )
+        cd31 = float(
+            row.get("CD31", 0)
+            if hasattr(row, "get")
+            else getattr(row, "CD31", 0) if hasattr(row, "CD31") else 0
+        )
     except Exception:
         return "other"
 
     try:
         if keratin >= thresholds.get("Keratin", float("inf")):
             return "tumor"
-        if cd45    >= thresholds.get("CD45",    float("inf")):
+        if cd45 >= thresholds.get("CD45", float("inf")):
             return "immune"
-        if (asma >= thresholds.get("aSMA", float("inf")) or
-                cd31 >= thresholds.get("CD31", float("inf"))):
+        if asma >= thresholds.get("aSMA", float("inf")) or cd31 >= thresholds.get(
+            "CD31", float("inf")
+        ):
             return "stromal"
     except Exception:
         pass
@@ -89,7 +108,9 @@ def assign_type(row: pd.Series, thresholds: dict[str, float]) -> str:
     return "other"
 
 
-def assign_state(row: pd.Series, thresholds: dict[str, float], type_cellvit: int = 0) -> str:
+def assign_state(
+    row: pd.Series, thresholds: dict[str, float], type_cellvit: int = 0
+) -> str:
     """Assign cell state from marker intensities and CellViT morphology type.
 
     Priority order:
@@ -109,38 +130,44 @@ def assign_state(row: pd.Series, thresholds: dict[str, float], type_cellvit: int
 
     def _get(key):
         try:
-            return float(row.get(key, 0) if hasattr(row, "get") else getattr(row, key, 0))
+            return float(
+                row.get(key, 0) if hasattr(row, "get") else getattr(row, key, 0)
+            )
         except Exception:
             return 0.0
 
     try:
-        ki67     = _get("Ki67")
-        pcna     = _get("PCNA")
+        ki67 = _get("Ki67")
+        pcna = _get("PCNA")
         vimentin = _get("Vimentin")
-        ecad     = _get("Ecadherin")
-        keratin  = _get("Keratin")
+        ecad = _get("Ecadherin")
+        keratin = _get("Keratin")
     except Exception:
         return "other"
 
     try:
         # 2. Proliferating: active division markers
-        if (ki67 >= thresholds.get("Ki67", float("inf")) or
-                pcna >= thresholds.get("PCNA", float("inf"))):
+        if ki67 >= thresholds.get("Ki67", float("inf")) or pcna >= thresholds.get(
+            "PCNA", float("inf")
+        ):
             return "proliferating"
 
         # 3. EMT: migratory — Vimentin high + E-cadherin lost
-        if (vimentin >= thresholds.get("Vimentin", float("inf")) and
-                ecad < thresholds.get("Ecadherin", float("-inf"))):
+        if vimentin >= thresholds.get(
+            "Vimentin", float("inf")
+        ) and ecad < thresholds.get("Ecadherin", float("-inf")):
             return "emt"
 
         # 4. Quiescent tumor: Keratin+ resting cell with intact epithelial junctions
-        if (keratin >= thresholds.get("Keratin", float("inf")) and
-                ecad >= thresholds.get("Ecadherin_high", float("inf"))):
+        if keratin >= thresholds.get(
+            "Keratin", float("inf")
+        ) and ecad >= thresholds.get("Ecadherin_high", float("inf")):
             return "quiescent"
 
         # 5. Healthy epithelial: E-cad high, no tumor marker, not dividing
-        if (ecad >= thresholds.get("Ecadherin_high", float("inf")) and
-                keratin < thresholds.get("Keratin", float("inf"))):
+        if ecad >= thresholds.get(
+            "Ecadherin_high", float("inf")
+        ) and keratin < thresholds.get("Keratin", float("inf")):
             return "healthy"
 
     except Exception:
@@ -184,13 +211,13 @@ def match_cells(
             if dist <= max_dist:
                 matched_row = df.iloc[idx]
                 type_cellvit = int(cell.get("type_cellvit", 0))
-                cell["cell_type"]  = assign_type(matched_row, thresholds)
+                cell["cell_type"] = assign_type(matched_row, thresholds)
                 cell["cell_state"] = assign_state(matched_row, thresholds, type_cellvit)
             else:
-                cell["cell_type"]  = "other"
+                cell["cell_type"] = "other"
                 cell["cell_state"] = "other"
         except Exception:
-            cell["cell_type"]  = "other"
+            cell["cell_type"] = "other"
             cell["cell_state"] = "other"
 
     return cells
@@ -215,10 +242,10 @@ def rasterize_cells(
             continue
 
         label = cell.get(color_key, "other")
-        rgba  = color_map.get(label, color_map.get("other", (150, 150, 150, 150)))
+        rgba = color_map.get(label, color_map.get("other", (150, 150, 150, 150)))
 
-        pts = np.array(contour, dtype=np.int32).reshape(-1, 1, 2)
-        cv2.fillPoly(canvas, [pts], color=rgba)
+        pts = np.array(contour, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(canvas, [pts], rgba)
 
     return canvas
 
@@ -241,18 +268,26 @@ def compute_thresholds(df: pd.DataFrame) -> dict[str, float]:
         if marker in df.columns:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                thresholds[marker] = float(np.nanpercentile(df[marker].to_numpy(dtype=float), 95))
+                thresholds[marker] = float(
+                    np.nanpercentile(df[marker].to_numpy(dtype=float), 95)
+                )
         else:
-            logging.warning("Marker '%s' not found in CSV; threshold set to inf.", marker)
+            logging.warning(
+                "Marker '%s' not found in CSV; threshold set to inf.", marker
+            )
             thresholds[marker] = float("inf")
 
     for marker in ["Ki67", "PCNA", "Vimentin"]:
         if marker in df.columns:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                thresholds[marker] = float(np.nanpercentile(df[marker].to_numpy(dtype=float), 75))
+                thresholds[marker] = float(
+                    np.nanpercentile(df[marker].to_numpy(dtype=float), 75)
+                )
         else:
-            logging.warning("Marker '%s' not found in CSV; threshold set to inf.", marker)
+            logging.warning(
+                "Marker '%s' not found in CSV; threshold set to inf.", marker
+            )
             thresholds[marker] = float("inf")
 
     # Ecadherin: 25th pct = low (EMT — clearly lost); 50th pct = high (intact junctions)
@@ -260,11 +295,13 @@ def compute_thresholds(df: pd.DataFrame) -> dict[str, float]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             vals = df["Ecadherin"].to_numpy(dtype=float)
-            thresholds["Ecadherin"]      = float(np.nanpercentile(vals, 25))
+            thresholds["Ecadherin"] = float(np.nanpercentile(vals, 25))
             thresholds["Ecadherin_high"] = float(np.nanpercentile(vals, 50))
     else:
-        logging.warning("Marker 'Ecadherin' not found in CSV; thresholds set to extremes.")
-        thresholds["Ecadherin"]      = float("-inf")
+        logging.warning(
+            "Marker 'Ecadherin' not found in CSV; thresholds set to extremes."
+        )
+        thresholds["Ecadherin"] = float("-inf")
         thresholds["Ecadherin_high"] = float("inf")
 
     return thresholds
@@ -273,6 +310,7 @@ def compute_thresholds(df: pd.DataFrame) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 # CLI / main
 # ---------------------------------------------------------------------------
+
 
 def _resolve_coord_cols(df: pd.DataFrame) -> tuple[str, str]:
     """Return (x_col, y_col): prefer Xt/Yt, fallback to X/Y."""
@@ -297,28 +335,46 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Stage 3: assign cell types/states and rasterize contours."
     )
-    parser.add_argument("--cellvit-dir",  required=True,          help="Directory of {i}_{j}.json files from CellViT.")
-    parser.add_argument("--features-csv", required=True,          help="CRC02.csv with Xt, Yt, marker columns.")
-    parser.add_argument("--index",        required=True,          help="processed/index.json (patch grid).")
-    parser.add_argument("--out",          default="processed/",   help="Output directory (default: processed/).")
-    parser.add_argument("--max-dist",     type=float, default=15.0,
-                        help="Max nearest-neighbor distance in CSV pixel units (default: 15.0).")
-    parser.add_argument("--coord-scale",  type=float, default=1.0,
-                        help="Scale factor applied to H&E global coordinates before KDTree query. "
-                             "Set to he_mpp/csv_mpp when H&E and CSV use different pixel spacings "
-                             "(e.g. 0.5 when H&E is 0.325 µm/px and CSV is in 20x/0.650 µm/px space).")
+    parser.add_argument(
+        "--cellvit-dir",
+        required=True,
+        help="Directory of {i}_{j}.json files from CellViT.",
+    )
+    parser.add_argument(
+        "--features-csv", required=True, help="CRC02.csv with Xt, Yt, marker columns."
+    )
+    parser.add_argument(
+        "--index", required=True, help="processed/index.json (patch grid)."
+    )
+    parser.add_argument(
+        "--out", default="processed/", help="Output directory (default: processed/)."
+    )
+    parser.add_argument(
+        "--max-dist",
+        type=float,
+        default=15.0,
+        help="Max nearest-neighbor distance in CSV pixel units (default: 15.0).",
+    )
+    parser.add_argument(
+        "--coord-scale",
+        type=float,
+        default=1.0,
+        help="Scale factor applied to H&E global coordinates before KDTree query. "
+        "Set to he_mpp/csv_mpp when H&E and CSV use different pixel spacings "
+        "(e.g. 0.5 when H&E is 0.325 µm/px and CSV is in 20x/0.650 µm/px space).",
+    )
     args = parser.parse_args()
 
-    cellvit_dir  = pathlib.Path(args.cellvit_dir)
+    cellvit_dir = pathlib.Path(args.cellvit_dir)
     features_csv = pathlib.Path(args.features_csv)
-    index_path   = pathlib.Path(args.index)
-    out_dir      = pathlib.Path(args.out)
-    max_dist     = args.max_dist
-    coord_scale  = args.coord_scale
+    index_path = pathlib.Path(args.index)
+    out_dir = pathlib.Path(args.out)
+    max_dist = args.max_dist
+    coord_scale = args.coord_scale
     log.info("Coord scale: %.4f (H&E px → CSV px)", coord_scale)
 
     # Output subdirectories
-    types_dir  = out_dir / "cell_types"
+    types_dir = out_dir / "cell_types"
     states_dir = out_dir / "cell_states"
     types_dir.mkdir(parents=True, exist_ok=True)
     states_dir.mkdir(parents=True, exist_ok=True)
@@ -346,7 +402,7 @@ def main() -> None:
     # 2. Load index.json
     # ------------------------------------------------------------------
     log.info("Loading patch index: %s", index_path)
-    with index_path.open() as fh:
+    with index_path.open(encoding="utf-8") as fh:
         index = json.load(fh)
 
     patches = index.get("patches", [])
@@ -355,14 +411,13 @@ def main() -> None:
     # ------------------------------------------------------------------
     # 3–6. Iterate patches
     # ------------------------------------------------------------------
-    patch_size  = index.get("patch_size", 256)
-    processed   = 0
-    skipped     = 0
+    patch_size = index.get("patch_size", 256)
+    processed = 0
+    skipped = 0
     total_cells = 0
 
-    from collections import defaultdict, Counter
     per_patch_summary: dict[str, dict] = {}
-    global_type_counts: Counter  = Counter()
+    global_type_counts: Counter = Counter()
     global_state_counts: Counter = Counter()
 
     for patch_meta in patches:
@@ -380,43 +435,48 @@ def main() -> None:
             cells: list[dict] = json.load(fh).get("cells", [])
 
         # 4. Match + assign
-        cells = match_cells(cells, kdtree, df, thresholds, x0, y0, max_dist, coord_scale)
+        cells = match_cells(
+            cells, kdtree, df, thresholds, x0, y0, max_dist, coord_scale
+        )
         total_cells += len(cells)
 
         # 5. Rasterize
-        type_img  = rasterize_cells(cells, patch_size, "cell_type",  CELL_TYPE_COLORS)
+        type_img = rasterize_cells(cells, patch_size, "cell_type", CELL_TYPE_COLORS)
         state_img = rasterize_cells(cells, patch_size, "cell_state", CELL_STATE_COLORS)
 
         # 6. Save PNGs
-        Image.fromarray(type_img,  mode="RGBA").save(types_dir  / f"{patch_id}.png")
+        Image.fromarray(type_img, mode="RGBA").save(types_dir / f"{patch_id}.png")
         Image.fromarray(state_img, mode="RGBA").save(states_dir / f"{patch_id}.png")
 
         # 7. Accumulate summary counts
-        type_counts  = Counter(c.get("cell_type",  "other") for c in cells)
+        type_counts = Counter(c.get("cell_type", "other") for c in cells)
         state_counts = Counter(c.get("cell_state", "other") for c in cells)
         per_patch_summary[patch_id] = {
             "n_cells": len(cells),
-            "x0": x0, "y0": y0,
-            "cell_types":  dict(type_counts),
+            "x0": x0,
+            "y0": y0,
+            "cell_types": dict(type_counts),
             "cell_states": dict(state_counts),
         }
-        global_type_counts  += type_counts
+        global_type_counts += type_counts
         global_state_counts += state_counts
 
         processed += 1
         if processed % 50 == 0:
-            log.info("  Progress: %d patches processed, %d skipped …", processed, skipped)
+            log.info(
+                "  Progress: %d patches processed, %d skipped …", processed, skipped
+            )
 
     # ------------------------------------------------------------------
     # 8. Save cell_summary.json
     # ------------------------------------------------------------------
     summary = {
-        "n_patches":   processed,
-        "n_cells":     total_cells,
+        "n_patches": processed,
+        "n_cells": total_cells,
         "coord_scale": coord_scale,
-        "cell_types":  dict(global_type_counts),
+        "cell_types": dict(global_type_counts),
         "cell_states": dict(global_state_counts),
-        "per_patch":   per_patch_summary,
+        "per_patch": per_patch_summary,
     }
     summary_path = out_dir / "cell_summary.json"
     with summary_path.open("w") as fh:

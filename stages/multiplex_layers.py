@@ -57,10 +57,10 @@ from PIL import Image
 from utils.channels import resolve_channel_indices
 from utils.normalize import percentile_norm
 
-
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def load_multiplex_patch(npy_path: str) -> np.ndarray:
     """Load and return (C, H, W) uint16 array from .npy file."""
@@ -85,7 +85,6 @@ def get_channel_index(channel_names: list[str], target: str) -> int:
 def extract_channel(patch: np.ndarray, idx: int) -> np.ndarray:
     """Return patch[idx] as (H, W) uint16 array."""
     return patch[idx]
-
 
 
 def binarize_otsu(arr: np.ndarray) -> np.ndarray:
@@ -120,8 +119,9 @@ def apply_colormap(arr_01: np.ndarray, colormap: str) -> np.ndarray:
     return (rgba_float * 255).clip(0, 255).astype(np.uint8)
 
 
-def make_vasculature_overlay(cd31_mask: np.ndarray,
-                             color: tuple = (255, 60, 0, 200)) -> np.ndarray:
+def make_vasculature_overlay(
+    cd31_mask: np.ndarray, color: tuple = (255, 60, 0, 200)
+) -> np.ndarray:
     """Binary bool mask → (H, W, 4) RGBA uint8.
 
     True pixels → color tuple; False → (0, 0, 0, 0).
@@ -168,10 +168,10 @@ def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray) -> np.ndarray:
     return apply_colormap(metabolic, "hot")
 
 
-
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     logging.basicConfig(
@@ -188,33 +188,39 @@ def main() -> None:
         )
     )
     parser.add_argument(
-        "--multiplex-dir", required=True,
+        "--multiplex-dir",
+        required=True,
         help="Directory containing {i}_{j}.npy multiplex patch files.",
     )
     parser.add_argument(
-        "--index", required=True,
+        "--index",
+        required=True,
         help="Path to processed/index.json (patch grid manifest).",
     )
     parser.add_argument(
-        "--metadata-csv", required=True,
+        "--metadata-csv",
+        required=True,
         help="Channel metadata CSV with 'Channel ID' and 'Target Name' columns.",
     )
     parser.add_argument(
-        "--out", default="processed/",
+        "--out",
+        default="processed/",
         help="Output directory (default: processed/).",
     )
     parser.add_argument(
-        "--channels", nargs="+", default=["CD31", "Ki67", "PCNA"],
+        "--channels",
+        nargs="+",
+        default=["CD31", "Ki67", "PCNA"],
         metavar="NAME",
         help="Multiplex channel names present in the .npy files, in order "
-             "(must match --channels passed to patchify.py). "
-             "Default: CD31 Ki67 PCNA",
+        "(must match --channels passed to patchify.py). "
+        "Default: CD31 Ki67 PCNA",
     )
     args = parser.parse_args()
 
     multiplex_dir = pathlib.Path(args.multiplex_dir)
-    index_path    = pathlib.Path(args.index)
-    out_dir       = pathlib.Path(args.out)
+    index_path = pathlib.Path(args.index)
+    out_dir = pathlib.Path(args.out)
 
     # ------------------------------------------------------------------
     # 1. Validate channel names against metadata CSV
@@ -231,21 +237,23 @@ def main() -> None:
     pcna_idx = get_channel_index(args.channels, "PCNA")
     log.info(
         "  Channel indices — CD31: %d, Ki67: %d, PCNA: %d",
-        cd31_idx, ki67_idx, pcna_idx,
+        cd31_idx,
+        ki67_idx,
+        pcna_idx,
     )
 
     # ------------------------------------------------------------------
     # 3. Load index.json, prepare output directories
     # ------------------------------------------------------------------
     log.info("Loading patch index: %s", index_path)
-    with index_path.open() as fh:
+    with index_path.open(encoding="utf-8") as fh:
         index = json.load(fh)
 
     patches = index.get("patches", [])
     log.info("  %d patches in index.", len(patches))
 
-    vasc_dir    = out_dir / "vasculature"
-    oxygen_dir  = out_dir / "oxygen"
+    vasc_dir = out_dir / "vasculature"
+    oxygen_dir = out_dir / "oxygen"
     glucose_dir = out_dir / "glucose"
     for d in (vasc_dir, oxygen_dir, glucose_dir):
         d.mkdir(parents=True, exist_ok=True)
@@ -254,7 +262,7 @@ def main() -> None:
     # 4–6. Process each patch
     # ------------------------------------------------------------------
     processed = 0
-    skipped   = 0
+    skipped = 0
 
     for patch_meta in patches:
         x0 = patch_meta["x0"]
@@ -287,15 +295,16 @@ def main() -> None:
         glucose_rgba = make_glucose_map(ki67_raw, pcna_raw)
 
         # f. Save PNGs
-        Image.fromarray(vasc_rgba,    "RGBA").save(vasc_dir    / f"{patch_id}.png")
-        Image.fromarray(oxygen_rgba,  "RGBA").save(oxygen_dir  / f"{patch_id}.png")
+        Image.fromarray(vasc_rgba, "RGBA").save(vasc_dir / f"{patch_id}.png")
+        Image.fromarray(oxygen_rgba, "RGBA").save(oxygen_dir / f"{patch_id}.png")
         Image.fromarray(glucose_rgba, "RGBA").save(glucose_dir / f"{patch_id}.png")
 
         processed += 1
         if processed % 50 == 0:
             log.info(
                 "  Progress: %d patches processed, %d skipped …",
-                processed, skipped,
+                processed,
+                skipped,
             )
 
     # ------------------------------------------------------------------

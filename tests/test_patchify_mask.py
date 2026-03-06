@@ -27,6 +27,7 @@ _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_ome(path: Path, arr: np.ndarray, axes: str) -> None:
     tifffile.imwrite(str(path), arr, ome=True, metadata={"axes": axes})
 
@@ -54,6 +55,7 @@ def _mx_array(h: int = 512, w: int = 512, c: int = 4) -> np.ndarray:
 # read_mask_patch — unit tests
 # ===========================================================================
 
+
 class TestReadMaskPatch:
     """Unit tests for read_mask_patch."""
 
@@ -62,8 +64,9 @@ class TestReadMaskPatch:
         arr = np.zeros((256, 256), dtype=np.uint32)
         arr[50:100, 50:100] = 42
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=256, img_h=256,
-                                  y0=0, x0=0, size=128)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=256, img_h=256, y0=0, x0=0, size=128
+        )
         assert patch.shape == (128, 128)
         assert patch.dtype == np.uint32
         assert patch[50:100, 50:100].min() == 42
@@ -73,8 +76,9 @@ class TestReadMaskPatch:
         arr = np.zeros((1, 256, 256), dtype=np.uint16)
         arr[0, 10:20, 10:20] = 7
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "CYX", img_w=256, img_h=256,
-                                  y0=0, x0=0, size=128)
+        patch = m.read_mask_patch(
+            store, "CYX", img_w=256, img_h=256, y0=0, x0=0, size=128
+        )
         assert patch.shape == (128, 128)
         assert patch.dtype == np.uint32
         assert patch[10:20, 10:20].min() == 7
@@ -84,8 +88,9 @@ class TestReadMaskPatch:
         arr = np.zeros((128, 128), dtype=np.uint8)
         arr[30:60, 30:60] = 255
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=128, img_h=128,
-                                  y0=0, x0=0, size=128)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=128, img_h=128, y0=0, x0=0, size=128
+        )
         assert patch.dtype == np.uint32
         assert patch[30:60, 30:60].min() == 255
 
@@ -94,19 +99,21 @@ class TestReadMaskPatch:
         arr = np.zeros((128, 128), dtype=np.uint16)
         arr[10:20, 10:20] = 1000
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=128, img_h=128,
-                                  y0=0, x0=0, size=64)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=128, img_h=128, y0=0, x0=0, size=64
+        )
         assert patch.dtype == np.uint32
         assert patch[10:20, 10:20].min() == 1000
 
     def test_float_mask_rounded_and_cast(self):
         """Float mask values are rounded before casting to uint32."""
         arr = np.zeros((128, 128), dtype=np.float32)
-        arr[5:10, 5:10] = 3.7   # should round to 4
+        arr[5:10, 5:10] = 3.7  # should round to 4
         arr[20:30, 20:30] = 1.4  # should round to 1
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=128, img_h=128,
-                                  y0=0, x0=0, size=64)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=128, img_h=128, y0=0, x0=0, size=64
+        )
         assert patch.dtype == np.uint32
         assert patch[5:10, 5:10].min() == 4
         assert patch[20:30, 20:30].min() == 1
@@ -119,8 +126,9 @@ class TestReadMaskPatch:
         arr[20:25, :5] = 100
         arr[30:35, :5] = 50000
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=256, img_h=256,
-                                  y0=0, x0=0, size=256)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=256, img_h=256, y0=0, x0=0, size=256
+        )
         assert patch[10:15, :5].min() == 1
         assert patch[20:25, :5].min() == 100
         assert patch[30:35, :5].min() == 50000
@@ -130,8 +138,9 @@ class TestReadMaskPatch:
         arr = np.full((128, 128), 5, dtype=np.uint32)
         store = zarr.array(arr)
         # x0=110, size=64: only 18 valid columns
-        patch = m.read_mask_patch(store, "YX", img_w=128, img_h=128,
-                                  y0=0, x0=110, size=64)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=128, img_h=128, y0=0, x0=110, size=64
+        )
         assert patch.shape == (64, 64)
         assert patch[:, :18].min() == 5
         assert patch[:, 18:].sum() == 0
@@ -140,8 +149,9 @@ class TestReadMaskPatch:
         """Patch extending past bottom edge is zero-padded."""
         arr = np.full((128, 128), 3, dtype=np.uint32)
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=128, img_h=128,
-                                  y0=115, x0=0, size=64)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=128, img_h=128, y0=115, x0=0, size=64
+        )
         assert patch.shape == (64, 64)
         assert patch[:13, :].min() == 3
         assert patch[13:, :].sum() == 0
@@ -150,8 +160,9 @@ class TestReadMaskPatch:
         """Patch completely outside image returns all-zero mask."""
         arr = np.full((128, 128), 99, dtype=np.uint32)
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=128, img_h=128,
-                                  y0=200, x0=200, size=64)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=128, img_h=128, y0=200, x0=200, size=64
+        )
         assert patch.shape == (64, 64)
         assert patch.sum() == 0
 
@@ -160,8 +171,9 @@ class TestReadMaskPatch:
         arr = np.zeros((128, 128), dtype=np.uint32)
         arr[30:60, 30:60] = 1  # only a small region is labelled
         store = zarr.array(arr)
-        patch = m.read_mask_patch(store, "YX", img_w=128, img_h=128,
-                                  y0=0, x0=0, size=128)
+        patch = m.read_mask_patch(
+            store, "YX", img_w=128, img_h=128, y0=0, x0=0, size=128
+        )
         assert patch[:30, :30].sum() == 0  # background region
         assert patch[30:60, 30:60].min() == 1
 
@@ -170,8 +182,9 @@ class TestReadMaskPatch:
         for axes, shape in [("YX", (64, 64)), ("CYX", (1, 64, 64))]:
             arr = np.zeros(shape, dtype=np.uint16)
             store = zarr.array(arr)
-            patch = m.read_mask_patch(store, axes, img_w=64, img_h=64,
-                                      y0=0, x0=0, size=32)
+            patch = m.read_mask_patch(
+                store, axes, img_w=64, img_h=64, y0=0, x0=0, size=32
+            )
             assert patch.ndim == 2, f"Expected 2-D for axes={axes}, got {patch.ndim}-D"
 
 
@@ -179,10 +192,13 @@ class TestReadMaskPatch:
 # CLI --mask-image  end-to-end tests
 # ===========================================================================
 
+
 class TestMaskImageCLI:
     """End-to-end tests for the --mask-image CLI flag."""
 
-    def _run_patchify(self, tmp_path: Path, extra_args: list[str]) -> subprocess.CompletedProcess:
+    def _run_patchify(
+        self, tmp_path: Path, extra_args: list[str]
+    ) -> subprocess.CompletedProcess:
         he_path = tmp_path / "he.ome.tif"
         mx_path = tmp_path / "mx.ome.tif"
         csv_path = tmp_path / "meta.csv"
@@ -193,16 +209,33 @@ class TestMaskImageCLI:
         _write_metadata_csv(csv_path, ["CD31", "Ki67", "CD45", "PCNA"])
 
         cmd = [
-            sys.executable, "-m", "stages.patchify",
-            "--he-image", str(he_path),
-            "--multiplex-image", str(mx_path),
-            "--metadata-csv", str(csv_path),
-            "--out", str(out_dir),
-            "--patch-size", "256", "--stride", "256",
-            "--tissue-min", "0.05",
-            "--channels", "CD31", "Ki67", "CD45", "PCNA",
+            sys.executable,
+            "-m",
+            "stages.patchify",
+            "--he-image",
+            str(he_path),
+            "--multiplex-image",
+            str(mx_path),
+            "--metadata-csv",
+            str(csv_path),
+            "--out",
+            str(out_dir),
+            "--patch-size",
+            "256",
+            "--stride",
+            "256",
+            "--tissue-min",
+            "0.05",
+            "--channels",
+            "CD31",
+            "Ki67",
+            "CD45",
+            "PCNA",
         ] + extra_args
-        return subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT), out_dir
+        return (
+            subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT),
+            out_dir,
+        )
 
     def test_without_mask_image_no_masks_dir(self, tmp_path):
         """Without --mask-image, no masks/ directory is created."""
@@ -318,6 +351,6 @@ class TestMaskImageCLI:
         data = json.loads((out_dir / "index.json").read_text())
 
         mask_files = list((out_dir / "masks").glob("*.npy"))
-        assert len(mask_files) == len(data["patches"]), (
-            f"Expected {len(data['patches'])} .npy files, found {len(mask_files)}"
-        )
+        assert len(mask_files) == len(
+            data["patches"]
+        ), f"Expected {len(data['patches'])} .npy files, found {len(mask_files)}"

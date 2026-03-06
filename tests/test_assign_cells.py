@@ -21,23 +21,22 @@ import pandas as pd
 import pytest
 import scipy.spatial
 
-
 # ---------------------------------------------------------------------------
 # Color map constants (must match assign_cells.py)
 # ---------------------------------------------------------------------------
 
 CELL_TYPE_COLORS = {
-    "tumor":        (220, 50,  50,  200),
-    "immune":       (50,  100, 220, 200),
-    "stromal":      (50,  180, 50,  200),
-    "vasculature":  (255, 140, 0,   200),
-    "other":        (150, 150, 150, 150),
+    "tumor": (220, 50, 50, 200),
+    "immune": (50, 100, 220, 200),
+    "stromal": (50, 180, 50, 200),
+    "vasculature": (255, 140, 0, 200),
+    "other": (150, 150, 150, 150),
 }
 
 CELL_STATE_COLORS = {
-    "proliferating": (0,   255, 0,   200),
-    "emt":           (255, 165, 0,   200),
-    "other":         (0,   0,   0,   0),
+    "proliferating": (0, 255, 0, 200),
+    "emt": (255, 165, 0, 200),
+    "other": (0, 0, 0, 0),
 }
 
 
@@ -81,6 +80,7 @@ def _small_rect_contour(cx, cy, half=8):
 # Unit tests — build_csv_index
 # ---------------------------------------------------------------------------
 
+
 def test_build_csv_index_returns_kdtree():
     """
     Contract: build_csv_index returns a scipy.spatial.KDTree whose leaf
@@ -95,19 +95,18 @@ def test_build_csv_index_returns_kdtree():
     df = pd.DataFrame({"Xt": [100, 200, 300], "Yt": [100, 200, 300]})
     tree = build_csv_index(df, x_col="Xt", y_col="Yt")
 
-    assert isinstance(tree, scipy.spatial.KDTree), (
-        f"Expected KDTree, got {type(tree)}"
-    )
+    assert isinstance(tree, scipy.spatial.KDTree), f"Expected KDTree, got {type(tree)}"
 
     dist, _ = tree.query([100, 100])
-    assert dist < 1e-6, (
-        f"Query for exact point (100,100) should return distance ~0, got {dist}"
-    )
+    assert (
+        dist < 1e-6
+    ), f"Query for exact point (100,100) should return distance ~0, got {dist}"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — assign_type
 # ---------------------------------------------------------------------------
+
 
 def test_assign_type_priority_order():
     """
@@ -120,31 +119,35 @@ def test_assign_type_priority_order():
     from stages.assign_cells import assign_type  # noqa: WPS433
 
     thresholds = {
-        "CD31":    500.0,
+        "CD31": 500.0,
         "Keratin": 500.0,
-        "CD45":    500.0,
-        "aSMA":    500.0,
+        "CD45": 500.0,
+        "aSMA": 500.0,
     }
 
     # All markers above threshold → tumor wins (vasculature removed as cell type)
-    all_high = pd.Series({
-        "CD31": 1000.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0
-    })
-    assert assign_type(all_high, thresholds) == "tumor", (
-        "When all markers are high, tumor (Keratin) wins"
+    all_high = pd.Series(
+        {"CD31": 1000.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0}
     )
+    assert (
+        assign_type(all_high, thresholds) == "tumor"
+    ), "When all markers are high, tumor (Keratin) wins"
 
     # Only Keratin → tumor
-    tumor_row = pd.Series({"CD31": 0.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0})
-    assert assign_type(tumor_row, thresholds) == "tumor", (
-        "Keratin should win over CD45/aSMA"
+    tumor_row = pd.Series(
+        {"CD31": 0.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0}
     )
+    assert (
+        assign_type(tumor_row, thresholds) == "tumor"
+    ), "Keratin should win over CD45/aSMA"
 
     # Only CD45 → immune
-    immune_row = pd.Series({"CD31": 0.0, "Keratin": 0.0, "CD45": 1000.0, "aSMA": 1000.0})
-    assert assign_type(immune_row, thresholds) == "immune", (
-        "Without CD31/Keratin, CD45 should win over aSMA"
+    immune_row = pd.Series(
+        {"CD31": 0.0, "Keratin": 0.0, "CD45": 1000.0, "aSMA": 1000.0}
     )
+    assert (
+        assign_type(immune_row, thresholds) == "immune"
+    ), "Without CD31/Keratin, CD45 should win over aSMA"
 
     # Only aSMA → stromal
     stromal_row = pd.Series({"CD31": 0.0, "Keratin": 0.0, "CD45": 0.0, "aSMA": 1000.0})
@@ -156,15 +159,15 @@ def test_assign_type_priority_order():
 
     # Each type in isolation (CD31 now maps to stromal, no vasculature cell type)
     for marker, expected_type in [
-        ("CD31",    "stromal"),
+        ("CD31", "stromal"),
         ("Keratin", "tumor"),
-        ("CD45",    "immune"),
-        ("aSMA",    "stromal"),
+        ("CD45", "immune"),
+        ("aSMA", "stromal"),
     ]:
         single = pd.Series({m: (1000.0 if m == marker else 0.0) for m in thresholds})
-        assert assign_type(single, thresholds) == expected_type, (
-            f"Only {marker} high should yield '{expected_type}'"
-        )
+        assert (
+            assign_type(single, thresholds) == expected_type
+        ), f"Only {marker} high should yield '{expected_type}'"
 
 
 def test_assign_type_missing_markers():
@@ -180,14 +183,13 @@ def test_assign_type_missing_markers():
     thresholds = {"CD31": 500.0, "Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0}
 
     result = assign_type(empty_row, thresholds)
-    assert result == "other", (
-        f"Empty row should yield 'other', got '{result}'"
-    )
+    assert result == "other", f"Empty row should yield 'other', got '{result}'"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — assign_state
 # ---------------------------------------------------------------------------
+
 
 def test_assign_state_proliferating():
     """
@@ -201,33 +203,33 @@ def test_assign_state_proliferating():
     from stages.assign_cells import assign_state  # noqa: WPS433
 
     thresholds = {
-        "Ki67":      500.0,
-        "PCNA":      500.0,
-        "Vimentin":  500.0,
-        "Ecadherin": 200.0,   # 5th-percentile threshold (low)
+        "Ki67": 500.0,
+        "PCNA": 500.0,
+        "Vimentin": 500.0,
+        "Ecadherin": 200.0,  # 5th-percentile threshold (low)
     }
 
-    ki67_row = pd.Series({
-        "Ki67": 1000.0, "PCNA": 0.0, "Vimentin": 0.0, "Ecadherin": 500.0
-    })
-    assert assign_state(ki67_row, thresholds) == "proliferating", (
-        "Ki67 above threshold → 'proliferating'"
+    ki67_row = pd.Series(
+        {"Ki67": 1000.0, "PCNA": 0.0, "Vimentin": 0.0, "Ecadherin": 500.0}
     )
+    assert (
+        assign_state(ki67_row, thresholds) == "proliferating"
+    ), "Ki67 above threshold → 'proliferating'"
 
-    pcna_row = pd.Series({
-        "Ki67": 0.0, "PCNA": 1000.0, "Vimentin": 0.0, "Ecadherin": 500.0
-    })
-    assert assign_state(pcna_row, thresholds) == "proliferating", (
-        "PCNA above threshold → 'proliferating'"
+    pcna_row = pd.Series(
+        {"Ki67": 0.0, "PCNA": 1000.0, "Vimentin": 0.0, "Ecadherin": 500.0}
     )
+    assert (
+        assign_state(pcna_row, thresholds) == "proliferating"
+    ), "PCNA above threshold → 'proliferating'"
 
     # Both proliferating and EMT conditions met → proliferating wins
-    both_row = pd.Series({
-        "Ki67": 1000.0, "PCNA": 1000.0, "Vimentin": 1000.0, "Ecadherin": 0.0
-    })
-    assert assign_state(both_row, thresholds) == "proliferating", (
-        "proliferating check takes priority over EMT"
+    both_row = pd.Series(
+        {"Ki67": 1000.0, "PCNA": 1000.0, "Vimentin": 1000.0, "Ecadherin": 0.0}
     )
+    assert (
+        assign_state(both_row, thresholds) == "proliferating"
+    ), "proliferating check takes priority over EMT"
 
 
 def test_assign_state_emt():
@@ -243,37 +245,38 @@ def test_assign_state_emt():
     from stages.assign_cells import assign_state  # noqa: WPS433
 
     thresholds = {
-        "Ki67":      500.0,
-        "PCNA":      500.0,
-        "Vimentin":  500.0,
+        "Ki67": 500.0,
+        "PCNA": 500.0,
+        "Vimentin": 500.0,
         "Ecadherin": 200.0,
     }
 
-    emt_row = pd.Series({
-        "Ki67": 0.0, "PCNA": 0.0, "Vimentin": 1000.0, "Ecadherin": 50.0
-    })
-    assert assign_state(emt_row, thresholds) == "emt", (
-        "High Vimentin + low Ecadherin (< threshold) → 'emt'"
+    emt_row = pd.Series(
+        {"Ki67": 0.0, "PCNA": 0.0, "Vimentin": 1000.0, "Ecadherin": 50.0}
     )
+    assert (
+        assign_state(emt_row, thresholds) == "emt"
+    ), "High Vimentin + low Ecadherin (< threshold) → 'emt'"
 
-    high_ecad_row = pd.Series({
-        "Ki67": 0.0, "PCNA": 0.0, "Vimentin": 1000.0, "Ecadherin": 500.0
-    })
-    assert assign_state(high_ecad_row, thresholds) == "other", (
-        "High Vimentin but Ecadherin NOT low → 'other'"
+    high_ecad_row = pd.Series(
+        {"Ki67": 0.0, "PCNA": 0.0, "Vimentin": 1000.0, "Ecadherin": 500.0}
     )
+    assert (
+        assign_state(high_ecad_row, thresholds) == "other"
+    ), "High Vimentin but Ecadherin NOT low → 'other'"
 
-    low_vim_row = pd.Series({
-        "Ki67": 0.0, "PCNA": 0.0, "Vimentin": 0.0, "Ecadherin": 50.0
-    })
-    assert assign_state(low_vim_row, thresholds) == "other", (
-        "Low Vimentin even with low Ecadherin → 'other'"
+    low_vim_row = pd.Series(
+        {"Ki67": 0.0, "PCNA": 0.0, "Vimentin": 0.0, "Ecadherin": 50.0}
     )
+    assert (
+        assign_state(low_vim_row, thresholds) == "other"
+    ), "Low Vimentin even with low Ecadherin → 'other'"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — match_cells
 # ---------------------------------------------------------------------------
+
 
 def test_match_cells_finds_nearby_cell():
     """
@@ -290,22 +293,30 @@ def test_match_cells_finds_nearby_cell():
     from stages.assign_cells import build_csv_index, match_cells  # noqa: WPS433
 
     thresholds = {
-        "CD31": 500.0, "Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0,
-        "Ki67": 500.0, "PCNA": 500.0, "Vimentin": 500.0, "Ecadherin": 200.0,
+        "CD31": 500.0,
+        "Keratin": 500.0,
+        "CD45": 500.0,
+        "aSMA": 500.0,
+        "Ki67": 500.0,
+        "PCNA": 500.0,
+        "Vimentin": 500.0,
+        "Ecadherin": 200.0,
     }
 
-    df = pd.DataFrame({
-        "Xt": [128.0],
-        "Yt": [128.0],
-        "CD31": [0.0],
-        "Keratin": [5000.0],
-        "CD45": [0.0],
-        "aSMA": [0.0],
-        "Ki67": [0.0],
-        "PCNA": [0.0],
-        "Vimentin": [0.0],
-        "Ecadherin": [500.0],
-    })
+    df = pd.DataFrame(
+        {
+            "Xt": [128.0],
+            "Yt": [128.0],
+            "CD31": [0.0],
+            "Keratin": [5000.0],
+            "CD45": [0.0],
+            "aSMA": [0.0],
+            "Ki67": [0.0],
+            "PCNA": [0.0],
+            "Vimentin": [0.0],
+            "Ecadherin": [500.0],
+        }
+    )
 
     tree = build_csv_index(df, x_col="Xt", y_col="Yt")
 
@@ -325,9 +336,9 @@ def test_match_cells_finds_nearby_cell():
     )
 
     assert len(result) == 1
-    assert result[0]["cell_type"] == "tumor", (
-        f"Expected cell_type='tumor', got '{result[0]['cell_type']}'"
-    )
+    assert (
+        result[0]["cell_type"] == "tumor"
+    ), f"Expected cell_type='tumor', got '{result[0]['cell_type']}'"
 
 
 def test_match_cells_unmatched_when_far():
@@ -346,17 +357,30 @@ def test_match_cells_unmatched_when_far():
     from stages.assign_cells import build_csv_index, match_cells  # noqa: WPS433
 
     thresholds = {
-        "CD31": 500.0, "Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0,
-        "Ki67": 500.0, "PCNA": 500.0, "Vimentin": 500.0, "Ecadherin": 200.0,
+        "CD31": 500.0,
+        "Keratin": 500.0,
+        "CD45": 500.0,
+        "aSMA": 500.0,
+        "Ki67": 500.0,
+        "PCNA": 500.0,
+        "Vimentin": 500.0,
+        "Ecadherin": 200.0,
     }
 
-    df = pd.DataFrame({
-        "Xt": [500.0],
-        "Yt": [500.0],
-        "Keratin": [5000.0],
-        "CD31": [0.0], "CD45": [0.0], "aSMA": [0.0],
-        "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0],
-    })
+    df = pd.DataFrame(
+        {
+            "Xt": [500.0],
+            "Yt": [500.0],
+            "Keratin": [5000.0],
+            "CD31": [0.0],
+            "CD45": [0.0],
+            "aSMA": [0.0],
+            "Ki67": [0.0],
+            "PCNA": [0.0],
+            "Vimentin": [0.0],
+            "Ecadherin": [500.0],
+        }
+    )
 
     tree = build_csv_index(df, x_col="Xt", y_col="Yt")
 
@@ -376,17 +400,18 @@ def test_match_cells_unmatched_when_far():
     )
 
     assert len(result) == 1
-    assert result[0]["cell_type"] == "other", (
-        f"No CSV match within max_dist → expected 'other', got '{result[0]['cell_type']}'"
-    )
-    assert result[0]["cell_state"] == "other", (
-        f"No CSV match within max_dist → expected state 'other', got '{result[0]['cell_state']}'"
-    )
+    assert (
+        result[0]["cell_type"] == "other"
+    ), f"No CSV match within max_dist → expected 'other', got '{result[0]['cell_type']}'"
+    assert (
+        result[0]["cell_state"] == "other"
+    ), f"No CSV match within max_dist → expected state 'other', got '{result[0]['cell_state']}'"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — rasterize_cells
 # ---------------------------------------------------------------------------
+
 
 def test_rasterize_cells_produces_rgba_array():
     """
@@ -428,35 +453,35 @@ def test_rasterize_cells_produces_rgba_array():
         color_map=CELL_TYPE_COLORS,
     )
 
-    assert output.shape == (256, 256, 4), (
-        f"Expected shape (256, 256, 4), got {output.shape}"
-    )
-    assert output.dtype == np.uint8, (
-        f"Expected dtype uint8, got {output.dtype}"
-    )
+    assert output.shape == (
+        256,
+        256,
+        4,
+    ), f"Expected shape (256, 256, 4), got {output.shape}"
+    assert output.dtype == np.uint8, f"Expected dtype uint8, got {output.dtype}"
 
     # Tumor region: red-ish (R > 150, B < 100)
     tumor_pixel = output[60, 60]
-    assert tumor_pixel[0] > 150, (
-        f"Tumor center R channel should be > 150, got {tumor_pixel[0]}"
-    )
-    assert tumor_pixel[2] < 100, (
-        f"Tumor center B channel should be < 100, got {tumor_pixel[2]}"
-    )
+    assert (
+        tumor_pixel[0] > 150
+    ), f"Tumor center R channel should be > 150, got {tumor_pixel[0]}"
+    assert (
+        tumor_pixel[2] < 100
+    ), f"Tumor center B channel should be < 100, got {tumor_pixel[2]}"
 
     # Immune region: blue-ish (B > 150, R < 100)
     immune_pixel = output[180, 180]
-    assert immune_pixel[2] > 150, (
-        f"Immune center B channel should be > 150, got {immune_pixel[2]}"
-    )
-    assert immune_pixel[0] < 100, (
-        f"Immune center R channel should be < 100, got {immune_pixel[0]}"
-    )
+    assert (
+        immune_pixel[2] > 150
+    ), f"Immune center B channel should be > 150, got {immune_pixel[2]}"
+    assert (
+        immune_pixel[0] < 100
+    ), f"Immune center R channel should be < 100, got {immune_pixel[0]}"
 
     # Background: transparent
-    assert output[0, 0, 3] == 0, (
-        f"Background pixel (0,0) should be transparent (alpha=0), got {output[0, 0, 3]}"
-    )
+    assert (
+        output[0, 0, 3] == 0
+    ), f"Background pixel (0,0) should be transparent (alpha=0), got {output[0, 0, 3]}"
 
 
 def test_rasterize_cells_state_other_is_transparent():
@@ -483,17 +508,20 @@ def test_rasterize_cells_state_other_is_transparent():
         color_map=CELL_STATE_COLORS,
     )
 
-    assert output.shape == (256, 256, 4), (
-        f"Expected shape (256, 256, 4), got {output.shape}"
-    )
-    assert int(output[..., 3].max()) == 0, (
-        "All pixels should be transparent (alpha=0) when state='other'"
-    )
+    assert output.shape == (
+        256,
+        256,
+        4,
+    ), f"Expected shape (256, 256, 4), got {output.shape}"
+    assert (
+        int(output[..., 3].max()) == 0
+    ), "All pixels should be transparent (alpha=0) when state='other'"
 
 
 # ---------------------------------------------------------------------------
 # CLI integration tests
 # ---------------------------------------------------------------------------
+
 
 def test_cli_creates_output_dirs(tmp_path):
     """
@@ -549,11 +577,16 @@ def test_cli_creates_output_dirs(tmp_path):
 
     cmd = [
         *_assign_cells_cmd(),
-        "--cellvit-dir", str(cellvit_dir),
-        "--features-csv", str(features_path),
-        "--index", str(index_path),
-        "--out", str(out_dir),
-        "--max-dist", "15.0",
+        "--cellvit-dir",
+        str(cellvit_dir),
+        "--features-csv",
+        str(features_path),
+        "--index",
+        str(index_path),
+        "--out",
+        str(out_dir),
+        "--max-dist",
+        "15.0",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -569,12 +602,13 @@ def test_cli_creates_output_dirs(tmp_path):
 
     for png_path in (type_png, state_png):
         img = Image.open(str(png_path))
-        assert img.size == (256, 256), (
-            f"Expected 256×256 image, got {img.size} for {png_path.name}"
-        )
-        assert img.mode == "RGBA", (
-            f"Expected RGBA mode, got {img.mode} for {png_path.name}"
-        )
+        assert img.size == (
+            256,
+            256,
+        ), f"Expected 256×256 image, got {img.size} for {png_path.name}"
+        assert (
+            img.mode == "RGBA"
+        ), f"Expected RGBA mode, got {img.mode} for {png_path.name}"
 
 
 def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
@@ -621,7 +655,7 @@ def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
     # index.json lists both patches (0_0 and 0_1)
     index_data = {
         "patches": [
-            {"i": 0, "j": 0, "x0": 0,   "y0": 0, "x1": 256, "y1": 256},
+            {"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256},
             {"i": 0, "j": 1, "x0": 256, "y0": 0, "x1": 512, "y1": 256},
         ],
         "stride": 256,
@@ -636,11 +670,16 @@ def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
 
     cmd = [
         *_assign_cells_cmd(),
-        "--cellvit-dir", str(cellvit_dir),
-        "--features-csv", str(features_path),
-        "--index", str(index_path),
-        "--out", str(out_dir),
-        "--max-dist", "15.0",
+        "--cellvit-dir",
+        str(cellvit_dir),
+        "--features-csv",
+        str(features_path),
+        "--index",
+        str(index_path),
+        "--out",
+        str(out_dir),
+        "--max-dist",
+        "15.0",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -648,9 +687,9 @@ def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
-    assert (out_dir / "cell_types" / "0_0.png").exists(), (
-        "cell_types/0_0.png must be created for the patch with a CellViT JSON"
-    )
-    assert not (out_dir / "cell_types" / "0_1.png").exists(), (
-        "cell_types/0_1.png must NOT be created when its CellViT JSON is absent"
-    )
+    assert (
+        out_dir / "cell_types" / "0_0.png"
+    ).exists(), "cell_types/0_0.png must be created for the patch with a CellViT JSON"
+    assert not (
+        out_dir / "cell_types" / "0_1.png"
+    ).exists(), "cell_types/0_1.png must NOT be created when its CellViT JSON is absent"

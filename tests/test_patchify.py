@@ -16,7 +16,6 @@ import zarr
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import stages.patchify as m
 
-
 # ---------------------------------------------------------------------------
 # get_ome_mpp
 # ---------------------------------------------------------------------------
@@ -66,6 +65,7 @@ def test_get_ome_mpp_returns_none_when_no_metadata():
 # load_channel_indices
 # ---------------------------------------------------------------------------
 
+
 def test_load_channel_indices_resolves_names(tmp_path):
     """load_channel_indices finds indices from metadata CSV (case-insensitive)."""
     csv_path = tmp_path / "meta.csv"
@@ -76,7 +76,9 @@ def test_load_channel_indices_resolves_names(tmp_path):
         "Channel:0:2,CD45\n"
         "Channel:0:3,PCNA\n"
     )
-    indices, names = m.load_channel_indices(str(csv_path), ["CD31", "ki67", "CD45", "PCNA"])
+    indices, names = m.load_channel_indices(
+        str(csv_path), ["CD31", "ki67", "CD45", "PCNA"]
+    )
     assert indices == [0, 1, 2, 3]
     assert names == ["CD31", "Ki67", "CD45", "PCNA"]
 
@@ -92,6 +94,7 @@ def test_load_channel_indices_raises_on_missing_channel(tmp_path):
 # ---------------------------------------------------------------------------
 # Patch grid and readers (with synthetic zarr-like data)
 # ---------------------------------------------------------------------------
+
 
 def test_get_patch_grid():
     """get_patch_grid returns (i,j) coords fully within image."""
@@ -109,8 +112,14 @@ def test_read_multiplex_patch_rectangular_size():
     store = zarr.array(arr)
 
     out = m.read_multiplex_patch(
-        store, "CYX", img_w=64, img_h=128,
-        y0=0, x0=0, size_y=32, size_x=24,
+        store,
+        "CYX",
+        img_w=64,
+        img_h=128,
+        y0=0,
+        x0=0,
+        size_y=32,
+        size_x=24,
         channel_indices=[0, 1, 2],
     )
     assert out.shape == (3, 32, 24)
@@ -129,12 +138,15 @@ def test_tissue_fraction_accepts_rgb():
 # CLI with synthetic data (same-size HE + multiplex)
 # ---------------------------------------------------------------------------
 
+
 def _write_he_ome(path, h: int, w: int, tissue_frac: float = 0.3):
     """Write a small H&E OME-TIFF with a central tissue-like region."""
     he = np.full((3, h, w), 240, dtype=np.uint8)
-    r = int(min(h, w) * (tissue_frac ** 0.5) / 2)
+    r = int(min(h, w) * (tissue_frac**0.5) / 2)
     cy, cx = h // 2, w // 2
-    he[:, cy - r : cy + r, cx - r : cx + r] = np.array([180, 60, 120], dtype=np.uint8)[:, None, None]
+    he[:, cy - r : cy + r, cx - r : cx + r] = np.array([180, 60, 120], dtype=np.uint8)[
+        :, None, None
+    ]
     tifffile.imwrite(str(path), he, ome=True, metadata={"axes": "CYX"})
 
 
@@ -170,18 +182,32 @@ def test_patchify_cli_same_size_he_multiplex(tmp_path):
 
     cmd = [
         sys.executable,
-        "-m", "stages.patchify",
-        "--he-image", str(he_path),
-        "--multiplex-image", str(mx_path),
-        "--metadata-csv", str(csv_path),
-        "--out", str(out_dir),
-        "--patch-size", "256",
-        "--stride", "256",
-        "--tissue-min", "0.05",
-        "--channels", "CD31", "Ki67", "CD45", "PCNA",
+        "-m",
+        "stages.patchify",
+        "--he-image",
+        str(he_path),
+        "--multiplex-image",
+        str(mx_path),
+        "--metadata-csv",
+        str(csv_path),
+        "--out",
+        str(out_dir),
+        "--patch-size",
+        "256",
+        "--stride",
+        "256",
+        "--tissue-min",
+        "0.05",
+        "--channels",
+        "CD31",
+        "Ki67",
+        "CD45",
+        "PCNA",
     ]
     result = subprocess.run(
-        cmd, capture_output=True, text=True,
+        cmd,
+        capture_output=True,
+        text=True,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
     assert result.returncode == 0, (result.stdout, result.stderr)
@@ -221,21 +247,34 @@ def test_patchify_cli_different_size_with_mock_mpp(tmp_path, monkeypatch):
     _write_metadata_csv(csv_path, ["CD31", "Ki67", "CD45", "PCNA"])
 
     calls = []
+
     def mock_get_ome_mpp(tif):
         calls.append(1)
         return (0.5, 0.5) if len(calls) == 1 else (1.0, 1.0)
+
     monkeypatch.setattr(m, "get_ome_mpp", mock_get_ome_mpp)
 
     sys.argv = [
         "patchify.py",
-        "--he-image", str(he_path),
-        "--multiplex-image", str(mx_path),
-        "--metadata-csv", str(csv_path),
-        "--out", str(out_dir),
-        "--patch-size", "256",
-        "--stride", "256",
-        "--tissue-min", "0.05",
-        "--channels", "CD31", "Ki67", "CD45", "PCNA",
+        "--he-image",
+        str(he_path),
+        "--multiplex-image",
+        str(mx_path),
+        "--metadata-csv",
+        str(csv_path),
+        "--out",
+        str(out_dir),
+        "--patch-size",
+        "256",
+        "--stride",
+        "256",
+        "--tissue-min",
+        "0.05",
+        "--channels",
+        "CD31",
+        "Ki67",
+        "CD45",
+        "PCNA",
     ]
     m.main()
 
@@ -250,6 +289,7 @@ def test_patchify_cli_different_size_with_mock_mpp(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # build_tissue_mask
 # ---------------------------------------------------------------------------
+
 
 def _make_cyx_tif(tmp_path, arr, name="test.ome.tif"):
     """Write a CYX OME-TIFF and return (store, axes, img_w, img_h)."""
@@ -275,7 +315,7 @@ def test_build_tissue_mask_detects_tissue(tmp_path):
     arr = np.zeros((3, 128, 128), dtype=np.uint8)
     # Paint a tissue-like region: high R, low G, medium B -> high HSV saturation
     arr[0, 40:80, 40:80] = 220  # R
-    arr[1, 40:80, 40:80] = 60   # G
+    arr[1, 40:80, 40:80] = 60  # G
     arr[2, 40:80, 40:80] = 100  # B
     store, axes, img_w, img_h = _make_cyx_tif(tmp_path, arr)
     mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=8)
@@ -325,11 +365,12 @@ def test_build_tissue_mask_non_multiple_dims(tmp_path):
 
     downsample = 16
     mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=downsample)
-    expected_rows = h // downsample   # 130 // 16 = 8
-    expected_cols = w // downsample   # 197 // 16 = 12
-    assert mask.shape == (expected_rows, expected_cols), (
-        f"Expected ({expected_rows}, {expected_cols}), got {mask.shape}"
-    )
+    expected_rows = h // downsample  # 130 // 16 = 8
+    expected_cols = w // downsample  # 197 // 16 = 12
+    assert mask.shape == (
+        expected_rows,
+        expected_cols,
+    ), f"Expected ({expected_rows}, {expected_cols}), got {mask.shape}"
     assert mask.dtype == bool
 
 

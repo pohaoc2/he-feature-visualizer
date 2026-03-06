@@ -19,10 +19,10 @@ import numpy as np
 import pytest
 import tifffile
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_ome_tiff(path, arr: np.ndarray, axes: str) -> None:
     """Write a synthetic OME-TIFF to *path* with the given axes string."""
@@ -56,6 +56,7 @@ def _minimal_metadata_csv(path: Path, targets: dict) -> None:
 # ---------------------------------------------------------------------------
 # Unit tests — module-level functions
 # ---------------------------------------------------------------------------
+
 
 def test_tissue_mask_hsv_detects_tissue():
     """
@@ -106,9 +107,9 @@ def test_tissue_mask_hsv_rejects_gray_background():
 
     mask = tissue_mask_hsv(rgb)
 
-    assert mask.mean() < 0.1, (
-        "Uniform gray image should be almost entirely classified as background"
-    )
+    assert (
+        mask.mean() < 0.1
+    ), "Uniform gray image should be almost entirely classified as background"
 
 
 def test_tissue_fraction_range():
@@ -130,9 +131,9 @@ def test_tissue_fraction_range():
 
     frac = tissue_fraction(rgb)
 
-    assert 0.3 < frac < 0.7, (
-        f"Expected fraction ~0.5 for half-tissue image, got {frac:.3f}"
-    )
+    assert (
+        0.3 < frac < 0.7
+    ), f"Expected fraction ~0.5 for half-tissue image, got {frac:.3f}"
 
 
 def test_get_patch_grid_no_overlap():
@@ -151,9 +152,12 @@ def test_get_patch_grid_no_overlap():
 
     patches = get_patch_grid(img_w=512, img_h=512, patch_size=256, stride=256)
 
-    assert set(patches) == {(0, 0), (0, 1), (1, 0), (1, 1)}, (
-        f"Expected 4 patches in 2×2 grid, got {patches}"
-    )
+    assert set(patches) == {
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (1, 1),
+    }, f"Expected 4 patches in 2×2 grid, got {patches}"
     assert len(patches) == 4, "No duplicate patches expected"
 
 
@@ -173,7 +177,9 @@ def test_get_patch_grid_excludes_edge_patches():
 
     patch_size = 256
     img_w = img_h = 600
-    patches = get_patch_grid(img_w=img_w, img_h=img_h, patch_size=patch_size, stride=patch_size)
+    patches = get_patch_grid(
+        img_w=img_w, img_h=img_h, patch_size=patch_size, stride=patch_size
+    )
 
     for i, j in patches:
         x0 = j * patch_size
@@ -202,7 +208,7 @@ def test_read_he_patch_cyx_axes(tmp_path):
     img_h, img_w = 512, 512
     arr = np.zeros((3, img_h, img_w), dtype=np.uint8)
     arr[0] = 180  # R channel
-    arr[1] = 60   # G channel
+    arr[1] = 60  # G channel
     arr[2] = 120  # B channel
 
     he_path = tmp_path / "he.ome.tif"
@@ -221,9 +227,7 @@ def test_read_he_patch_cyx_axes(tmp_path):
         size=256,
     )
 
-    assert patch.shape == (256, 256, 3), (
-        f"Expected (256, 256, 3), got {patch.shape}"
-    )
+    assert patch.shape == (256, 256, 3), f"Expected (256, 256, 3), got {patch.shape}"
     assert patch.dtype == np.uint8, f"Expected uint8, got {patch.dtype}"
 
 
@@ -266,24 +270,23 @@ def test_read_multiplex_patch_selects_channels(tmp_path):
         channel_indices=[2, 5, 9],
     )
 
-    assert patch.shape == (3, 256, 256), (
-        f"Expected (3, 256, 256), got {patch.shape}"
-    )
+    assert patch.shape == (3, 256, 256), f"Expected (3, 256, 256), got {patch.shape}"
     assert patch.dtype == np.uint16, f"Expected uint16, got {patch.dtype}"
-    assert abs(patch[0].mean() - 200) < 1, (
-        f"Channel 2 mean should be ~200, got {patch[0].mean()}"
-    )
-    assert abs(patch[1].mean() - 500) < 1, (
-        f"Channel 5 mean should be ~500, got {patch[1].mean()}"
-    )
-    assert abs(patch[2].mean() - 900) < 1, (
-        f"Channel 9 mean should be ~900, got {patch[2].mean()}"
-    )
+    assert (
+        abs(patch[0].mean() - 200) < 1
+    ), f"Channel 2 mean should be ~200, got {patch[0].mean()}"
+    assert (
+        abs(patch[1].mean() - 500) < 1
+    ), f"Channel 5 mean should be ~500, got {patch[1].mean()}"
+    assert (
+        abs(patch[2].mean() - 900) < 1
+    ), f"Channel 9 mean should be ~900, got {patch[2].mean()}"
 
 
 # ---------------------------------------------------------------------------
 # CLI integration tests
 # ---------------------------------------------------------------------------
+
 
 def test_cli_creates_outputs(tmp_path):
     """
@@ -324,14 +327,23 @@ def test_cli_creates_outputs(tmp_path):
 
     cmd = [
         *_patchify_cmd(),
-        "--he-image", str(he_path),
-        "--multiplex-image", str(mux_path),
-        "--metadata-csv", str(meta_path),
-        "--out", str(out_dir),
-        "--patch-size", "256",
-        "--stride", "256",
-        "--tissue-min", "0.0",
-        "--channels", "CD31", "Ki67",
+        "--he-image",
+        str(he_path),
+        "--multiplex-image",
+        str(mux_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--patch-size",
+        "256",
+        "--stride",
+        "256",
+        "--tissue-min",
+        "0.0",
+        "--channels",
+        "CD31",
+        "Ki67",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -343,6 +355,7 @@ def test_cli_creates_outputs(tmp_path):
     he_patch_path = out_dir / "he" / "0_0.png"
     assert he_patch_path.exists(), "he/0_0.png must be created"
     from PIL import Image  # noqa: WPS433
+
     img = Image.open(str(he_patch_path))
     assert img.size == (256, 256), f"Expected 256×256 PNG, got {img.size}"
     assert img.mode == "RGB", f"Expected RGB mode, got {img.mode}"
@@ -351,9 +364,11 @@ def test_cli_creates_outputs(tmp_path):
     mux_patch_path = out_dir / "multiplex" / "0_0.npy"
     assert mux_patch_path.exists(), "multiplex/0_0.npy must be created"
     mux_patch = np.load(str(mux_patch_path))
-    assert mux_patch.shape == (2, 256, 256), (
-        f"Expected (2, 256, 256), got {mux_patch.shape}"
-    )
+    assert mux_patch.shape == (
+        2,
+        256,
+        256,
+    ), f"Expected (2, 256, 256), got {mux_patch.shape}"
     assert mux_patch.dtype == np.uint16, f"Expected uint16, got {mux_patch.dtype}"
 
     # index.json must list at least one patch
@@ -399,14 +414,22 @@ def test_cli_tissue_filter_drops_background_patches(tmp_path):
 
     cmd = [
         *_patchify_cmd(),
-        "--he-image", str(he_path),
-        "--multiplex-image", str(mux_path),
-        "--metadata-csv", str(meta_path),
-        "--out", str(out_dir),
-        "--patch-size", "256",
-        "--stride", "256",
-        "--tissue-min", "0.5",
-        "--channels", "CD31",
+        "--he-image",
+        str(he_path),
+        "--multiplex-image",
+        str(mux_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--patch-size",
+        "256",
+        "--stride",
+        "256",
+        "--tissue-min",
+        "0.5",
+        "--channels",
+        "CD31",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -417,12 +440,13 @@ def test_cli_tissue_filter_drops_background_patches(tmp_path):
     data = json.loads((out_dir / "index.json").read_text())
     kept = [(p["x0"], p["y0"]) for p in data["patches"]]
 
-    assert len(kept) == 1, (
-        f"Expected exactly 1 patch to survive tissue filter, got {len(kept)}: {kept}"
-    )
-    assert kept[0] == (0, 0), (
-        f"The surviving patch should be (x0=0, y0=0), got {kept[0]}"
-    )
+    assert (
+        len(kept) == 1
+    ), f"Expected exactly 1 patch to survive tissue filter, got {len(kept)}: {kept}"
+    assert kept[0] == (
+        0,
+        0,
+    ), f"The surviving patch should be (x0=0, y0=0), got {kept[0]}"
 
 
 def test_index_json_schema(tmp_path):
@@ -457,14 +481,22 @@ def test_index_json_schema(tmp_path):
 
     cmd = [
         *_patchify_cmd(),
-        "--he-image", str(he_path),
-        "--multiplex-image", str(mux_path),
-        "--metadata-csv", str(meta_path),
-        "--out", str(out_dir),
-        "--patch-size", "256",
-        "--stride", "256",
-        "--tissue-min", "0.0",
-        "--channels", "CD45",
+        "--he-image",
+        str(he_path),
+        "--multiplex-image",
+        str(mux_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--patch-size",
+        "256",
+        "--stride",
+        "256",
+        "--tissue-min",
+        "0.0",
+        "--channels",
+        "CD45",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -478,16 +510,22 @@ def test_index_json_schema(tmp_path):
 
     # Top-level schema
     required_top_level = {
-        "patches", "stride", "patch_size", "tissue_min", "img_w", "img_h", "channels"
+        "patches",
+        "stride",
+        "patch_size",
+        "tissue_min",
+        "img_w",
+        "img_h",
+        "channels",
     }
     missing_top = required_top_level - set(data.keys())
     assert not missing_top, f"index.json missing top-level keys: {missing_top}"
 
     # Per-patch schema — need at least one patch to validate
-    assert len(data["patches"]) >= 1, "Need at least one patch to validate per-patch schema"
+    assert (
+        len(data["patches"]) >= 1
+    ), "Need at least one patch to validate per-patch schema"
     required_patch = {"x0", "y0", "has_multiplex"}
     for patch in data["patches"]:
         missing_patch = required_patch - set(patch.keys())
-        assert not missing_patch, (
-            f"Patch entry missing keys {missing_patch}: {patch}"
-        )
+        assert not missing_patch, f"Patch entry missing keys {missing_patch}: {patch}"

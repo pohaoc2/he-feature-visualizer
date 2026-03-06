@@ -11,11 +11,13 @@ Shows six panels for a single selected patch:
   6. Cell state         -- cell_states RGBA composited on black
 
 CLI:
-  python visualize_pipeline.py --processed processed/ [--patch 58624_4096] [--he-image data/CRC02-HE.ome.tif]
+  python visualize_pipeline.py --processed processed/ [--patch 58624_4096]
+                               [--he-image data/CRC02-HE.ome.tif]
 """
 
 import argparse
 import json
+import random
 from pathlib import Path
 
 import cv2
@@ -32,24 +34,25 @@ from utils.normalize import percentile_norm, percentile_to_uint8
 # Color legends (must match assign_cells.py CELL_TYPE_COLORS / CELL_STATE_COLORS)
 # ---------------------------------------------------------------------------
 TYPE_LEGEND = [
-    ("tumor",   (220,  50,  50)),
-    ("immune",  ( 50, 100, 220)),
-    ("stromal", ( 50, 180,  50)),
-    ("other",   (150, 150, 150)),
+    ("tumor", (220, 50, 50)),
+    ("immune", (50, 100, 220)),
+    ("stromal", (50, 180, 50)),
+    ("other", (150, 150, 150)),
 ]
 STATE_LEGEND = [
-    ("proliferating", (  0, 255,   0)),
-    ("emt",           (255, 165,   0)),
-    ("apoptotic",     (139,   0, 139)),
-    ("quiescent",     (100, 149, 237)),
-    ("healthy",       (144, 238, 144)),
-    ("other",         ( 80,  80,  80)),
+    ("proliferating", (0, 255, 0)),
+    ("emt", (255, 165, 0)),
+    ("apoptotic", (139, 0, 139)),
+    ("quiescent", (100, 149, 237)),
+    ("healthy", (144, 238, 144)),
+    ("other", (80, 80, 80)),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _gray_placeholder(text: str = "", size: int = 256) -> np.ndarray:
     """Return a (size, size, 3) uint8 gray image with centered white text."""
@@ -61,7 +64,16 @@ def _gray_placeholder(text: str = "", size: int = 256) -> np.ndarray:
         (tw, th), _ = cv2.getTextSize(text, font, font_scale, thickness)
         tx = max(0, (size - tw) // 2)
         ty = max(th, (size + th) // 2)
-        cv2.putText(img, text, (tx, ty), font, font_scale, (200, 200, 200), thickness, cv2.LINE_AA)
+        cv2.putText(
+            img,
+            text,
+            (tx, ty),
+            font,
+            font_scale,
+            (200, 200, 200),
+            thickness,
+            cv2.LINE_AA,
+        )
     return img
 
 
@@ -71,7 +83,6 @@ def _composite_rgba_on_black(rgba: np.ndarray) -> np.ndarray:
     rgb = rgba[:, :, :3].astype(np.float32)
     out = (alpha * rgb).clip(0, 255).astype(np.uint8)
     return out
-
 
 
 def _apply_colormap(norm: np.ndarray, cmap_name: str = "hot") -> np.ndarray:
@@ -86,10 +97,14 @@ def _apply_colormap(norm: np.ndarray, cmap_name: str = "hot") -> np.ndarray:
 # Panel builders
 # ---------------------------------------------------------------------------
 
+
 def build_original_location(
     he_image_path: str | None,
-    x0: int, y0: int, patch_size: int,
-    img_w: int, img_h: int,
+    x0: int,
+    y0: int,
+    patch_size: int,
+    img_w: int,
+    img_h: int,
 ) -> np.ndarray:
     """Return a (256, 256, 3) uint8 thumbnail with a red rectangle marking the patch."""
 
@@ -108,13 +123,11 @@ def build_original_location(
 
             level = series.levels[chosen_level]
             axes = level.axes.upper()
-            shape = level.shape
-            lh = shape[axes.index("Y")]
-            lw = shape[axes.index("X")]
 
             # Read the thumbnail
             store = level.aszarr()
             import zarr
+
             raw = zarr.open(store, mode="r")
             arr = raw if isinstance(raw, zarr.Array) else raw["0"]
             arr = np.array(arr)
@@ -170,7 +183,9 @@ def build_he_panel(he_png_path: Path) -> np.ndarray:
     return _gray_placeholder("no H&E")
 
 
-def build_multiplex_panel(npy_path: Path, channel_idx: int = 0, use_max_proj: bool = False) -> np.ndarray:
+def build_multiplex_panel(
+    npy_path: Path, channel_idx: int = 0, use_max_proj: bool = False
+) -> np.ndarray:
     if npy_path.exists():
         arr = np.load(npy_path)  # (C, H, W) uint16
         if arr.ndim == 3:
@@ -187,7 +202,9 @@ def build_multiplex_panel(npy_path: Path, channel_idx: int = 0, use_max_proj: bo
     return _gray_placeholder("no multiplex")
 
 
-def build_cellseg_panel(he_png_path: Path, cellvit_json_path: Path) -> tuple[np.ndarray, bool]:
+def build_cellseg_panel(
+    he_png_path: Path, cellvit_json_path: Path
+) -> tuple[np.ndarray, bool]:
     """Return (image, had_segmentation)."""
     base = build_he_panel(he_png_path)
 
@@ -195,7 +212,7 @@ def build_cellseg_panel(he_png_path: Path, cellvit_json_path: Path) -> tuple[np.
         return base, False
 
     try:
-        with open(cellvit_json_path) as f:
+        with open(cellvit_json_path, encoding="utf-8") as f:
             data = json.load(f)
     except Exception as exc:
         print(f"  Warning: could not load cellvit JSON: {exc}")
@@ -221,7 +238,14 @@ def build_cellseg_panel(he_png_path: Path, cellvit_json_path: Path) -> tuple[np.
                 continue
             # Look for contour/polygon under common key names
             contour = None
-            for key in ("contour", "contours", "polygon", "boundary", "coords", "points"):
+            for key in (
+                "contour",
+                "contours",
+                "polygon",
+                "boundary",
+                "coords",
+                "points",
+            ):
                 if key in cell:
                     contour = cell[key]
                     break
@@ -238,7 +262,9 @@ def build_cellseg_panel(he_png_path: Path, cellvit_json_path: Path) -> tuple[np.
                 pass  # already (N, 1, 2) or similar
             else:
                 continue
-            cv2.polylines(overlay, [pts], isClosed=True, color=(255, 255, 255), thickness=1)
+            cv2.polylines(
+                overlay, [pts], isClosed=True, color=(255, 255, 255), thickness=1
+            )
 
     return overlay, True
 
@@ -258,8 +284,14 @@ def build_overlay_panel(png_path: Path, label: str) -> np.ndarray:
 # Main figure
 # ---------------------------------------------------------------------------
 
-def _show_panel(ax, img: np.ndarray, title: str, cmap=None,
-                legend: list[tuple[str, tuple]] | None = None):
+
+def _show_panel(
+    ax,
+    img: np.ndarray,
+    title: str,
+    cmap=None,
+    legend: list[tuple[str, tuple]] | None = None,
+):
     """Display an image on an axes with black background and white title.
     legend: list of (label, (R,G,B)) tuples drawn as colored patches inside the axes."""
     ax.set_facecolor("black")
@@ -275,7 +307,9 @@ def _show_panel(ax, img: np.ndarray, title: str, cmap=None,
 
     if legend:
         handles = [
-            mpatches.Patch(facecolor=tuple(c / 255 for c in rgb), label=label, edgecolor="none")
+            mpatches.Patch(
+                facecolor=tuple(c / 255 for c in rgb), label=label, edgecolor="none"
+            )
             for label, rgb in legend
         ]
         ax.legend(
@@ -308,7 +342,7 @@ def make_summary_figure(
     if not index_path.exists():
         raise FileNotFoundError(f"index.json not found at {index_path}")
 
-    with open(index_path) as f:
+    with open(index_path, encoding="utf-8") as f:
         index_data = json.load(f)
 
     patches = index_data.get("patches", [])
@@ -352,22 +386,31 @@ def make_summary_figure(
     # Per-patch summary from cell_summary.json
     patch_summary_text = ""
     if summary_json.exists():
-        with open(summary_json) as f:
+        with open(summary_json, encoding="utf-8") as f:
             summary = json.load(f)
         ps = summary.get("per_patch", {}).get(patch_key, {})
         if ps:
             n = ps.get("n_cells", 0)
-            type_counts  = ps.get("cell_types",  {})
+            type_counts = ps.get("cell_types", {})
             state_counts = ps.get("cell_states", {})
-            type_str  = "  ".join(f"{k}:{v}" for k, v in sorted(type_counts.items(),  key=lambda x: -x[1]))
-            state_str = "  ".join(f"{k}:{v}" for k, v in sorted(state_counts.items(), key=lambda x: -x[1]))
-            patch_summary_text = f"patch {patch_key}  |  {n} cells  |  types: {type_str}  |  states: {state_str}"
+            type_str = "  ".join(
+                f"{k}:{v}" for k, v in sorted(type_counts.items(), key=lambda x: -x[1])
+            )
+            state_str = "  ".join(
+                f"{k}:{v}" for k, v in sorted(state_counts.items(), key=lambda x: -x[1])
+            )
+            patch_summary_text = (
+                f"patch {patch_key}  |  {n} cells"
+                f"  |  types: {type_str}  |  states: {state_str}"
+            )
             print(f"\nPer-patch summary:\n  {patch_summary_text}")
 
     # Build panels
     panel_loc = build_original_location(he_image_path, x0, y0, patch_size, img_w, img_h)
     panel_he = build_he_panel(he_png)
-    panel_mx = build_multiplex_panel(mx_npy, channel_idx=mx_channel, use_max_proj=mx_max_proj)
+    panel_mx = build_multiplex_panel(
+        mx_npy, channel_idx=mx_channel, use_max_proj=mx_max_proj
+    )
     panel_seg, had_seg = build_cellseg_panel(he_png, cellvit_json)
     panel_cell_types = build_overlay_panel(cell_types_png, "cell type")
     panel_cell_states = build_overlay_panel(cell_states_png, "cell state")
@@ -384,7 +427,14 @@ def make_summary_figure(
         "Cell type",
         "Cell state",
     ]
-    panels = [panel_loc, panel_he, panel_mx, panel_seg, panel_cell_types, panel_cell_states]
+    panels = [
+        panel_loc,
+        panel_he,
+        panel_mx,
+        panel_seg,
+        panel_cell_types,
+        panel_cell_states,
+    ]
 
     legends = [None, None, None, None, TYPE_LEGEND, STATE_LEGEND]
     for ax, img, title, leg in zip(axes, panels, titles, legends):
@@ -392,10 +442,13 @@ def make_summary_figure(
 
     label = patch_summary_text if patch_summary_text else f"patch {patch_key}"
     fig.text(
-        0.5, 0.01,
+        0.5,
+        0.01,
         label,
-        ha="center", va="bottom",
-        color="white", fontsize=8,
+        ha="center",
+        va="bottom",
+        color="white",
+        fontsize=8,
     )
     fig.tight_layout(rect=[0, 0.04, 1, 1])
 
@@ -411,6 +464,7 @@ def make_summary_figure(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def make_grid_figure(
     processed_dir: Path,
     patch_keys: list[str],
@@ -423,7 +477,6 @@ def make_grid_figure(
     Each row is one patch with the same 6 panels as make_summary_figure.
     Returns the path to the saved PNG.
     """
-    import random  # already stdlib
     n = len(patch_keys)
     fig, axes_grid = plt.subplots(n, 6, figsize=(14, 2 * n))
     fig.patch.set_facecolor("black")
@@ -431,13 +484,13 @@ def make_grid_figure(
         axes_grid = [axes_grid]  # make iterable
 
     # Load shared index data once
-    with open(processed_dir / "index.json") as f:
+    with open(processed_dir / "index.json", encoding="utf-8") as f:
         index_data = json.load(f)
     patches_meta = {f"{p['x0']}_{p['y0']}": p for p in index_data.get("patches", [])}
-    img_w      = index_data.get("img_w", 0)
-    img_h      = index_data.get("img_h", 0)
+    img_w = index_data.get("img_w", 0)
+    img_h = index_data.get("img_h", 0)
     patch_size = index_data.get("patch_size", 256)
-    channels   = index_data.get("channels", [])
+    channels = index_data.get("channels", [])
     if mx_max_proj:
         mx_ch_name = "max-proj"
     elif mx_channel < len(channels):
@@ -448,51 +501,70 @@ def make_grid_figure(
     summary_json = processed_dir / "cell_summary.json"
     summary_per_patch = {}
     if summary_json.exists():
-        with open(summary_json) as f:
+        with open(summary_json, encoding="utf-8") as f:
             summary_per_patch = json.load(f).get("per_patch", {})
 
     col_titles = [
-        "Original location", "H&E patch", f"Multiplex ({mx_ch_name})",
-        "Cell segmentation", "Cell type", "Cell state",
+        "Original location",
+        "H&E patch",
+        f"Multiplex ({mx_ch_name})",
+        "Cell segmentation",
+        "Cell type",
+        "Cell state",
     ]
     legends = [None, None, None, None, TYPE_LEGEND, STATE_LEGEND]
 
     for row_idx, patch_key in enumerate(patch_keys):
         ax_row = axes_grid[row_idx]
-        meta   = patches_meta.get(patch_key)
+        meta = patches_meta.get(patch_key)
         if meta is None:
             for ax in ax_row:
-                _show_panel(ax, _gray_placeholder(f"patch {patch_key} not in index"), "")
+                _show_panel(
+                    ax, _gray_placeholder(f"patch {patch_key} not in index"), ""
+                )
             continue
 
         x0, y0 = meta["x0"], meta["y0"]
-        he_png        = processed_dir / "he"          / f"{patch_key}.png"
-        mx_npy        = processed_dir / "multiplex"   / f"{patch_key}.npy"
-        cellvit_json  = processed_dir / "cellvit"     / f"{patch_key}.json"
-        cell_types_png  = processed_dir / "cell_types"  / f"{patch_key}.png"
+        he_png = processed_dir / "he" / f"{patch_key}.png"
+        mx_npy = processed_dir / "multiplex" / f"{patch_key}.npy"
+        cellvit_json = processed_dir / "cellvit" / f"{patch_key}.json"
+        cell_types_png = processed_dir / "cell_types" / f"{patch_key}.png"
         cell_states_png = processed_dir / "cell_states" / f"{patch_key}.png"
 
         # Original location only on first row; blank panel for subsequent rows
         if row_idx == 0:
-            panel_loc = build_original_location(he_image_path, x0, y0, patch_size, img_w, img_h)
+            panel_loc = build_original_location(
+                he_image_path, x0, y0, patch_size, img_w, img_h
+            )
         else:
             panel_loc = np.zeros((256, 256, 3), dtype=np.uint8)
 
-        panel_he               = build_he_panel(he_png)
-        panel_mx               = build_multiplex_panel(mx_npy, channel_idx=mx_channel, use_max_proj=mx_max_proj)
-        panel_seg, had_seg     = build_cellseg_panel(he_png, cellvit_json)
-        panel_cell_types       = build_overlay_panel(cell_types_png,  "cell type")
-        panel_cell_states      = build_overlay_panel(cell_states_png, "cell state")
-        panels = [panel_loc, panel_he, panel_mx, panel_seg, panel_cell_types, panel_cell_states]
+        panel_he = build_he_panel(he_png)
+        panel_mx = build_multiplex_panel(
+            mx_npy, channel_idx=mx_channel, use_max_proj=mx_max_proj
+        )
+        panel_seg, had_seg = build_cellseg_panel(he_png, cellvit_json)
+        panel_cell_types = build_overlay_panel(cell_types_png, "cell type")
+        panel_cell_states = build_overlay_panel(cell_states_png, "cell state")
+        panels = [
+            panel_loc,
+            panel_he,
+            panel_mx,
+            panel_seg,
+            panel_cell_types,
+            panel_cell_states,
+        ]
 
         # Legends and titles only on first row
         row_legends = legends if row_idx == 0 else [None] * 6
 
         # Per-patch cell summary as row label
         ps = summary_per_patch.get(patch_key, {})
-        n_cells   = ps.get("n_cells", "?")
-        type_str  = " ".join(f"{k[0].upper()}:{v}" for k, v in
-                             sorted(ps.get("cell_types",  {}).items(), key=lambda x: -x[1]))
+        n_cells = ps.get("n_cells", "?")
+        type_str = " ".join(
+            f"{k[0].upper()}:{v}"
+            for k, v in sorted(ps.get("cell_types", {}).items(), key=lambda x: -x[1])
+        )
         row_label = f"patch {patch_key}  {n_cells} cells  {type_str}"
 
         for col_idx, (ax, img, leg) in enumerate(zip(ax_row, panels, row_legends)):
@@ -502,8 +574,15 @@ def make_grid_figure(
             _show_panel(ax, img, title, legend=leg)
 
         # Row label on the leftmost axis y-label
-        ax_row[0].set_ylabel(row_label, color="white", fontsize=7, rotation=0,
-                             labelpad=4, ha="right", va="center")
+        ax_row[0].set_ylabel(
+            row_label,
+            color="white",
+            fontsize=7,
+            rotation=0,
+            labelpad=4,
+            ha="right",
+            va="center",
+        )
 
     fig.tight_layout(rect=[0, 0.01, 1, 1])
     out_path = processed_dir / f"pipeline_grid_{'_'.join(patch_keys[:3])}.png"
@@ -518,42 +597,53 @@ def main():
         description="Generate pipeline summary figure(s) for one or more patches."
     )
     parser.add_argument(
-        "--processed", default="processed/",
+        "--processed",
+        default="processed/",
         help="Path to the processed/ directory (default: processed/)",
     )
     parser.add_argument(
-        "--patch", default=None,
-        help="Patch key in 'x0_y0' format, e.g. '58624_4096'. Defaults to first patch in index.json.",
+        "--patch",
+        default=None,
+        help="Patch key in 'x0_y0' format, e.g. '58624_4096'."
+        " Defaults to first patch in index.json.",
     )
     parser.add_argument(
-        "--random", type=int, default=0, metavar="N",
+        "--random",
+        type=int,
+        default=0,
+        metavar="N",
         help="Randomly select N patches and show them as a grid (e.g. --random 6).",
     )
     parser.add_argument(
-        "--seed", type=int, default=None,
+        "--seed",
+        type=int,
+        default=None,
         help="Random seed for --random (for reproducibility).",
     )
     parser.add_argument(
-        "--he-image", default=None,
+        "--he-image",
+        default=None,
         help="Optional path to the full H&E OME-TIFF for the 'Original location' panel.",
     )
     parser.add_argument(
-        "--mx-channel", type=int, default=0, metavar="IDX",
+        "--mx-channel",
+        type=int,
+        default=0,
+        metavar="IDX",
         help="Multiplex channel index to display (0-based, range 0–3, default: 0).",
     )
     parser.add_argument(
-        "--mx-max-proj", action="store_true",
+        "--mx-max-proj",
+        action="store_true",
         help="Show max-projection across all multiplex channels instead of a single channel.",
     )
     args = parser.parse_args()
 
-    import random
-
     processed_dir = Path(args.processed)
-    index_path    = processed_dir / "index.json"
+    index_path = processed_dir / "index.json"
     if not index_path.exists():
         raise FileNotFoundError(f"index.json not found at {index_path}")
-    with open(index_path) as f:
+    with open(index_path, encoding="utf-8") as f:
         index_data = json.load(f)
     all_patches = index_data.get("patches", [])
     if not all_patches:
@@ -565,16 +655,26 @@ def main():
         chosen = random.sample(all_patches, min(args.random, len(all_patches)))
         patch_keys = [f"{p['x0']}_{p['y0']}" for p in chosen]
         print(f"Randomly selected {len(patch_keys)} patches: {patch_keys}")
-        make_grid_figure(processed_dir, patch_keys, args.he_image,
-                         mx_channel=args.mx_channel, mx_max_proj=args.mx_max_proj)
+        make_grid_figure(
+            processed_dir,
+            patch_keys,
+            args.he_image,
+            mx_channel=args.mx_channel,
+            mx_max_proj=args.mx_max_proj,
+        )
     else:
         patch_key = args.patch
         if patch_key is None:
             first = all_patches[0]
             patch_key = f"{first['x0']}_{first['y0']}"
             print(f"No --patch specified; using first patch: {patch_key}")
-        make_summary_figure(processed_dir, patch_key, args.he_image,
-                            mx_channel=args.mx_channel, mx_max_proj=args.mx_max_proj)
+        make_summary_figure(
+            processed_dir,
+            patch_key,
+            args.he_image,
+            mx_channel=args.mx_channel,
+            mx_max_proj=args.mx_max_proj,
+        )
 
 
 if __name__ == "__main__":

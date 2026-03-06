@@ -33,4 +33,3 @@ def test_viewer_html_has_new_layer_elements():
     assert 'id="img-cell_state"' in html
     assert 'id="img-oxygen"' in html
     assert 'id="img-glucose"' in html
-

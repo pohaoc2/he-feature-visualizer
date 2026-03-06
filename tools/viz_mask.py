@@ -32,10 +32,10 @@ import numpy as np
 import tifffile
 from PIL import Image
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def colorize_mask(mask: np.ndarray, seed: int = 42) -> np.ndarray:
     """Map a uint32 label mask to an RGB image with random per-cell colours."""
@@ -51,7 +51,11 @@ def contrast_stretch(arr: np.ndarray) -> np.ndarray:
     vmin, vmax = int(arr.min()), int(arr.max())
     if vmax == vmin:
         return np.zeros_like(arr, dtype=np.uint8)
-    return ((arr.astype(np.float32) - vmin) / (vmax - vmin) * 255).clip(0, 255).astype(np.uint8)
+    return (
+        ((arr.astype(np.float32) - vmin) / (vmax - vmin) * 255)
+        .clip(0, 255)
+        .astype(np.uint8)
+    )
 
 
 def side_by_side(left: np.ndarray, right: np.ndarray, gap: int = 8) -> np.ndarray:
@@ -66,6 +70,7 @@ def side_by_side(left: np.ndarray, right: np.ndarray, gap: int = 8) -> np.ndarra
 # ---------------------------------------------------------------------------
 # Overview
 # ---------------------------------------------------------------------------
+
 
 def visualize_overview(
     mask_path: Path,
@@ -94,13 +99,16 @@ def visualize_overview(
 
     img = Image.fromarray(side_by_side(mask_rgb, ome_rgb))
     img.save(str(out_path))
-    print(f"[overview] saved {out_path} ({img.size[0]}×{img.size[1]}) "
-          f"in {time.perf_counter() - t0:.1f}s")
+    print(
+        f"[overview] saved {out_path} ({img.size[0]}×{img.size[1]}) "
+        f"in {time.perf_counter() - t0:.1f}s"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Full-res crop
 # ---------------------------------------------------------------------------
+
 
 def find_dense_region(
     mask_path: Path,
@@ -145,7 +153,9 @@ def visualize_crop(
     t0 = time.perf_counter()
 
     if row is None or col is None:
-        print(f"[crop] auto-detecting densest region (search at {search_downsample}x) ...")
+        print(
+            f"[crop] auto-detecting densest region (search at {search_downsample}x) ..."
+        )
         row, col = find_dense_region(mask_path, downsample=search_downsample)
         print(f"[crop] center: row={row}, col={col}")
 
@@ -156,8 +166,10 @@ def visualize_crop(
     ome_crop = read_crop(ome_path, row, col, crop_size)
 
     n_cells = int((np.unique(mask_crop) != 0).sum())
-    print(f"[crop] mask: {mask_crop.shape}, {n_cells} cells, "
-          f"{(mask_crop > 0).mean() * 100:.1f}% non-zero")
+    print(
+        f"[crop] mask: {mask_crop.shape}, {n_cells} cells, "
+        f"{(mask_crop > 0).mean() * 100:.1f}% non-zero"
+    )
     print(f"[crop] OME:  {ome_crop.shape}, unique values: {np.unique(ome_crop)}")
 
     mask_rgb = colorize_mask(mask_crop)
@@ -165,18 +177,23 @@ def visualize_crop(
 
     img = Image.fromarray(side_by_side(mask_rgb, ome_rgb, gap=4))
     img.save(str(out_path))
-    print(f"[crop] saved {out_path} ({img.size[0]}×{img.size[1]}) "
-          f"in {time.perf_counter() - t0:.1f}s")
+    print(
+        f"[crop] saved {out_path} ({img.size[0]}×{img.size[1]}) "
+        f"in {time.perf_counter() - t0:.1f}s"
+    )
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _add_common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--mask", required=True, type=Path, help="Path to the uint32 mask TIF")
-    p.add_argument("--ome",  required=True, type=Path, help="Path to the OME-TIFF")
-    p.add_argument("--out",  type=Path, default=None,  help="Output PNG path")
+    p.add_argument(
+        "--mask", required=True, type=Path, help="Path to the uint32 mask TIF"
+    )
+    p.add_argument("--ome", required=True, type=Path, help="Path to the OME-TIFF")
+    p.add_argument("--out", type=Path, default=None, help="Output PNG path")
 
 
 def main() -> None:
@@ -189,19 +206,36 @@ def main() -> None:
 
     p_ov = sub.add_parser("overview", help="Whole-slide overview at reduced resolution")
     _add_common(p_ov)
-    p_ov.add_argument("--downsample", type=int, default=64,
-                      help="Downsample factor (default: 64)")
+    p_ov.add_argument(
+        "--downsample", type=int, default=64, help="Downsample factor (default: 64)"
+    )
 
     p_cr = sub.add_parser("crop", help="Full-resolution crop of a small region")
     _add_common(p_cr)
-    p_cr.add_argument("--row", type=int, default=None,
-                      help="Center row in full-res pixels (default: auto-detect)")
-    p_cr.add_argument("--col", type=int, default=None,
-                      help="Center col in full-res pixels (default: auto-detect)")
-    p_cr.add_argument("--crop-size", type=int, default=1024,
-                      help="Crop side length in pixels (default: 1024)")
-    p_cr.add_argument("--search-downsample", type=int, default=64,
-                      help="Downsample for auto-detection search (default: 64)")
+    p_cr.add_argument(
+        "--row",
+        type=int,
+        default=None,
+        help="Center row in full-res pixels (default: auto-detect)",
+    )
+    p_cr.add_argument(
+        "--col",
+        type=int,
+        default=None,
+        help="Center col in full-res pixels (default: auto-detect)",
+    )
+    p_cr.add_argument(
+        "--crop-size",
+        type=int,
+        default=1024,
+        help="Crop side length in pixels (default: 1024)",
+    )
+    p_cr.add_argument(
+        "--search-downsample",
+        type=int,
+        default=64,
+        help="Downsample for auto-detection search (default: 64)",
+    )
 
     args = parser.parse_args()
 
@@ -212,8 +246,11 @@ def main() -> None:
     elif args.cmd == "crop":
         out = args.out or args.mask.parent / f"{args.mask.stem}_crop_fullres.png"
         visualize_crop(
-            args.mask, args.ome, out,
-            row=args.row, col=args.col,
+            args.mask,
+            args.ome,
+            out,
+            row=args.row,
+            col=args.col,
             crop_size=args.crop_size,
             search_downsample=args.search_downsample,
         )

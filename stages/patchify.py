@@ -42,17 +42,16 @@ import zarr
 from utils.channels import resolve_channel_indices
 from utils.normalize import percentile_to_uint8
 from utils.ome import (
-    OME_NS,
     get_image_dims,
     get_ome_mpp,
     open_zarr_store,
     read_overview_chw,
 )
 
-
 # ---------------------------------------------------------------------------
 # Tissue detection
 # ---------------------------------------------------------------------------
+
 
 def tissue_mask_hsv(rgb: np.ndarray, mthresh: int = 7, close: int = 4) -> np.ndarray:
     """CLAM-style tissue detection using cv2 HSV operations.
@@ -116,9 +115,7 @@ def build_tissue_mask(
     """
     axes = axes.upper()
     if "Y" not in axes or "X" not in axes:
-        raise ValueError(
-            f"axes must contain both 'Y' and 'X'; got {axes!r}"
-        )
+        raise ValueError(f"axes must contain both 'Y' and 'X'; got {axes!r}")
     c_first = "C" in axes and axes.index("C") < axes.index("Y")
 
     # Truncate dimensions to exact multiples of downsample so that
@@ -127,8 +124,10 @@ def build_tissue_mask(
     img_w_trunc = (img_w // downsample) * downsample
 
     if c_first:
-        raw = np.array(store[:, :img_h_trunc:downsample, :img_w_trunc:downsample])  # (C, H//ds, W//ds)
-        overview = np.moveaxis(raw, 0, -1)                                            # (H//ds, W//ds, C)
+        raw = np.array(
+            store[:, :img_h_trunc:downsample, :img_w_trunc:downsample]
+        )  # (C, H//ds, W//ds)
+        overview = np.moveaxis(raw, 0, -1)  # (H//ds, W//ds, C)
     else:
         overview = np.array(store[:img_h_trunc:downsample, :img_w_trunc:downsample, :])
 
@@ -153,9 +152,14 @@ def build_mx_tissue_mask(store, axes: str, mx_h: int, mx_w: int, ds: int) -> np.
     return binary.astype(bool)
 
 
-def register_he_mx_affine(
-    he_mask: np.ndarray, mx_mask: np.ndarray,
-    ds: int, he_h: int, he_w: int, mx_h: int, mx_w: int,
+def register_he_mx_affine(  # pylint: disable=unused-argument
+    he_mask: np.ndarray,
+    mx_mask: np.ndarray,
+    ds: int,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
 ) -> np.ndarray:
     """Compute affine warp M_full (2×3, float32) mapping H&E full-res → MX full-res.
 
@@ -172,40 +176,49 @@ def register_he_mx_affine(
     he_f32 = he_mask.astype(np.float32)
 
     # Gaussian blur for smoother ECC convergence
-    he_f32     = cv2.GaussianBlur(he_f32,     (5, 5), 0)
+    he_f32 = cv2.GaussianBlur(he_f32, (5, 5), 0)
     mx_resized = cv2.GaussianBlur(mx_resized, (5, 5), 0)
 
-    # ECC: find M_ov that warps mx_resized to align with he_f32
-    M_ov = np.eye(2, 3, dtype=np.float32)  # start at identity (images already same size)
+    # ECC: find m_ov that warps mx_resized to align with he_f32
+    m_ov = np.eye(
+        2, 3, dtype=np.float32
+    )  # start at identity (images already same size)
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 500, 1e-6)
     try:
-        _, M_ov = cv2.findTransformECC(he_f32, mx_resized, M_ov, cv2.MOTION_AFFINE, criteria)
-    except cv2.error as e:
+        _, m_ov = cv2.findTransformECC(
+            he_f32, mx_resized, m_ov, cv2.MOTION_AFFINE, criteria
+        )
+    except cv2.error as e:  # pylint: disable=catching-non-exception
         print(f"  WARNING: ECC registration failed ({e}). Falling back to mpp scale.")
         scale = he_w / mx_w  # approx 2.0; equivalent to he_mpp/mx_mpp
         return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
 
-    # Convert M_ov (overview space) → M_full (H&E full-res → MX full-res)
+    # Convert m_ov (overview space) → m_full (H&E full-res → MX full-res)
     rx = he_ov_w / mx_ov_w
     ry = he_ov_h / mx_ov_h
-    M_full = np.array([
-        [M_ov[0, 0] / rx, M_ov[0, 1] / rx, M_ov[0, 2] * ds / rx],
-        [M_ov[1, 0] / ry, M_ov[1, 1] / ry, M_ov[1, 2] * ds / ry],
-    ], dtype=np.float32)
-    return M_full
+    m_full = np.array(
+        [
+            [m_ov[0, 0] / rx, m_ov[0, 1] / rx, m_ov[0, 2] * ds / rx],
+            [m_ov[1, 0] / ry, m_ov[1, 1] / ry, m_ov[1, 2] * ds / ry],
+        ],
+        dtype=np.float32,
+    )
+    return m_full
 
 
-def transform_he_to_mx_point(M_full: np.ndarray, x0: int, y0: int) -> tuple[int, int]:
-    """Apply the 2×3 affine M_full to (x0, y0) and return rounded (x_mx, y_mx)."""
+def transform_he_to_mx_point(m_full: np.ndarray, x0: int, y0: int) -> tuple[int, int]:
+    """Apply the 2×3 affine m_full to (x0, y0) and return rounded (x_mx, y_mx)."""
     pt = np.array([x0, y0, 1.0], dtype=np.float64)
-    result = M_full.astype(np.float64) @ pt
+    result = m_full.astype(np.float64) @ pt
     return int(round(result[0])), int(round(result[1]))
 
 
 def get_tissue_patches(
     mask: np.ndarray,
-    img_w: int, img_h: int,
-    patch_size: int, stride: int,
+    img_w: int,
+    img_h: int,
+    patch_size: int,
+    stride: int,
     tissue_min: float,
     downsample: int,
 ) -> list[tuple[int, int]]:
@@ -237,7 +250,10 @@ def get_tissue_patches(
 # Patch grid
 # ---------------------------------------------------------------------------
 
-def get_patch_grid(img_w: int, img_h: int, patch_size: int, stride: int) -> list[tuple[int, int]]:
+
+def get_patch_grid(
+    img_w: int, img_h: int, patch_size: int, stride: int
+) -> list[tuple[int, int]]:
     """Return list of (i, j) patch indices that are fully within the image.
 
     Patch top-left pixel coordinates: x0 = j * stride, y0 = i * stride.
@@ -266,8 +282,9 @@ def get_patch_grid(img_w: int, img_h: int, patch_size: int, stride: int) -> list
 # ---------------------------------------------------------------------------
 
 
-def _clip_and_read(store, axes: str, img_w: int, img_h: int,
-                   y0: int, x0: int, size_y: int, size_x: int):
+def _clip_and_read(
+    store, axes: str, img_w: int, img_h: int, y0: int, x0: int, size_y: int, size_x: int
+):
     """Read a clipped region from the store and return (arr, dy, dx, rh, rw).
 
     dy, dx: offsets within the output patch where valid data begins (for zero-padding).
@@ -302,15 +319,18 @@ def _clip_and_read(store, axes: str, img_w: int, img_h: int,
     return arr, dy, dx, rh, rw
 
 
-def read_he_patch(zarr_store, axes: str, img_w: int, img_h: int,
-                  y0: int, x0: int, size: int) -> np.ndarray:
+def read_he_patch(
+    zarr_store, axes: str, img_w: int, img_h: int, y0: int, x0: int, size: int
+) -> np.ndarray:
     """Read H&E patch as uint8 RGB (size, size, 3).
 
     Handle axes permutations (CYX, YXC, YX, etc.).
     If store dtype != uint8: percentile normalize (p1/p99) to uint8.
     Clip to image bounds, zero-pad if needed.
     """
-    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size, size)
+    arr, dy, dx, rh, rw = _clip_and_read(
+        zarr_store, axes, img_w, img_h, y0, x0, size, size
+    )
 
     # Bring channel axis last (-> YXC) if it exists and is first
     if arr.ndim == 3:
@@ -337,14 +357,15 @@ def read_he_patch(zarr_store, axes: str, img_w: int, img_h: int,
     if arr.shape[0] != size or arr.shape[1] != size:
         out = np.zeros((size, size, 3), dtype=np.uint8)
         if rh > 0 and rw > 0:
-            out[dy: dy + rh, dx: dx + rw] = arr[:rh, :rw]
+            out[dy : dy + rh, dx : dx + rw] = arr[:rh, :rw]
         return out
 
     return arr
 
 
-def read_mask_patch(zarr_store, axes: str, img_w: int, img_h: int,
-                    y0: int, x0: int, size: int) -> np.ndarray:
+def read_mask_patch(
+    zarr_store, axes: str, img_w: int, img_h: int, y0: int, x0: int, size: int
+) -> np.ndarray:
     """Read a cell-segmentation mask patch as uint32 (size, size).
 
     The mask is assumed to be in H&E pixel space (same resolution, same
@@ -358,7 +379,9 @@ def read_mask_patch(zarr_store, axes: str, img_w: int, img_h: int,
     Handle axes permutations (YX, CYX with C=1, XY, etc.).
     Clip to image bounds, zero-pad if the patch extends beyond the edge.
     """
-    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size, size)
+    arr, dy, dx, rh, rw = _clip_and_read(
+        zarr_store, axes, img_w, img_h, y0, x0, size, size
+    )
 
     # Collapse a redundant channel axis (C=1 segmentation masks)
     if arr.ndim == 3:
@@ -382,22 +405,32 @@ def read_mask_patch(zarr_store, axes: str, img_w: int, img_h: int,
     if arr.shape[0] != size or arr.shape[1] != size:
         out = np.zeros((size, size), dtype=np.uint32)
         if rh > 0 and rw > 0:
-            out[dy: dy + rh, dx: dx + rw] = arr[:rh, :rw]
+            out[dy : dy + rh, dx : dx + rw] = arr[:rh, :rw]
         return out
 
     return arr
 
 
-def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
-                         y0: int, x0: int, size_y: int, size_x: int,
-                         channel_indices: list[int]) -> np.ndarray:
+def read_multiplex_patch(
+    zarr_store,
+    axes: str,
+    img_w: int,
+    img_h: int,
+    y0: int,
+    x0: int,
+    size_y: int,
+    size_x: int,
+    channel_indices: list[int],
+) -> np.ndarray:
     """Read multiplex patch for specific channel indices.
 
     Returns (C, size_y, size_x) uint16 where C = len(channel_indices).
     Handle axes permutations (CYX, YXC, etc.).
     Clip to image bounds, zero-pad if needed.
     """
-    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size_y, size_x)
+    arr, dy, dx, rh, rw = _clip_and_read(
+        zarr_store, axes, img_w, img_h, y0, x0, size_y, size_x
+    )
 
     # active_axes: CYX axes in the order they appear after scalar-collapsing non-CYX dims
     active_axes = [ax for ax in axes if ax in ("C", "Y", "X")]
@@ -425,7 +458,7 @@ def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
     if arr.shape[1] != size_y or arr.shape[2] != size_x:
         out = np.zeros((n_ch, size_y, size_x), dtype=np.uint16)
         if rh > 0 and rw > 0:
-            out[:, dy: dy + rh, dx: dx + rw] = arr[:, :rh, :rw]
+            out[:, dy : dy + rh, dx : dx + rw] = arr[:, :rh, :rw]
         return out
 
     return arr
@@ -444,32 +477,49 @@ load_channel_indices = resolve_channel_indices
 # ---------------------------------------------------------------------------
 
 
-
 def main():
     parser = argparse.ArgumentParser(
         description="Stage 1 -- Extract H&E and multiplex patches from OME-TIFFs."
     )
-    parser.add_argument("--he-image",           required=True)
-    parser.add_argument("--multiplex-image",     required=True)
-    parser.add_argument("--metadata-csv",        required=True)
-    parser.add_argument("--out",                 default="processed")
-    parser.add_argument("--patch-size",          type=int,   default=256)
-    parser.add_argument("--stride",              type=int,   default=256)
-    parser.add_argument("--tissue-min",          type=float, default=0.1)
-    parser.add_argument("--channels",            nargs="+",  default=["CD31", "Ki67", "CD45", "PCNA"])
-    parser.add_argument("--overview-downsample", type=int,   default=64,
-                        help="Stride for H&E overview sampling (default 64)")
-    parser.add_argument("--vis-channels",        type=int,   nargs=3, default=[0, 10, 20],
-                        help="3 multiplex channel indices for RGB composite in vis")
-    parser.add_argument("--register", action=argparse.BooleanOptionalAction, default=True,
-                        help="Run ECC affine registration between H&E and MX tissue masks (default: on)")
-    parser.add_argument("--mask-image", default=None,
-                        help="Optional cell segmentation mask OME-TIFF in H&E pixel space. "
-                             "Patches saved to processed/masks/{x0}_{y0}.npy as uint32 label IDs.")
+    parser.add_argument("--he-image", required=True)
+    parser.add_argument("--multiplex-image", required=True)
+    parser.add_argument("--metadata-csv", required=True)
+    parser.add_argument("--out", default="processed")
+    parser.add_argument("--patch-size", type=int, default=256)
+    parser.add_argument("--stride", type=int, default=256)
+    parser.add_argument("--tissue-min", type=float, default=0.1)
+    parser.add_argument(
+        "--channels", nargs="+", default=["CD31", "Ki67", "CD45", "PCNA"]
+    )
+    parser.add_argument(
+        "--overview-downsample",
+        type=int,
+        default=64,
+        help="Stride for H&E overview sampling (default 64)",
+    )
+    parser.add_argument(
+        "--vis-channels",
+        type=int,
+        nargs=3,
+        default=[0, 10, 20],
+        help="3 multiplex channel indices for RGB composite in vis",
+    )
+    parser.add_argument(
+        "--register",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run ECC affine registration between H&E and MX tissue masks (default: on)",
+    )
+    parser.add_argument(
+        "--mask-image",
+        default=None,
+        help="Optional cell segmentation mask OME-TIFF in H&E pixel space. "
+        "Patches saved to processed/masks/{x0}_{y0}.npy as uint32 label IDs.",
+    )
     args = parser.parse_args()
 
-    out_dir    = Path(args.out)
-    ds         = args.overview_downsample
+    out_dir = Path(args.out)
+    ds = args.overview_downsample
     patch_size = args.patch_size
     (out_dir / "he").mkdir(parents=True, exist_ok=True)
     (out_dir / "multiplex").mkdir(parents=True, exist_ok=True)
@@ -477,7 +527,9 @@ def main():
         (out_dir / "masks").mkdir(parents=True, exist_ok=True)
 
     print("Resolving channel indices ...")
-    channel_indices, resolved_names = load_channel_indices(args.metadata_csv, args.channels)
+    channel_indices, resolved_names = load_channel_indices(
+        args.metadata_csv, args.channels
+    )
 
     print("Opening H&E image ...")
     he_tif = tifffile.TiffFile(args.he_image)
@@ -505,16 +557,17 @@ def main():
         if args.register:
             print("Computing affine registration via ECC on tissue masks ...")
             mx_mask = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds)
-            M_full = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
-            print(f"  Warp matrix:\n{M_full}")
+            m_full = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
+            print(f"  Warp matrix:\n{m_full}")
         else:
-            M_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
+            m_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
 
         he_chw = read_overview_chw(he_store, he_axes, he_h, he_w, ds)  # (C, H, W)
-        he_chw = he_chw[:3] if he_chw.shape[0] >= 3 else np.repeat(he_chw[:1], 3, axis=0)
+        he_chw = (
+            he_chw[:3] if he_chw.shape[0] >= 3 else np.repeat(he_chw[:1], 3, axis=0)
+        )
         if he_chw.dtype != np.uint8:
             he_chw = percentile_to_uint8(he_chw)
-        he_overview = np.moveaxis(he_chw.astype(np.uint8), 0, -1)  # (H, W, 3)
 
         seg_store = seg_axes = seg_w = seg_h = None
         if args.mask_image:
@@ -525,11 +578,13 @@ def main():
             print(f"  {seg_w} x {seg_h}  axes={seg_axes}")
 
         print("Selecting tissue patches ...")
-        coords = get_tissue_patches(mask, he_w, he_h, patch_size, args.stride, args.tissue_min, ds)
+        coords = get_tissue_patches(
+            mask, he_w, he_h, patch_size, args.stride, args.tissue_min, ds
+        )
         print(f"  {len(coords)} patches selected")
 
         print("Extracting patches ...")
-        index: list[dict]            = []
+        index: list[dict] = []
         he_vis_coords: list[tuple[int, int]] = []
         mx_vis_coords: list[tuple[int, int]] = []
 
@@ -542,25 +597,39 @@ def main():
 
             has_seg = False
             if seg_store is not None:
-                seg_patch = read_mask_patch(seg_store, seg_axes, seg_w, seg_h,
-                                            y0, x0, patch_size)
+                seg_patch = read_mask_patch(
+                    seg_store, seg_axes, seg_w, seg_h, y0, x0, patch_size
+                )
                 np.save(out_dir / "masks" / f"{x0}_{y0}.npy", seg_patch)
                 has_seg = True
 
-            x0_mx, y0_mx = transform_he_to_mx_point(M_full, x0, y0)
+            x0_mx, y0_mx = transform_he_to_mx_point(m_full, x0, y0)
             size_mx = max(1, round(patch_size * scale))
-            has_mx  = (x0_mx + size_mx <= mx_w) and (y0_mx + size_mx <= mx_h)
+            has_mx = (x0_mx + size_mx <= mx_w) and (y0_mx + size_mx <= mx_h)
 
             if has_mx:
                 mx_patch = read_multiplex_patch(
-                    mx_store, mx_axes, mx_w, mx_h,
-                    y0_mx, x0_mx, size_mx, size_mx, channel_indices,
+                    mx_store,
+                    mx_axes,
+                    mx_w,
+                    mx_h,
+                    y0_mx,
+                    x0_mx,
+                    size_mx,
+                    size_mx,
+                    channel_indices,
                 )
                 if mx_patch.shape[1] != patch_size or mx_patch.shape[2] != patch_size:
-                    resized = np.zeros((mx_patch.shape[0], patch_size, patch_size), dtype=mx_patch.dtype)
+                    resized = np.zeros(
+                        (mx_patch.shape[0], patch_size, patch_size),
+                        dtype=mx_patch.dtype,
+                    )
                     for c in range(mx_patch.shape[0]):
-                        resized[c] = cv2.resize(mx_patch[c], (patch_size, patch_size),
-                                                interpolation=cv2.INTER_LINEAR)
+                        resized[c] = cv2.resize(
+                            mx_patch[c],
+                            (patch_size, patch_size),
+                            interpolation=cv2.INTER_LINEAR,
+                        )
                     mx_patch = resized
                 np.save(out_dir / "multiplex" / f"{x0}_{y0}.npy", mx_patch)
                 mx_vis_coords.append((x0_mx // ds, y0_mx // ds))
@@ -577,17 +646,19 @@ def main():
             n_seg = sum(p.get("has_mask", False) for p in index)
             print(f"        {n_seg}/{len(index)} patches have cell mask.")
 
-        with open(out_dir / "index.json", "w") as f:
+        with open(out_dir / "index.json", "w", encoding="utf-8") as f:
             meta: dict = {
                 "patches": index,
                 "patch_size": patch_size,
                 "stride": args.stride,
                 "tissue_min": args.tissue_min,
-                "img_w": he_w, "img_h": he_h,
-                "he_mpp": he_mpp_x, "mx_mpp": mx_mpp_x,
+                "img_w": he_w,
+                "img_h": he_h,
+                "he_mpp": he_mpp_x,
+                "mx_mpp": mx_mpp_x,
                 "scale_he_to_mx": scale,
                 "channels": resolved_names,
-                "warp_matrix": M_full.tolist(),
+                "warp_matrix": m_full.tolist(),
                 "registration": args.register,
             }
             if args.mask_image:

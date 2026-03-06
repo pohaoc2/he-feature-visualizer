@@ -25,8 +25,10 @@ def build_pyramid(src: Path, dst: Path, tile_size: int = 512) -> None:
     t0 = time.perf_counter()
     print(f"[pyramid] reading full mask from {src} ...")
     mask = tifffile.imread(str(src))
-    print(f"[pyramid] shape={mask.shape}, dtype={mask.dtype}, "
-          f"loaded in {time.perf_counter() - t0:.1f}s")
+    print(
+        f"[pyramid] shape={mask.shape}, dtype={mask.dtype}, "
+        f"loaded in {time.perf_counter() - t0:.1f}s"
+    )
 
     levels: list[np.ndarray] = [mask]
     current = mask
@@ -37,14 +39,18 @@ def build_pyramid(src: Path, dst: Path, tile_size: int = 512) -> None:
 
     print(f"[pyramid] writing {len(levels)} levels to {dst} ...")
     with tifffile.TiffWriter(str(dst), bigtiff=True) as tw:
-        options = dict(tile=(tile_size, tile_size), compression="deflate")
+        options = {"tile": (tile_size, tile_size), "compression": "deflate"}
         tw.write(levels[0], subifds=len(levels) - 1, **options)
-        print(f"[pyramid]   wrote level 0 ({levels[0].shape}) – "
-              f"{time.perf_counter() - t0:.1f}s")
+        print(
+            f"[pyramid]   wrote level 0 ({levels[0].shape}) – "
+            f"{time.perf_counter() - t0:.1f}s"
+        )
         for i in range(1, len(levels)):
             tw.write(levels[i], **options)
-            print(f"[pyramid]   wrote level {i} ({levels[i].shape}) – "
-                  f"{time.perf_counter() - t0:.1f}s")
+            print(
+                f"[pyramid]   wrote level {i} ({levels[i].shape}) – "
+                f"{time.perf_counter() - t0:.1f}s"
+            )
 
     elapsed = time.perf_counter() - t0
     size_mb = dst.stat().st_size / 1024 / 1024
@@ -57,12 +63,18 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--mask", required=True, type=Path,
-                        help="Path to the uint32 mask TIF")
-    parser.add_argument("--out", type=Path, default=None,
-                        help="Output path (default: <mask stem>_pyramid.ome.tif)")
-    parser.add_argument("--tile-size", type=int, default=512,
-                        help="Tile size in pixels (default: 512)")
+    parser.add_argument(
+        "--mask", required=True, type=Path, help="Path to the uint32 mask TIF"
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Output path (default: <mask stem>_pyramid.ome.tif)",
+    )
+    parser.add_argument(
+        "--tile-size", type=int, default=512, help="Tile size in pixels (default: 512)"
+    )
     args = parser.parse_args()
 
     out = args.out or args.mask.parent / f"{args.mask.stem}_pyramid.ome.tif"

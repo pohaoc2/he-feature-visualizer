@@ -34,7 +34,9 @@ def get_ome_mpp(tif: tifffile.TiffFile) -> tuple[float | None, float | None]:
     pixels = root.find(".//ome:Pixels", OME_NS)
     if pixels is None:
         return None, None
-    return _safe_float(pixels.get("PhysicalSizeX")), _safe_float(pixels.get("PhysicalSizeY"))
+    return _safe_float(pixels.get("PhysicalSizeX")), _safe_float(
+        pixels.get("PhysicalSizeY")
+    )
 
 
 def open_zarr_store(tif: tifffile.TiffFile) -> zarr.Array:

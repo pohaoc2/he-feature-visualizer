@@ -20,7 +20,9 @@ def _write_multiplex(path, h, w, n_ch=4):
 
 
 def _write_meta_csv(path, names):
-    lines = ["Channel ID,Target Name\n"] + [f"Channel:0:{i},{n}\n" for i, n in enumerate(names)]
+    lines = ["Channel ID,Target Name\n"] + [
+        f"Channel:0:{i},{n}\n" for i, n in enumerate(names)
+    ]
     path.write_text("".join(lines))
 
 
@@ -34,16 +36,28 @@ def _run_patchify(extra_args, tmp_path):
     _write_meta_csv(csv, ["CD31", "Ki67", "CD45", "PCNA"])
     cmd = [
         sys.executable,
-        "-m", "stages.patchify",
-        "--he-image", str(he),
-        "--multiplex-image", str(mx),
-        "--metadata-csv", str(csv),
-        "--out", str(out),
-        "--stride", "256",
-        "--channels", "CD31", "Ki67", "CD45", "PCNA",
+        "-m",
+        "stages.patchify",
+        "--he-image",
+        str(he),
+        "--multiplex-image",
+        str(mx),
+        "--metadata-csv",
+        str(csv),
+        "--out",
+        str(out),
+        "--stride",
+        "256",
+        "--channels",
+        "CD31",
+        "Ki67",
+        "CD45",
+        "PCNA",
     ] + extra_args
     result = subprocess.run(
-        cmd, capture_output=True, text=True,
+        cmd,
+        capture_output=True,
+        text=True,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
     return result, out
@@ -77,17 +91,30 @@ def test_patchify_filters_dirty_gray_background_with_hsv_method(tmp_path):
 
     cmd = [
         sys.executable,
-        "-m", "stages.patchify",
-        "--he-image", str(he),
-        "--multiplex-image", str(mx),
-        "--metadata-csv", str(csv),
-        "--out", str(out),
-        "--stride", "256",
-        "--channels", "CD31", "Ki67", "CD45", "PCNA",
-        "--tissue-min", "0.5",
+        "-m",
+        "stages.patchify",
+        "--he-image",
+        str(he),
+        "--multiplex-image",
+        str(mx),
+        "--metadata-csv",
+        str(csv),
+        "--out",
+        str(out),
+        "--stride",
+        "256",
+        "--channels",
+        "CD31",
+        "Ki67",
+        "CD45",
+        "PCNA",
+        "--tissue-min",
+        "0.5",
     ]
     result = subprocess.run(
-        cmd, capture_output=True, text=True,
+        cmd,
+        capture_output=True,
+        text=True,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
     assert result.returncode == 0, result.stderr

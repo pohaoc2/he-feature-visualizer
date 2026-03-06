@@ -20,7 +20,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -54,6 +53,7 @@ def _write_metadata_csv(path: Path, targets: dict) -> None:
 # Unit tests — load_multiplex_patch
 # ---------------------------------------------------------------------------
 
+
 def test_load_multiplex_patch(tmp_path):
     """
     Contract: load_multiplex_patch reads a .npy file and returns the array
@@ -78,15 +78,18 @@ def test_load_multiplex_patch(tmp_path):
 
     result = load_multiplex_patch(str(npy_path))
 
-    assert result.shape == (3, 64, 64), (
-        f"Expected shape (3, 64, 64), got {result.shape}"
-    )
+    assert result.shape == (
+        3,
+        64,
+        64,
+    ), f"Expected shape (3, 64, 64), got {result.shape}"
     assert result.dtype == np.uint16, f"Expected uint16, got {result.dtype}"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — get_channel_index
 # ---------------------------------------------------------------------------
+
 
 def test_get_channel_index_case_insensitive():
     """
@@ -104,15 +107,15 @@ def test_get_channel_index_case_insensitive():
 
     names = ["DNA", "CD31", "Ki67", "CD45"]
 
-    assert get_channel_index(names, "cd31") == 1, (
-        "Case-insensitive lookup of 'cd31' should return index 1"
-    )
-    assert get_channel_index(names, "Ki67") == 2, (
-        "Exact-case lookup of 'Ki67' should return index 2"
-    )
-    assert get_channel_index(names, "CD45") == 3, (
-        "Exact-case lookup of 'CD45' should return index 3"
-    )
+    assert (
+        get_channel_index(names, "cd31") == 1
+    ), "Case-insensitive lookup of 'cd31' should return index 1"
+    assert (
+        get_channel_index(names, "Ki67") == 2
+    ), "Exact-case lookup of 'Ki67' should return index 2"
+    assert (
+        get_channel_index(names, "CD45") == 3
+    ), "Exact-case lookup of 'CD45' should return index 3"
 
 
 def test_get_channel_index_raises_on_missing():
@@ -135,6 +138,7 @@ def test_get_channel_index_raises_on_missing():
 # ---------------------------------------------------------------------------
 # Unit tests — extract_channel
 # ---------------------------------------------------------------------------
+
 
 def test_extract_channel_shape():
     """
@@ -164,6 +168,7 @@ def test_extract_channel_shape():
 # ---------------------------------------------------------------------------
 # Unit tests — percentile_norm
 # ---------------------------------------------------------------------------
+
 
 def test_percentile_norm_range():
     """
@@ -208,14 +213,15 @@ def test_percentile_norm_uniform_returns_zeros():
 
     result = percentile_norm(arr)
 
-    assert np.all(result == 0.0), (
-        f"Uniform input should produce all-zero output, got max={result.max()}"
-    )
+    assert np.all(
+        result == 0.0
+    ), f"Uniform input should produce all-zero output, got max={result.max()}"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — binarize_otsu
 # ---------------------------------------------------------------------------
+
 
 def test_binarize_otsu_splits_bimodal():
     """
@@ -235,24 +241,25 @@ def test_binarize_otsu_splits_bimodal():
     from stages.multiplex_layers import binarize_otsu  # noqa: WPS433
 
     arr = np.zeros((64, 64), dtype=np.float32)
-    arr[:, :32] = 0.1   # background
-    arr[:, 32:] = 0.9   # signal
+    arr[:, :32] = 0.1  # background
+    arr[:, 32:] = 0.9  # signal
 
     mask = binarize_otsu(arr)
 
     assert mask.dtype == bool, f"Expected bool dtype, got {mask.dtype}"
     assert mask.shape == (64, 64), f"Expected shape (64, 64), got {mask.shape}"
-    assert mask[:, :32].mean() < 0.1, (
-        f"Left (background) half should be mostly False, got mean={mask[:, :32].mean():.3f}"
-    )
-    assert mask[:, 32:].mean() > 0.9, (
-        f"Right (signal) half should be mostly True, got mean={mask[:, 32:].mean():.3f}"
-    )
+    assert (
+        mask[:, :32].mean() < 0.1
+    ), f"Left (background) half should be mostly False, got mean={mask[:, :32].mean():.3f}"
+    assert (
+        mask[:, 32:].mean() > 0.9
+    ), f"Right (signal) half should be mostly True, got mean={mask[:, 32:].mean():.3f}"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — apply_colormap
 # ---------------------------------------------------------------------------
+
 
 def test_apply_colormap_shape_and_dtype():
     """
@@ -283,6 +290,7 @@ def test_apply_colormap_shape_and_dtype():
 # Unit tests — make_vasculature_overlay
 # ---------------------------------------------------------------------------
 
+
 def test_make_vasculature_overlay_colors():
     """
     Contract: make_vasculature_overlay converts a boolean mask to a (H, W, 4)
@@ -305,28 +313,31 @@ def test_make_vasculature_overlay_colors():
 
     overlay = make_vasculature_overlay(mask, color=(255, 60, 0, 200))
 
-    assert overlay.shape == (64, 64, 4), (
-        f"Expected shape (64, 64, 4), got {overlay.shape}"
-    )
+    assert overlay.shape == (
+        64,
+        64,
+        4,
+    ), f"Expected shape (64, 64, 4), got {overlay.shape}"
     assert overlay.dtype == np.uint8, f"Expected uint8, got {overlay.dtype}"
 
     # Vessel pixel must have correct R channel and alpha
-    assert overlay[32, 32, 0] == 255, (
-        f"Vessel pixel R should be 255, got {overlay[32, 32, 0]}"
-    )
-    assert overlay[32, 32, 3] == 200, (
-        f"Vessel pixel alpha should be 200, got {overlay[32, 32, 3]}"
-    )
+    assert (
+        overlay[32, 32, 0] == 255
+    ), f"Vessel pixel R should be 255, got {overlay[32, 32, 0]}"
+    assert (
+        overlay[32, 32, 3] == 200
+    ), f"Vessel pixel alpha should be 200, got {overlay[32, 32, 3]}"
 
     # Background pixel must be fully transparent
-    assert overlay[0, 0, 3] == 0, (
-        f"Background pixel alpha should be 0, got {overlay[0, 0, 3]}"
-    )
+    assert (
+        overlay[0, 0, 3] == 0
+    ), f"Background pixel alpha should be 0, got {overlay[0, 0, 3]}"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — make_oxygen_map
 # ---------------------------------------------------------------------------
+
 
 def test_make_oxygen_map_shape_and_dtype():
     """
@@ -357,14 +368,15 @@ def test_make_oxygen_map_shape_and_dtype():
     # Near vessel (center) should have higher blue than far from vessel (corner)
     center_blue = int(out[32, 32, 2])
     corner_blue = int(out[0, 0, 2])
-    assert center_blue > corner_blue, (
-        f"Vessel center blue ({center_blue}) should exceed corner blue ({corner_blue})"
-    )
+    assert (
+        center_blue > corner_blue
+    ), f"Vessel center blue ({center_blue}) should exceed corner blue ({corner_blue})"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — make_glucose_map
 # ---------------------------------------------------------------------------
+
 
 def test_make_glucose_map_high_ki67_gives_bright_pixels():
     """
@@ -399,14 +411,15 @@ def test_make_glucose_map_high_ki67_gives_bright_pixels():
     # High-Ki67 center should be brighter (higher R) than zero background
     center_r = int(out[32, 32, 0])
     corner_r = int(out[0, 0, 0])
-    assert center_r > corner_r, (
-        f"High-Ki67 center R ({center_r}) should exceed background corner R ({corner_r})"
-    )
+    assert (
+        center_r > corner_r
+    ), f"High-Ki67 center R ({center_r}) should exceed background corner R ({corner_r})"
 
 
 # ---------------------------------------------------------------------------
 # Unit tests — resolve_channel_indices (was load_channel_names)
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_channel_indices_validates_missing(tmp_path):
     """
@@ -428,6 +441,7 @@ def test_resolve_channel_indices_validates_missing(tmp_path):
 # ---------------------------------------------------------------------------
 # CLI integration tests
 # ---------------------------------------------------------------------------
+
 
 def test_cli_creates_all_three_layers(tmp_path):
     """
@@ -483,11 +497,18 @@ def test_cli_creates_all_three_layers(tmp_path):
 
     cmd = [
         *_multiplex_layers_cmd(),
-        "--multiplex-dir", str(mux_dir),
-        "--index", str(index_path),
-        "--metadata-csv", str(meta_path),
-        "--out", str(out_dir),
-        "--channels", "CD31", "Ki67", "PCNA",
+        "--multiplex-dir",
+        str(mux_dir),
+        "--index",
+        str(index_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "CD31",
+        "Ki67",
+        "PCNA",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -500,9 +521,11 @@ def test_cli_creates_all_three_layers(tmp_path):
     vasc_img = Image.open(str(vasc_path))
     assert vasc_img.mode == "RGBA", f"Expected RGBA mode, got {vasc_img.mode}"
     vasc_arr = np.array(vasc_img)
-    assert vasc_arr.shape == (256, 256, 4), (
-        f"Expected (256, 256, 4), got {vasc_arr.shape}"
-    )
+    assert vasc_arr.shape == (
+        256,
+        256,
+        4,
+    ), f"Expected (256, 256, 4), got {vasc_arr.shape}"
 
     # Oxygen map
     oxy_path = out_dir / "oxygen" / "0_0.png"
@@ -563,11 +586,18 @@ def test_cli_skips_missing_npy(tmp_path):
 
     cmd = [
         *_multiplex_layers_cmd(),
-        "--multiplex-dir", str(mux_dir),
-        "--index", str(index_path),
-        "--metadata-csv", str(meta_path),
-        "--out", str(out_dir),
-        "--channels", "CD31", "Ki67", "PCNA",
+        "--multiplex-dir",
+        str(mux_dir),
+        "--index",
+        str(index_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "CD31",
+        "Ki67",
+        "PCNA",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -576,11 +606,11 @@ def test_cli_skips_missing_npy(tmp_path):
     )
 
     # Patch 0_0 must be processed
-    assert (out_dir / "vasculature" / "0_0.png").exists(), (
-        "vasculature/0_0.png must be created for the existing patch"
-    )
+    assert (
+        out_dir / "vasculature" / "0_0.png"
+    ).exists(), "vasculature/0_0.png must be created for the existing patch"
 
     # Patch 0_1 must be silently skipped
-    assert not (out_dir / "vasculature" / "0_1.png").exists(), (
-        "vasculature/0_1.png must NOT be created when .npy is missing"
-    )
+    assert not (
+        out_dir / "vasculature" / "0_1.png"
+    ).exists(), "vasculature/0_1.png must NOT be created when .npy is missing"
