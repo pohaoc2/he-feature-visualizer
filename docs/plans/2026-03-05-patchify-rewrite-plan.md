@@ -15,6 +15,7 @@
 Design doc: `docs/plans/2026-03-05-patchify-rewrite-design.md`
 
 Key constants (CRC02):
+
 - H&E: 82,230 × 54,363 px, mpp=0.325 µm/px, axes=CYX, dtype=uint8
 - Multiplex: 41,094 × 24,017 px, mpp=0.65 µm/px, axes=CYX, dtype=uint16, 36 channels
 - Scale factor: `he_mpp / mx_mpp = 0.5`
@@ -47,6 +48,7 @@ pytest tests/ -v
 Read a downsampled overview via zarr stride sampling and return a boolean tissue mask.
 
 **Files:**
+
 - Modify: `patchify.py` (add function after `tissue_fraction`)
 - Test: `tests/test_patchify.py`
 
@@ -170,6 +172,7 @@ git commit -m "feat: add build_tissue_mask for overview-based tissue detection"
 Filter a patch grid by tissue mask fraction, returning level-0 `(x0, y0)` coordinates.
 
 **Files:**
+
 - Modify: `patchify.py` (add function after `build_tissue_mask`)
 - Test: `tests/test_patchify.py`
 
@@ -279,6 +282,7 @@ git commit -m "feat: add get_tissue_patches for mask-based patch filtering"
 Produce `vis_patches.jpg`: H&E thumbnail (left) and multiplex composite (right) with patch grid overlaid.
 
 **Files:**
+
 - Modify: `patchify.py` (add before `main`)
 - Test: `tests/test_patchify.py`
 
@@ -422,6 +426,7 @@ git commit -m "feat: add visualize for side-by-side H&E + multiplex patch overvi
 Wire `build_tissue_mask` → `get_tissue_patches` → extract patches → `visualize`. Add `--overview-downsample` and `--vis-channels` CLI args.
 
 **Files:**
+
 - Modify: `patchify.py` — replace `main()` body
 
 **Step 1: Replace `main()`**

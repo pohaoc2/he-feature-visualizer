@@ -1,23 +1,40 @@
 #!/usr/bin/env python3
 """
-check_shape.py -- Diagnostic: inspect OME-TIFF dimensions and alignment.
+check_shape.py -- Inspect OME-TIFF dimensions without downloading the full file.
+
+Supports local paths and s3:// URLs.  For remote files only the BigTIFF header
+(16 bytes) and the tail containing the IFDs / OME-XML are fetched via ranged
+S3 GET requests.
 
 Usage:
-    python check_shape.py --he-image data/CRC02-HE.ome.tif \
-                          --multiplex-image data/CRC02.ome.tif
+    # one or more images
+    python check_shape.py s3://lin-2021-crc-atlas/data/WD-76845-096.ome.tif \\
+                          s3://lin-2021-crc-atlas/data/WD-76845-097.ome.tif
 
-Prints pixel dimensions, physical pixel sizes (mpp), computes scale factors,
-and verifies that physical extents agree between the two images.
+    # named pair (H&E + multiplex) — also runs alignment check
+    python check_shape.py --he-image   s3://lin-2021-crc-atlas/data/WD-76845-096.ome.tif \\
+                          --multiplex-image s3://lin-2021-crc-atlas/data/WD-76845-097.ome.tif
+
+    # local files still work
+    python check_shape.py data/CRC02-HE.ome.tif data/CRC02.ome.tif
 """
 
 import argparse
+import re
+import struct
 import sys
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 
 import tifffile
 
 OME_NS = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
+TAIL_SIZE = 50 * 1024 * 1024  # 50 MB — enough to hold IFDs + OME-XML for known datasets
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _safe_float(x):
     try:
@@ -26,124 +43,242 @@ def _safe_float(x):
         return None
 
 
-def inspect_tiff(path: str) -> dict:
-    """Return a dict with shape/axes/mpp info for the given OME-TIFF."""
-    info = {"path": path}
+def _mpp_from_xml(xml_bytes: bytes) -> tuple[float | None, float | None, str | None]:
+    """Extract (mpp_x, mpp_y, unit) from OME-XML bytes."""
+    try:
+        root = ET.fromstring(xml_bytes.rstrip(b"\x00").decode("utf-8", errors="replace"))
+    except ET.ParseError:
+        return None, None, None
+    pixels = root.find(".//ome:Pixels", OME_NS) or root.find(".//Pixels")
+    if pixels is None:
+        return None, None, None
+    return (
+        _safe_float(pixels.get("PhysicalSizeX")),
+        _safe_float(pixels.get("PhysicalSizeY")),
+        pixels.get("PhysicalSizeXUnit", "µm"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# S3 range-read helpers
+# ---------------------------------------------------------------------------
+
+def _s3_get_range(s3, bucket: str, key: str, start: int, end: int) -> bytes:
+    resp = s3.get_object(Bucket=bucket, Key=key, Range=f"bytes={start}-{end}")
+    return resp["Body"].read()
+
+
+def _s3_file_size(s3, bucket: str, key: str) -> int:
+    return s3.head_object(Bucket=bucket, Key=key)["ContentLength"]
+
+
+# ---------------------------------------------------------------------------
+# BigTIFF IFD parser (works on a bytes buffer that contains the IFD)
+# ---------------------------------------------------------------------------
+
+def _parse_ifd(buf: bytes, ifd_offset: int, buf_start: int, bo: str) -> dict:
+    """Parse one BigTIFF IFD; return {tag: (type, count, value_or_offset)}."""
+    pos = ifd_offset - buf_start
+    n = struct.unpack_from(bo + "Q", buf, pos)[0]
+    pos += 8
+    tags: dict[int, tuple] = {}
+    for _ in range(min(n, 300)):
+        tag = struct.unpack_from(bo + "H", buf, pos)[0]
+        typ = struct.unpack_from(bo + "H", buf, pos + 2)[0]
+        cnt = struct.unpack_from(bo + "Q", buf, pos + 4)[0]
+        val = struct.unpack_from(bo + "Q", buf, pos + 12)[0]
+        tags[tag] = (typ, cnt, val)
+        pos += 20
+    return tags
+
+
+# ---------------------------------------------------------------------------
+# Core inspect functions
+# ---------------------------------------------------------------------------
+
+def inspect_tiff_local(path: str) -> dict:
+    """Inspect a local OME-TIFF using tifffile (original behaviour)."""
+    info: dict = {"path": path}
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
         axes = series.axes.upper()
         shape = series.shape
-        info["axes"] = axes
-        info["shape"] = shape
-        info["dtype"] = str(series.dtype)
-
-        y_idx = axes.index("Y") if "Y" in axes else None
-        x_idx = axes.index("X") if "X" in axes else None
-        info["img_h"] = shape[y_idx] if y_idx is not None else None
-        info["img_w"] = shape[x_idx] if x_idx is not None else None
+        info.update(axes=axes, shape=shape, dtype=str(series.dtype))
+        info["img_h"] = shape[axes.index("Y")] if "Y" in axes else None
+        info["img_w"] = shape[axes.index("X")] if "X" in axes else None
 
         ome_xml = getattr(tif, "ome_metadata", None)
         if not ome_xml and tif.pages:
             ome_xml = getattr(tif.pages[0], "description", None)
 
-        info["mpp_x"] = None
-        info["mpp_y"] = None
-        info["mpp_unit"] = None
-        info["namespace"] = None
-
+        mpp_x = mpp_y = unit = None
         if ome_xml:
-            try:
-                root = ET.fromstring(ome_xml)
-                info["namespace"] = root.tag.split("}")[0].lstrip("{") if "}" in root.tag else None
-                pixels = root.find(".//ome:Pixels", OME_NS)
-                if pixels is not None:
-                    info["mpp_x"] = _safe_float(pixels.get("PhysicalSizeX"))
-                    info["mpp_y"] = _safe_float(pixels.get("PhysicalSizeY"))
-                    info["mpp_unit"] = pixels.get("PhysicalSizeXUnit", "µm")
-                else:
-                    # Try without namespace
-                    pixels_ns = root.find(".//Pixels")
-                    if pixels_ns is not None:
-                        info["mpp_x"] = _safe_float(pixels_ns.get("PhysicalSizeX"))
-                        info["mpp_y"] = _safe_float(pixels_ns.get("PhysicalSizeY"))
-                        info["mpp_unit"] = pixels_ns.get("PhysicalSizeXUnit", "µm")
-            except ET.ParseError as e:
-                info["xml_error"] = str(e)
+            xml_bytes = ome_xml.encode() if isinstance(ome_xml, str) else ome_xml
+            mpp_x, mpp_y, unit = _mpp_from_xml(xml_bytes)
 
+        info.update(mpp_x=mpp_x, mpp_y=mpp_y, mpp_unit=unit or "µm")
     return info
 
 
+def inspect_tiff_s3(bucket: str, key: str) -> dict:
+    """Inspect a remote OME-TIFF via two S3 range requests (header + tail)."""
+    import boto3
+    s3 = boto3.client("s3")
+
+    path = f"s3://{bucket}/{key}"
+    info: dict = {"path": path}
+
+    file_size = _s3_file_size(s3, bucket, key)
+    info["file_size"] = file_size
+
+    # 1. Read BigTIFF header (16 bytes) → IFD offset
+    hdr = _s3_get_range(s3, bucket, key, 0, 15)
+    if len(hdr) < 16:
+        raise ValueError(f"Could not read TIFF header from {path}")
+
+    bo = "<" if hdr[:2] == b"II" else ">"
+    magic = struct.unpack_from(bo + "H", hdr, 2)[0]
+    if magic not in (42, 43):
+        raise ValueError(f"Not a TIFF file: magic={magic:#06x}")
+    is_bigtiff = magic == 43
+    if not is_bigtiff:
+        raise NotImplementedError("Only BigTIFF remote read is implemented; file appears to be classic TIFF")
+
+    ifd_offset = struct.unpack_from(bo + "Q", hdr, 8)[0]
+
+    # 2. Read tail (covers IFDs and OME-XML for known OME-TIFFs)
+    tail_start = max(0, file_size - TAIL_SIZE)
+    tail = _s3_get_range(s3, bucket, key, tail_start, file_size - 1)
+
+    if ifd_offset < tail_start:
+        raise ValueError(
+            f"IFD offset {ifd_offset} is before tail start {tail_start}; "
+            f"increase TAIL_SIZE (currently {TAIL_SIZE // 1024**2} MB)"
+        )
+
+    tags = _parse_ifd(tail, ifd_offset, tail_start, bo)
+
+    # TIFF tags: 256=ImageWidth, 257=ImageLength, 270=ImageDescription
+    width  = tags.get(256, (None, None, None))[2]
+    height = tags.get(257, (None, None, None))[2]
+    info["img_w"] = width
+    info["img_h"] = height
+    info["shape"] = (height, width)
+    info["axes"]  = "YX"
+    info["dtype"] = "unknown"
+
+    mpp_x = mpp_y = unit = None
+    if 270 in tags:
+        _, desc_len, desc_off = tags[270]
+        # Try reading from tail buffer first
+        local_off = desc_off - tail_start
+        if 0 <= local_off < len(tail):
+            xml_bytes = tail[local_off: local_off + desc_len]
+        else:
+            # Description stored elsewhere — do a targeted range fetch
+            xml_bytes = _s3_get_range(s3, bucket, key, desc_off, desc_off + desc_len - 1)
+        mpp_x, mpp_y, unit = _mpp_from_xml(xml_bytes)
+
+    info.update(mpp_x=mpp_x, mpp_y=mpp_y, mpp_unit=unit or "µm")
+    return info
+
+
+def inspect_image(url_or_path: str) -> dict:
+    """Dispatch to local or S3 inspector based on URL scheme."""
+    parsed = urlparse(url_or_path)
+    if parsed.scheme == "s3":
+        bucket = parsed.netloc
+        key = parsed.path.lstrip("/")
+        return inspect_tiff_s3(bucket, key)
+    return inspect_tiff_local(url_or_path)
+
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
 def print_info(label: str, info: dict) -> None:
+    size_str = f"  File size : {info['file_size'] / 1024**3:.2f} GiB\n" if "file_size" in info else ""
     print(f"\n{label}")
     print(f"  Path      : {info['path']}")
-    print(f"  Shape     : {info['shape']}  axes={info['axes']}  dtype={info['dtype']}")
+    print(f"{size_str}", end="")
     print(f"  Dimensions: {info['img_w']} x {info['img_h']} px  (W x H)")
-    if info["mpp_x"] is not None:
-        print(f"  mpp       : x={info['mpp_x']} {info['mpp_unit']}/px  y={info['mpp_y']} {info['mpp_unit']}/px")
+    if info.get("mpp_x") is not None:
+        u = info["mpp_unit"]
         phys_w = info["img_w"] * info["mpp_x"]
         phys_h = info["img_h"] * info["mpp_y"]
-        print(f"  Physical  : {phys_w:.1f} x {phys_h:.1f} {info['mpp_unit']}")
+        print(f"  mpp       : x={info['mpp_x']} {u}/px  y={info['mpp_y']} {u}/px")
+        print(f"  Physical  : {phys_w:.1f} x {phys_h:.1f} {u}")
     else:
         print("  mpp       : NOT FOUND in OME-XML")
-    if info.get("namespace"):
-        print(f"  Namespace : {info['namespace']}")
-    if info.get("xml_error"):
-        print(f"  XML error : {info['xml_error']}")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Inspect OME-TIFF shapes and alignment.")
-    parser.add_argument("--he-image", required=True, help="Path to H&E OME-TIFF")
-    parser.add_argument("--multiplex-image", required=True, help="Path to multiplex OME-TIFF")
-    args = parser.parse_args()
-
-    he_info = inspect_tiff(args.he_image)
-    mx_info = inspect_tiff(args.multiplex_image)
-
-    print_info("H&E image", he_info)
-    print_info("Multiplex image", mx_info)
-
+def alignment_check(he: dict, mx: dict) -> None:
     print("\nAlignment check:")
-    he_w, he_h = he_info["img_w"], he_info["img_h"]
-    mx_w, mx_h = mx_info["img_w"], mx_info["img_h"]
+    he_w, he_h = he["img_w"], he["img_h"]
+    mx_w, mx_h = mx["img_w"], mx["img_h"]
 
     if (he_w, he_h) == (mx_w, mx_h):
         print("  Pixel dimensions match — no scaling needed.")
-        sys.exit(0)
+        return
 
-    print(f"  Pixel dimensions differ: H&E={he_w}x{he_h}  Multiplex={mx_w}x{mx_h}")
+    print(f"  Pixel dims differ: H&E={he_w}x{he_h}  Multiplex={mx_w}x{mx_h}")
 
-    he_mpp_x, he_mpp_y = he_info["mpp_x"], he_info["mpp_y"]
-    mx_mpp_x, mx_mpp_y = mx_info["mpp_x"], mx_info["mpp_y"]
+    if None in (he["mpp_x"], he["mpp_y"], mx["mpp_x"], mx["mpp_y"]):
+        print("  WARNING: mpp missing — cannot compute scale factors.")
+        return
 
-    if None in (he_mpp_x, he_mpp_y, mx_mpp_x, mx_mpp_y):
-        print("  WARNING: mpp missing for one or both images — cannot compute scale factors.")
-        sys.exit(1)
+    sx = he["mpp_x"] / mx["mpp_x"]
+    sy = he["mpp_y"] / mx["mpp_y"]
+    print(f"  Scale (H&E → multiplex): x={sx:.6f}  y={sy:.6f}")
 
-    scale_x = he_mpp_x / mx_mpp_x
-    scale_y = he_mpp_y / mx_mpp_y
-    print(f"  Scale factors: x={scale_x:.6f}  y={scale_y:.6f}  (multiply H&E coords by this to get multiplex coords)")
+    phys_he_w = he_w * he["mpp_x"];  phys_he_h = he_h * he["mpp_y"]
+    phys_mx_w = mx_w * mx["mpp_x"];  phys_mx_h = mx_h * mx["mpp_y"]
+    dw = abs(phys_he_w - phys_mx_w) / max(phys_he_w, phys_mx_w) * 100
+    dh = abs(phys_he_h - phys_mx_h) / max(phys_he_h, phys_mx_h) * 100
+    u = he["mpp_unit"]
+    print(f"  Physical extents: H&E={phys_he_w:.1f}x{phys_he_h:.1f}{u}  Multiplex={phys_mx_w:.1f}x{phys_mx_h:.1f}{u}")
+    print(f"  Extent difference: {dw:.2f}% (W)  {dh:.2f}% (H)")
 
-    # Verify physical extents agree
-    phys_he_w = he_w * he_mpp_x
-    phys_he_h = he_h * he_mpp_y
-    phys_mx_w = mx_w * mx_mpp_x
-    phys_mx_h = mx_h * mx_mpp_y
-    diff_w = abs(phys_he_w - phys_mx_w) / max(phys_he_w, phys_mx_w) * 100
-    diff_h = abs(phys_he_h - phys_mx_h) / max(phys_he_h, phys_mx_h) * 100
-    print(f"  Physical extents: H&E={phys_he_w:.1f}x{phys_he_h:.1f}µm  Multiplex={phys_mx_w:.1f}x{phys_mx_h:.1f}µm")
-    print(f"  Extent difference: {diff_w:.2f}% (W)  {diff_h:.2f}% (H)")
-
-    if diff_w > 5 or diff_h > 5:
-        print("  WARNING: Physical extents differ by >5% — images may not be co-registered.")
+    if dw > 5 or dh > 5:
+        print("  WARNING: extents differ by >5% — images may not share the same origin.")
     else:
-        print("  Physical extents agree (within 5%) — alignment looks correct.")
+        print("  Physical extents agree (within 5%) — scale-only alignment looks correct.")
 
-    # Show example: what does patch (y0=0,x0=0) look like in multiplex coords?
     patch_size = 256
-    size_mx_y = max(1, round(patch_size * scale_y))
-    size_mx_x = max(1, round(patch_size * scale_x))
-    print(f"\nExample: H&E patch {patch_size}x{patch_size} at (0,0) -> Multiplex region {size_mx_x}x{size_mx_y} px at (0,0), resized to {patch_size}x{patch_size}")
+    print(f"\n  Example: H&E {patch_size}px patch → multiplex {round(patch_size*sx)}x{round(patch_size*sy)}px region")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Inspect OME-TIFF dimensions (local path or s3:// URL, no full download).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "images", nargs="*",
+        help="One or more local paths or s3:// URLs to inspect individually.",
+    )
+    parser.add_argument("--he-image",        help="H&E image (local path or s3:// URL)")
+    parser.add_argument("--multiplex-image", help="Multiplex image (local path or s3:// URL)")
+    args = parser.parse_args()
+
+    if args.he_image and args.multiplex_image:
+        he = inspect_image(args.he_image)
+        mx = inspect_image(args.multiplex_image)
+        print_info("H&E image", he)
+        print_info("Multiplex image", mx)
+        alignment_check(he, mx)
+    elif args.images:
+        for img in args.images:
+            info = inspect_image(img)
+            print_info(img, info)
+    else:
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

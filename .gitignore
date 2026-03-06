@@ -3,7 +3,7 @@ cache/
 data/
 docs/*
 !docs/plans/
-processed/
+processed*/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

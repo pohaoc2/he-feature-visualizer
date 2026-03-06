@@ -366,12 +366,11 @@ def main() -> None:
     global_state_counts: Counter = Counter()
 
     for patch_meta in patches:
-        i  = patch_meta["i"]
-        j  = patch_meta["j"]
-        x0 = patch_meta.get("x0", patch_meta.get("x", 0))
-        y0 = patch_meta.get("y0", patch_meta.get("y", 0))
+        x0 = patch_meta["x0"]
+        y0 = patch_meta["y0"]
+        patch_id = f"{x0}_{y0}"
 
-        json_path = cellvit_dir / f"{i}_{j}.json"
+        json_path = cellvit_dir / f"{patch_id}.json"
         if not json_path.exists():
             log.warning("Missing CellViT file: %s — skipping.", json_path)
             skipped += 1
@@ -389,13 +388,13 @@ def main() -> None:
         state_img = rasterize_cells(cells, patch_size, "cell_state", CELL_STATE_COLORS)
 
         # 6. Save PNGs
-        Image.fromarray(type_img,  mode="RGBA").save(types_dir  / f"{i}_{j}.png")
-        Image.fromarray(state_img, mode="RGBA").save(states_dir / f"{i}_{j}.png")
+        Image.fromarray(type_img,  mode="RGBA").save(types_dir  / f"{patch_id}.png")
+        Image.fromarray(state_img, mode="RGBA").save(states_dir / f"{patch_id}.png")
 
         # 7. Accumulate summary counts
         type_counts  = Counter(c.get("cell_type",  "other") for c in cells)
         state_counts = Counter(c.get("cell_state", "other") for c in cells)
-        per_patch_summary[f"{i}_{j}"] = {
+        per_patch_summary[patch_id] = {
             "n_cells": len(cells),
             "x0": x0, "y0": y0,
             "cell_types":  dict(type_counts),

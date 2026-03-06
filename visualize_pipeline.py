@@ -11,7 +11,7 @@ Shows six panels for a single selected patch:
   6. Cell state         -- cell_states RGBA composited on black
 
 CLI:
-  python visualize_pipeline.py --processed processed/ [--patch 3_7] [--he-image data/CRC02-HE.ome.tif]
+  python visualize_pipeline.py --processed processed/ [--patch 58624_4096] [--he-image data/CRC02-HE.ome.tif]
 """
 
 import argparse
@@ -151,20 +151,15 @@ def build_original_location(
                 else:
                     arr = np.zeros(arr.shape[:2] + (3,), dtype=np.uint8)
 
-            # Compute rectangle in level coordinates
-            scale_x = lw / img_w
-            scale_y = lh / img_h
-            rx = int(x0 * scale_x)
-            ry = int(y0 * scale_y)
-            rw = max(1, int(patch_size * scale_x))
-            rh = max(1, int(patch_size * scale_y))
-
-            # Draw red rectangle (2px thick)
-            arr = arr.copy()
-            cv2.rectangle(arr, (rx, ry), (rx + rw, ry + rh), (255, 0, 0), 2)
-
-            # Resize to 256x256 for display
+            # Resize to 256x256 first, then draw rectangle in output space
             thumbnail = cv2.resize(arr, (256, 256), interpolation=cv2.INTER_AREA)
+
+            # Map patch coords to 256x256 space and enforce minimum 6px visibility
+            rx = int(x0 / img_w * 256)
+            ry = int(y0 / img_h * 256)
+            rw = max(6, int(patch_size / img_w * 256))
+            rh = max(6, int(patch_size / img_h * 256))
+            cv2.rectangle(thumbnail, (rx, ry), (rx + rw, ry + rh), (255, 0, 0), 2)
             return thumbnail
 
         except Exception as exc:
@@ -335,11 +330,11 @@ def make_summary_figure(
     patch_size = index_data.get("patch_size", 256)
 
     # Find the selected patch
-    i_str, j_str = patch_key.split("_")
-    i_sel, j_sel = int(i_str), int(j_str)
+    x0_str, y0_str = patch_key.split("_")
+    x0_sel, y0_sel = int(x0_str), int(y0_str)
     patch_meta = None
     for p in patches:
-        if p["i"] == i_sel and p["j"] == j_sel:
+        if p["x0"] == x0_sel and p["y0"] == y0_sel:
             patch_meta = p
             break
     if patch_meta is None:
@@ -451,7 +446,7 @@ def make_grid_figure(
     # Load shared index data once
     with open(processed_dir / "index.json") as f:
         index_data = json.load(f)
-    patches_meta = {f"{p['i']}_{p['j']}": p for p in index_data.get("patches", [])}
+    patches_meta = {f"{p['x0']}_{p['y0']}": p for p in index_data.get("patches", [])}
     img_w      = index_data.get("img_w", 0)
     img_h      = index_data.get("img_h", 0)
     patch_size = index_data.get("patch_size", 256)
@@ -541,7 +536,7 @@ def main():
     )
     parser.add_argument(
         "--patch", default=None,
-        help="Patch key in 'i_j' format, e.g. '3_7'. Defaults to first patch in index.json.",
+        help="Patch key in 'x0_y0' format, e.g. '58624_4096'. Defaults to first patch in index.json.",
     )
     parser.add_argument(
         "--random", type=int, default=0, metavar="N",
@@ -557,7 +552,7 @@ def main():
     )
     parser.add_argument(
         "--mx-channel", type=int, default=0, metavar="IDX",
-        help="Multiplex channel index to display (0-based, default: 0).",
+        help="Multiplex channel index to display (0-based, range 0–3, default: 0).",
     )
     parser.add_argument(
         "--mx-max-proj", action="store_true",
@@ -581,7 +576,7 @@ def main():
         if args.seed is not None:
             random.seed(args.seed)
         chosen = random.sample(all_patches, min(args.random, len(all_patches)))
-        patch_keys = [f"{p['i']}_{p['j']}" for p in chosen]
+        patch_keys = [f"{p['x0']}_{p['y0']}" for p in chosen]
         print(f"Randomly selected {len(patch_keys)} patches: {patch_keys}")
         make_grid_figure(processed_dir, patch_keys, args.he_image,
                          mx_channel=args.mx_channel, mx_max_proj=args.mx_max_proj)
@@ -589,7 +584,7 @@ def main():
         patch_key = args.patch
         if patch_key is None:
             first = all_patches[0]
-            patch_key = f"{first['i']}_{first['j']}"
+            patch_key = f"{first['x0']}_{first['y0']}"
             print(f"No --patch specified; using first patch: {patch_key}")
         make_summary_figure(processed_dir, patch_key, args.he_image,
                             mx_channel=args.mx_channel, mx_max_proj=args.mx_max_proj)

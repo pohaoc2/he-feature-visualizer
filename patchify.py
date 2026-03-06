@@ -172,6 +172,71 @@ def build_tissue_mask(
     return tissue_mask_hsv(overview)
 
 
+def build_mx_tissue_mask(store, axes: str, mx_h: int, mx_w: int, ds: int) -> np.ndarray:
+    """Build a binary tissue mask from the MX DNA channel (ch0) at overview resolution.
+
+    Returns bool ndarray (mx_h // ds, mx_w // ds).
+    """
+    chw = _read_overview_chw(store, axes, mx_h, mx_w, ds)  # (C, H, W)
+    dna = chw[0].astype(np.float32)                        # ch0 = DNA/DAPI
+    lo, hi = float(np.percentile(dna, 1)), float(np.percentile(dna, 99))
+    if hi > lo:
+        dna_u8 = ((dna - lo) / (hi - lo) * 255).clip(0, 255).astype(np.uint8)
+    else:
+        return np.zeros((mx_h // ds, mx_w // ds), dtype=bool)
+    _, binary = cv2.threshold(dna_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return binary.astype(bool)
+
+
+def register_he_mx_affine(
+    he_mask: np.ndarray, mx_mask: np.ndarray,
+    ds: int, he_h: int, he_w: int, mx_h: int, mx_w: int,
+) -> np.ndarray:
+    """Compute affine warp M_full (2×3, float32) mapping H&E full-res → MX full-res.
+
+    Uses ECC maximisation on binary tissue masks.  Falls back to mpp-scale
+    identity if ECC fails.
+    """
+    he_ov_h, he_ov_w = he_mask.shape
+    mx_ov_h, mx_ov_w = mx_mask.shape
+
+    # Resize MX mask to H&E overview size (float32 [0,1])
+    mx_resized = cv2.resize(
+        mx_mask.astype(np.float32), (he_ov_w, he_ov_h), interpolation=cv2.INTER_LINEAR
+    )
+    he_f32 = he_mask.astype(np.float32)
+
+    # Gaussian blur for smoother ECC convergence
+    he_f32     = cv2.GaussianBlur(he_f32,     (5, 5), 0)
+    mx_resized = cv2.GaussianBlur(mx_resized, (5, 5), 0)
+
+    # ECC: find M_ov that warps mx_resized to align with he_f32
+    M_ov = np.eye(2, 3, dtype=np.float32)  # start at identity (images already same size)
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 500, 1e-6)
+    try:
+        _, M_ov = cv2.findTransformECC(he_f32, mx_resized, M_ov, cv2.MOTION_AFFINE, criteria)
+    except cv2.error as e:
+        print(f"  WARNING: ECC registration failed ({e}). Falling back to mpp scale.")
+        scale = he_w / mx_w  # approx 2.0; equivalent to he_mpp/mx_mpp
+        return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
+
+    # Convert M_ov (overview space) → M_full (H&E full-res → MX full-res)
+    rx = he_ov_w / mx_ov_w
+    ry = he_ov_h / mx_ov_h
+    M_full = np.array([
+        [M_ov[0, 0] / rx, M_ov[0, 1] / rx, M_ov[0, 2] * ds / rx],
+        [M_ov[1, 0] / ry, M_ov[1, 1] / ry, M_ov[1, 2] * ds / ry],
+    ], dtype=np.float32)
+    return M_full
+
+
+def transform_he_to_mx_point(M_full: np.ndarray, x0: int, y0: int) -> tuple[int, int]:
+    """Apply the 2×3 affine M_full to (x0, y0) and return rounded (x_mx, y_mx)."""
+    pt = np.array([x0, y0, 1.0], dtype=np.float64)
+    result = M_full.astype(np.float64) @ pt
+    return int(round(result[0])), int(round(result[1]))
+
+
 def get_tissue_patches(
     mask: np.ndarray,
     img_w: int, img_h: int,
@@ -337,18 +402,22 @@ def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
     """
     arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size_y, size_x)
 
-    # Build the set of active axes (those whose slices were slice objects, not scalars)
+    # active_axes: CYX axes in the order they appear after scalar-collapsing non-CYX dims
     active_axes = [ax for ax in axes if ax in ("C", "Y", "X")]
 
-    # Bring C to front -> (C, rh, rw)
+    # Transpose to canonical (C, Y, X) order — handles any permutation of CYX axes
     if "C" in active_axes:
-        c_idx = active_axes.index("C")
-        if c_idx != 0:
-            arr = np.moveaxis(arr, c_idx, 0)
-        # arr is now (all_channels, rh, rw); select the requested channels
-        arr = arr[channel_indices]
+        target = [ax for ax in ("C", "Y", "X") if ax in active_axes]
+        if active_axes != target:
+            perm = [active_axes.index(ax) for ax in target]
+            arr = arr.transpose(perm)
+        arr = arr[channel_indices]  # select requested channels -> (C_sel, Y, X)
     else:
-        # No channel axis -- replicate single plane for each requested channel
+        # No channel axis — ensure spatial dims are (Y, X) order
+        target = [ax for ax in ("Y", "X") if ax in active_axes]
+        if active_axes != target:
+            perm = [active_axes.index(ax) for ax in target]
+            arr = arr.transpose(perm)
         arr = np.stack([arr] * len(channel_indices), axis=0)
 
     # Cast to uint16
@@ -372,39 +441,55 @@ def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
 def load_channel_indices(metadata_csv: str, channel_names: list[str]) -> tuple[list[int], list[str]]:
     """Parse channel metadata CSV to find integer indices for requested channel names.
 
-    CSV has columns including 'Channel ID' (format 'Channel:0:N') and 'Target Name'.
-    Match channel_names against Target Name column (case-insensitive).
-    Returns (indices, resolved_names) -- indices are the integer N from 'Channel:0:N'.
-    Raise ValueError if any name not found.
+    Supports two CSV formats (auto-detected):
+      - Old format: 'Channel ID' (e.g. 'Channel:0:N', 0-based) + 'Target Name'
+      - New format: 'Channel_Number' (1-based int) + 'Marker_Name'
+
+    Match channel_names against the name column (case-insensitive).
+    Returns (indices, resolved_names) as 0-based channel indices.
+    Raises ValueError if any name not found.
     """
     df = pd.read_csv(metadata_csv)
     df.columns = [c.strip() for c in df.columns]
 
-    if "Channel ID" not in df.columns:
-        raise ValueError(
-            f"metadata CSV must have a 'Channel ID' column. Found: {list(df.columns)}"
-        )
-    if "Target Name" not in df.columns:
-        raise ValueError(
-            f"metadata CSV must have a 'Target Name' column. Found: {list(df.columns)}"
-        )
-
-    # Build mapping: lower-case target name -> (integer index, original name)
+    # Build mapping: lower-case name -> (0-based index, original name)
     seen: dict[str, tuple[int, str]] = {}
-    for _, row in df.iterrows():
-        channel_id = str(row["Channel ID"]).strip()
-        target = str(row["Target Name"]).strip()
-        target_lower = target.lower()
-        if target_lower in seen:
-            continue  # keep first occurrence
-        parts = channel_id.split(":")
-        try:
-            idx = int(parts[-1])
-        except (ValueError, IndexError) as exc:
-            raise ValueError(
-                f"Cannot parse integer index from Channel ID '{channel_id}'"
-            ) from exc
-        seen[target_lower] = (idx, target)
+    if "Channel_Number" in df.columns and "Marker_Name" in df.columns:
+        # New format: Channel_Number is 1-based
+        for _, row in df.iterrows():
+            target = str(row["Marker_Name"]).strip()
+            target_lower = target.lower()
+            if target_lower in seen:
+                continue
+            try:
+                idx = int(row["Channel_Number"]) - 1  # convert to 0-based
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"Cannot parse integer from Channel_Number '{row['Channel_Number']}'"
+                ) from exc
+            seen[target_lower] = (idx, target)
+    elif "Channel ID" in df.columns and "Target Name" in df.columns:
+        # Old format: Channel ID is 'Channel:0:N' (already 0-based)
+        for _, row in df.iterrows():
+            channel_id = str(row["Channel ID"]).strip()
+            target = str(row["Target Name"]).strip()
+            target_lower = target.lower()
+            if target_lower in seen:
+                continue
+            parts = channel_id.split(":")
+            try:
+                idx = int(parts[-1])
+            except (ValueError, IndexError) as exc:
+                raise ValueError(
+                    f"Cannot parse integer index from Channel ID '{channel_id}'"
+                ) from exc
+            seen[target_lower] = (idx, target)
+    else:
+        raise ValueError(
+            f"Unrecognised metadata CSV format. Expected either "
+            f"'Channel_Number'+'Marker_Name' or 'Channel ID'+'Target Name'. "
+            f"Found columns: {list(df.columns)}"
+        )
 
     indices: list[int] = []
     resolved: list[str] = []
@@ -451,52 +536,45 @@ def _norm_to_uint8(arr: np.ndarray) -> np.ndarray:
     return np.zeros_like(arr, dtype=np.uint8)
 
 
-def visualize(
-    he_overview: np.ndarray,
-    mx_overview: np.ndarray,
-    he_coords: list[tuple[int, int]],
-    mx_coords: list[tuple[int, int]],
-    vis_channels: list[int],
-    out_dir: Path,
-    patch_size_ov: int = 4,
-    gap: int = 10,
-) -> None:
-    """Save side-by-side vis_patches.jpg to out_dir.
+def _read_overview_chw(store, axes: str, img_h: int, img_w: int, ds: int) -> np.ndarray:
+    """Read a subsampled overview from a zarr store, returning (C, H, W).
 
-    Parameters
-    ----------
-    he_overview:    (H_ov, W_ov, 3) uint8 H&E overview.
-    mx_overview:    (C, H_mx_ov, W_mx_ov) uint16 multiplex overview.
-    he_coords:      (x0, y0) in overview pixel coords for H&E panel.
-    mx_coords:      Corresponding coords in multiplex overview pixels.
-    vis_channels:   3 channel indices for multiplex RGB composite.
-    patch_size_ov:  Box size in overview pixels (default 4).
-    gap:            White gap between panels in pixels (default 10).
+    Works for any axis ordering (CYX, YXC, XYCS, XYC, etc.) by building
+    axis-aware slices and then transposing to canonical (C, Y, X) order.
+    If there is no C axis, returns (1, H, W).
     """
-    import PIL.ImageDraw
+    ax_up = axes.upper()
+    h_trunc = (img_h // ds) * ds
+    w_trunc = (img_w // ds) * ds
 
-    he_panel = Image.fromarray(he_overview.astype(np.uint8), "RGB").copy()
-    draw_he  = PIL.ImageDraw.Draw(he_panel)
-    for x0, y0 in he_coords:
-        draw_he.rectangle([x0, y0, x0 + patch_size_ov - 1, y0 + patch_size_ov - 1],
-                          outline=(0, 200, 0), width=1)
+    sl = []
+    for ax in ax_up:
+        if ax == "C":
+            sl.append(slice(None))
+        elif ax == "Y":
+            sl.append(slice(0, h_trunc, ds))
+        elif ax == "X":
+            sl.append(slice(0, w_trunc, ds))
+        else:
+            sl.append(0)
 
-    c0 = _norm_to_uint8(mx_overview[vis_channels[0]])
-    c1 = _norm_to_uint8(mx_overview[vis_channels[1]])
-    c2 = _norm_to_uint8(mx_overview[vis_channels[2]])
-    mx_panel = Image.fromarray(np.stack([c0, c1, c2], axis=-1), "RGB").copy()
-    draw_mx  = PIL.ImageDraw.Draw(mx_panel)
-    for x0, y0 in mx_coords:
-        draw_mx.rectangle([x0, y0, x0 + patch_size_ov - 1, y0 + patch_size_ov - 1],
-                          outline=(0, 200, 0), width=1)
+    arr = np.array(store[tuple(sl)])
 
-    h   = max(he_panel.height, mx_panel.height)
-    w   = he_panel.width + gap + mx_panel.width
-    out = Image.new("RGB", (w, h), (255, 255, 255))
-    out.paste(he_panel, (0, 0))
-    out.paste(mx_panel, (he_panel.width + gap, 0))
-    out.save(str(out_dir / "vis_patches.jpg"), quality=90)
-    print(f"Saved vis_patches.jpg ({w}x{h} px, {len(he_coords)} patches shown)")
+    active = [ax for ax in ax_up if ax in ("C", "Y", "X")]
+    if "C" in active:
+        target = [ax for ax in ("C", "Y", "X") if ax in active]
+        if active != target:
+            perm = [active.index(ax) for ax in target]
+            arr = arr.transpose(perm)
+    else:
+        target = [ax for ax in ("Y", "X") if ax in active]
+        if active != target:
+            perm = [active.index(ax) for ax in target]
+            arr = arr.transpose(perm)
+        arr = arr[np.newaxis]  # (1, H, W)
+
+    return arr  # (C, H, W)
+
 
 
 def main():
@@ -515,6 +593,8 @@ def main():
                         help="Stride for H&E overview sampling (default 64)")
     parser.add_argument("--vis-channels",        type=int,   nargs=3, default=[0, 10, 20],
                         help="3 multiplex channel indices for RGB composite in vis")
+    parser.add_argument("--register", action=argparse.BooleanOptionalAction, default=True,
+                        help="Run ECC affine registration between H&E and MX tissue masks (default: on)")
     args = parser.parse_args()
 
     out_dir    = Path(args.out)
@@ -542,25 +622,30 @@ def main():
 
     scale = (he_mpp_x / mx_mpp_x) if (he_mpp_x and mx_mpp_x) else (he_w / mx_w)
     print(f"  scale H&E -> multiplex: {scale:.4f}")
-
     print(f"Building tissue mask (downsample={ds}) ...")
     mask = build_tissue_mask(he_store, he_axes, he_w, he_h, downsample=ds)
     print(f"  Tissue fraction: {mask.mean():.2%}")
 
+    if args.register:
+        print("Computing affine registration via ECC on tissue masks ...")
+        mx_mask = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds)
+        M_full = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
+        print(f"  Warp matrix:\n{M_full}")
+    else:
+        M_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
+
     # Keep overview for visualization (already computed inside build_tissue_mask,
     # but we re-read it here since build_tissue_mask doesn't return it)
-    he_axes_up = he_axes.upper()
-    c_first    = "C" in he_axes_up and he_axes_up.index("C") < he_axes_up.index("Y")
-    img_h_trunc = (he_h // ds) * ds
-    img_w_trunc = (he_w // ds) * ds
-    if c_first:
-        he_overview = np.moveaxis(
-            np.array(he_store[:, :img_h_trunc:ds, :img_w_trunc:ds]), 0, -1
-        ).astype(np.uint8)
-    else:
-        he_overview = np.array(he_store[:img_h_trunc:ds, :img_w_trunc:ds, :]).astype(np.uint8)
-    if he_overview.shape[-1] > 3:
-        he_overview = he_overview[..., :3]
+    he_chw = _read_overview_chw(he_store, he_axes, he_h, he_w, ds)  # (C, H, W)
+    he_chw = he_chw[:3] if he_chw.shape[0] >= 3 else np.repeat(he_chw[:1], 3, axis=0)
+    if he_chw.dtype != np.uint8:
+        p1 = float(np.percentile(he_chw, 1))
+        p99 = float(np.percentile(he_chw, 99))
+        if p99 > p1:
+            he_chw = ((he_chw.astype(np.float32) - p1) / (p99 - p1) * 255).clip(0, 255).astype(np.uint8)
+        else:
+            he_chw = np.zeros_like(he_chw, dtype=np.uint8)
+    he_overview = np.moveaxis(he_chw.astype(np.uint8), 0, -1)  # (H, W, 3)
 
     print("Selecting tissue patches ...")
     coords = get_tissue_patches(mask, he_w, he_h, patch_size, args.stride, args.tissue_min, ds)
@@ -570,16 +655,15 @@ def main():
     index: list[dict]            = []
     he_vis_coords: list[tuple[int, int]] = []
     mx_vis_coords: list[tuple[int, int]] = []
-
-    for idx, (x0, y0) in enumerate(coords):
+    
+    for idx, (x0, y0) in enumerate(coords[:10]):
         if idx % 500 == 0:
             print(f"  {idx}/{len(coords)} ...")
 
         he_patch = read_he_patch(he_store, he_axes, he_w, he_h, y0, x0, patch_size)
         Image.fromarray(he_patch).save(out_dir / "he" / f"{x0}_{y0}.png")
 
-        x0_mx   = round(x0 * scale)
-        y0_mx   = round(y0 * scale)
+        x0_mx, y0_mx = transform_he_to_mx_point(M_full, x0, y0)
         size_mx = max(1, round(patch_size * scale))
         has_mx  = (x0_mx + size_mx <= mx_w) and (y0_mx + size_mx <= mx_h)
 
@@ -603,18 +687,6 @@ def main():
     n_mx = sum(p["has_multiplex"] for p in index)
     print(f"  Done. {n_mx}/{len(index)} patches have multiplex.")
 
-    print("Generating vis_patches.jpg ...")
-    mx_axes_up = mx_axes.upper()
-    mx_c_first = "C" in mx_axes_up and mx_axes_up.index("C") < mx_axes_up.index("Y")
-    mx_h_trunc = (mx_h // ds) * ds
-    mx_w_trunc = (mx_w // ds) * ds
-    if mx_c_first:
-        mx_overview = np.array(mx_store[:, :mx_h_trunc:ds, :mx_w_trunc:ds])
-    else:
-        mx_overview = np.moveaxis(np.array(mx_store[:mx_h_trunc:ds, :mx_w_trunc:ds, :]), -1, 0)
-    vis_ch = [min(c, mx_overview.shape[0] - 1) for c in args.vis_channels]
-    visualize(he_overview, mx_overview, he_vis_coords, mx_vis_coords, vis_ch, out_dir)
-
     with open(out_dir / "index.json", "w") as f:
         json.dump({
             "patches": index,
@@ -625,6 +697,8 @@ def main():
             "he_mpp": he_mpp_x, "mx_mpp": mx_mpp_x,
             "scale_he_to_mx": scale,
             "channels": resolved_names,
+            "warp_matrix": M_full.tolist(),
+            "registration": args.register,
         }, f, indent=2)
 
     print(f"Index written to {out_dir / 'index.json'}")

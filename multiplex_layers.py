@@ -179,30 +179,34 @@ def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray) -> np.ndarray:
 
 
 def load_channel_names(metadata_csv: str, requested: list[str]) -> list[str]:
-    """Parse metadata CSV (columns: Channel ID, Target Name).
+    """Parse metadata CSV, check that every requested name is present.
 
-    Check that every name in 'requested' appears in Target Name column
-    (case-insensitive).  Returns requested unchanged if all found.
-    Raises ValueError listing all missing names if any not found.
+    Supports two formats (auto-detected):
+      - Old format: 'Channel ID' + 'Target Name'
+      - New format: 'Channel_Number' + 'Marker_Name'
+
+    Returns requested unchanged if all found; raises ValueError otherwise.
     """
     df = pd.read_csv(metadata_csv)
     df.columns = [c.strip() for c in df.columns]
 
-    if "Target Name" not in df.columns:
+    if "Marker_Name" in df.columns:
+        name_col = "Marker_Name"
+    elif "Target Name" in df.columns:
+        name_col = "Target Name"
+    else:
         raise ValueError(
-            f"metadata CSV must have a 'Target Name' column. Found: {list(df.columns)}"
+            f"metadata CSV must have 'Marker_Name' or 'Target Name' column. "
+            f"Found: {list(df.columns)}"
         )
 
-    available_lower = {str(v).strip().lower() for v in df["Target Name"].dropna()}
+    available_lower = {str(v).strip().lower() for v in df[name_col].dropna()}
 
-    missing = [
-        name for name in requested
-        if name.lower() not in available_lower
-    ]
+    missing = [name for name in requested if name.lower() not in available_lower]
     if missing:
         raise ValueError(
-            f"Channel(s) not found in metadata CSV 'Target Name' column: {missing}\n"
-            f"Available target names (case-insensitive): {sorted(available_lower)}"
+            f"Channel(s) not found in metadata CSV '{name_col}' column: {missing}\n"
+            f"Available names (case-insensitive): {sorted(available_lower)}"
         )
 
     return requested
