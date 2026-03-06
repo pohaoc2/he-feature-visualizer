@@ -31,50 +31,23 @@ python patchify.py --he-image PATH --multiplex-image PATH --metadata-csv PATH
 
 import argparse
 import json
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
 import numpy as np
-import pandas as pd
 from PIL import Image
 import tifffile
 import zarr
 
-
-# ---------------------------------------------------------------------------
-# OME physical pixel size (mpp)
-# ---------------------------------------------------------------------------
-
-OME_NS = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
-
-
-def _safe_float(x: str | None) -> float | None:
-    if x is None:
-        return None
-    try:
-        return float(x)
-    except (ValueError, TypeError):
-        return None
-
-
-def get_ome_mpp(tif) -> tuple[float | None, float | None]:
-    """Return (mpp_x, mpp_y) in µm/pixel from OME-XML, or (None, None) if missing."""
-    ome_xml = getattr(tif, "ome_metadata", None)
-    if not ome_xml and hasattr(tif, "pages") and len(tif.pages) > 0:
-        ome_xml = getattr(tif.pages[0], "description", None)
-    if not ome_xml:
-        return None, None
-    try:
-        root = ET.fromstring(ome_xml)
-    except ET.ParseError:
-        return None, None
-    pixels = root.find(".//ome:Pixels", OME_NS)
-    if pixels is None:
-        return None, None
-    psx = _safe_float(pixels.get("PhysicalSizeX"))
-    psy = _safe_float(pixels.get("PhysicalSizeY"))
-    return psx, psy
+from utils.channels import resolve_channel_indices
+from utils.normalize import percentile_to_uint8
+from utils.ome import (
+    OME_NS,
+    get_image_dims,
+    get_ome_mpp,
+    open_zarr_store,
+    read_overview_chw,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -162,12 +135,7 @@ def build_tissue_mask(
     if overview.shape[-1] > 3:
         overview = overview[..., :3]
     if overview.dtype != np.uint8:
-        p1 = float(np.percentile(overview, 1))
-        p99 = float(np.percentile(overview, 99))
-        if p99 > p1:
-            overview = ((overview.astype(np.float32) - p1) / (p99 - p1) * 255).clip(0, 255).astype(np.uint8)
-        else:
-            overview = np.zeros_like(overview, dtype=np.uint8)
+        overview = percentile_to_uint8(overview)
 
     return tissue_mask_hsv(overview)
 
@@ -177,12 +145,9 @@ def build_mx_tissue_mask(store, axes: str, mx_h: int, mx_w: int, ds: int) -> np.
 
     Returns bool ndarray (mx_h // ds, mx_w // ds).
     """
-    chw = _read_overview_chw(store, axes, mx_h, mx_w, ds)  # (C, H, W)
-    dna = chw[0].astype(np.float32)                        # ch0 = DNA/DAPI
-    lo, hi = float(np.percentile(dna, 1)), float(np.percentile(dna, 99))
-    if hi > lo:
-        dna_u8 = ((dna - lo) / (hi - lo) * 255).clip(0, 255).astype(np.uint8)
-    else:
+    chw = read_overview_chw(store, axes, mx_h, mx_w, ds)  # (C, H, W)
+    dna_u8 = percentile_to_uint8(chw[0])
+    if dna_u8.max() == 0:
         return np.zeros((mx_h // ds, mx_w // ds), dtype=bool)
     _, binary = cv2.threshold(dna_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return binary.astype(bool)
@@ -300,13 +265,6 @@ def get_patch_grid(img_w: int, img_h: int, patch_size: int, stride: int) -> list
 # Windowed patch readers
 # ---------------------------------------------------------------------------
 
-def _open_zarr_store(tif):
-    """Return a zarr Array from a TiffFile, handling Array vs Group."""
-    raw = zarr.open(tif.series[0].aszarr(), mode="r")
-    if isinstance(raw, zarr.Array):
-        return raw
-    return raw["0"]
-
 
 def _clip_and_read(store, axes: str, img_w: int, img_h: int,
                    y0: int, x0: int, size_y: int, size_x: int):
@@ -370,14 +328,8 @@ def read_he_patch(zarr_store, axes: str, img_w: int, img_h: int,
         elif arr.shape[-1] > 3:
             arr = arr[..., :3]
 
-    # Dtype normalisation
     if arr.dtype != np.uint8:
-        p1 = float(np.percentile(arr, 1))
-        p99 = float(np.percentile(arr, 99))
-        if p99 > p1:
-            arr = ((arr.astype(np.float32) - p1) / (p99 - p1) * 255.0).clip(0, 255).astype(np.uint8)
-        else:
-            arr = np.zeros_like(arr, dtype=np.uint8)
+        arr = percentile_to_uint8(arr)
     else:
         arr = arr.astype(np.uint8)
 
@@ -438,142 +390,13 @@ def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
 # Channel metadata parsing
 # ---------------------------------------------------------------------------
 
-def load_channel_indices(metadata_csv: str, channel_names: list[str]) -> tuple[list[int], list[str]]:
-    """Parse channel metadata CSV to find integer indices for requested channel names.
-
-    Supports two CSV formats (auto-detected):
-      - Old format: 'Channel ID' (e.g. 'Channel:0:N', 0-based) + 'Target Name'
-      - New format: 'Channel_Number' (1-based int) + 'Marker_Name'
-
-    Match channel_names against the name column (case-insensitive).
-    Returns (indices, resolved_names) as 0-based channel indices.
-    Raises ValueError if any name not found.
-    """
-    df = pd.read_csv(metadata_csv)
-    df.columns = [c.strip() for c in df.columns]
-
-    # Build mapping: lower-case name -> (0-based index, original name)
-    seen: dict[str, tuple[int, str]] = {}
-    if "Channel_Number" in df.columns and "Marker_Name" in df.columns:
-        # New format: Channel_Number is 1-based
-        for _, row in df.iterrows():
-            target = str(row["Marker_Name"]).strip()
-            target_lower = target.lower()
-            if target_lower in seen:
-                continue
-            try:
-                idx = int(row["Channel_Number"]) - 1  # convert to 0-based
-            except (ValueError, TypeError) as exc:
-                raise ValueError(
-                    f"Cannot parse integer from Channel_Number '{row['Channel_Number']}'"
-                ) from exc
-            seen[target_lower] = (idx, target)
-    elif "Channel ID" in df.columns and "Target Name" in df.columns:
-        # Old format: Channel ID is 'Channel:0:N' (already 0-based)
-        for _, row in df.iterrows():
-            channel_id = str(row["Channel ID"]).strip()
-            target = str(row["Target Name"]).strip()
-            target_lower = target.lower()
-            if target_lower in seen:
-                continue
-            parts = channel_id.split(":")
-            try:
-                idx = int(parts[-1])
-            except (ValueError, IndexError) as exc:
-                raise ValueError(
-                    f"Cannot parse integer index from Channel ID '{channel_id}'"
-                ) from exc
-            seen[target_lower] = (idx, target)
-    else:
-        raise ValueError(
-            f"Unrecognised metadata CSV format. Expected either "
-            f"'Channel_Number'+'Marker_Name' or 'Channel ID'+'Target Name'. "
-            f"Found columns: {list(df.columns)}"
-        )
-
-    indices: list[int] = []
-    resolved: list[str] = []
-    missing: list[str] = []
-    for name in channel_names:
-        key = name.lower()
-        if key not in seen:
-            missing.append(name)
-        else:
-            idx, orig = seen[key]
-            indices.append(idx)
-            resolved.append(orig)
-
-    if missing:
-        available = sorted(seen.keys())
-        raise ValueError(
-            f"Channel(s) not found in metadata CSV: {missing}\n"
-            f"Available target names: {available}"
-        )
-
-    return indices, resolved
+# Re-export for backward compatibility with tests
+load_channel_indices = resolve_channel_indices
 
 
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
-
-def _get_image_dims(tif):
-    """Return (img_w, img_h, axes_upper) from an open TiffFile."""
-    series = tif.series[0]
-    axes = series.axes.upper()
-    shape = series.shape
-    img_h = shape[axes.index("Y")]
-    img_w = shape[axes.index("X")]
-    return img_w, img_h, axes
-
-
-def _norm_to_uint8(arr: np.ndarray) -> np.ndarray:
-    """Scale a 2D array to uint8 using p1/p99 percentile normalization."""
-    p1  = float(np.percentile(arr, 1))
-    p99 = float(np.percentile(arr, 99))
-    if p99 > p1:
-        return ((arr.astype(np.float32) - p1) / (p99 - p1) * 255).clip(0, 255).astype(np.uint8)
-    return np.zeros_like(arr, dtype=np.uint8)
-
-
-def _read_overview_chw(store, axes: str, img_h: int, img_w: int, ds: int) -> np.ndarray:
-    """Read a subsampled overview from a zarr store, returning (C, H, W).
-
-    Works for any axis ordering (CYX, YXC, XYCS, XYC, etc.) by building
-    axis-aware slices and then transposing to canonical (C, Y, X) order.
-    If there is no C axis, returns (1, H, W).
-    """
-    ax_up = axes.upper()
-    h_trunc = (img_h // ds) * ds
-    w_trunc = (img_w // ds) * ds
-
-    sl = []
-    for ax in ax_up:
-        if ax == "C":
-            sl.append(slice(None))
-        elif ax == "Y":
-            sl.append(slice(0, h_trunc, ds))
-        elif ax == "X":
-            sl.append(slice(0, w_trunc, ds))
-        else:
-            sl.append(0)
-
-    arr = np.array(store[tuple(sl)])
-
-    active = [ax for ax in ax_up if ax in ("C", "Y", "X")]
-    if "C" in active:
-        target = [ax for ax in ("C", "Y", "X") if ax in active]
-        if active != target:
-            perm = [active.index(ax) for ax in target]
-            arr = arr.transpose(perm)
-    else:
-        target = [ax for ax in ("Y", "X") if ax in active]
-        if active != target:
-            perm = [active.index(ax) for ax in target]
-            arr = arr.transpose(perm)
-        arr = arr[np.newaxis]  # (1, H, W)
-
-    return arr  # (C, H, W)
 
 
 
@@ -607,102 +430,102 @@ def main():
     channel_indices, resolved_names = load_channel_indices(args.metadata_csv, args.channels)
 
     print("Opening H&E image ...")
-    he_tif   = tifffile.TiffFile(args.he_image)
-    he_w, he_h, he_axes = _get_image_dims(he_tif)
-    he_store = _open_zarr_store(he_tif)
-    he_mpp_x, _ = get_ome_mpp(he_tif)
-    print(f"  {he_w} x {he_h}  axes={he_axes}  mpp={he_mpp_x}")
+    he_tif = tifffile.TiffFile(args.he_image)
+    mx_tif = None
+    try:
+        he_w, he_h, he_axes = get_image_dims(he_tif)
+        he_store = open_zarr_store(he_tif)
+        he_mpp_x, _ = get_ome_mpp(he_tif)
+        print(f"  {he_w} x {he_h}  axes={he_axes}  mpp={he_mpp_x}")
 
-    print("Opening multiplex image ...")
-    mx_tif   = tifffile.TiffFile(args.multiplex_image)
-    mx_w, mx_h, mx_axes = _get_image_dims(mx_tif)
-    mx_store = _open_zarr_store(mx_tif)
-    mx_mpp_x, _ = get_ome_mpp(mx_tif)
-    print(f"  {mx_w} x {mx_h}  axes={mx_axes}  mpp={mx_mpp_x}")
+        print("Opening multiplex image ...")
+        mx_tif = tifffile.TiffFile(args.multiplex_image)
+        mx_w, mx_h, mx_axes = get_image_dims(mx_tif)
+        mx_store = open_zarr_store(mx_tif)
+        mx_mpp_x, _ = get_ome_mpp(mx_tif)
+        print(f"  {mx_w} x {mx_h}  axes={mx_axes}  mpp={mx_mpp_x}")
 
-    scale = (he_mpp_x / mx_mpp_x) if (he_mpp_x and mx_mpp_x) else (he_w / mx_w)
-    print(f"  scale H&E -> multiplex: {scale:.4f}")
-    print(f"Building tissue mask (downsample={ds}) ...")
-    mask = build_tissue_mask(he_store, he_axes, he_w, he_h, downsample=ds)
-    print(f"  Tissue fraction: {mask.mean():.2%}")
+        scale = (he_mpp_x / mx_mpp_x) if (he_mpp_x and mx_mpp_x) else (he_w / mx_w)
+        print(f"  scale H&E -> multiplex: {scale:.4f}")
+        print(f"Building tissue mask (downsample={ds}) ...")
+        mask = build_tissue_mask(he_store, he_axes, he_w, he_h, downsample=ds)
+        print(f"  Tissue fraction: {mask.mean():.2%}")
 
-    if args.register:
-        print("Computing affine registration via ECC on tissue masks ...")
-        mx_mask = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds)
-        M_full = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
-        print(f"  Warp matrix:\n{M_full}")
-    else:
-        M_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
-
-    # Keep overview for visualization (already computed inside build_tissue_mask,
-    # but we re-read it here since build_tissue_mask doesn't return it)
-    he_chw = _read_overview_chw(he_store, he_axes, he_h, he_w, ds)  # (C, H, W)
-    he_chw = he_chw[:3] if he_chw.shape[0] >= 3 else np.repeat(he_chw[:1], 3, axis=0)
-    if he_chw.dtype != np.uint8:
-        p1 = float(np.percentile(he_chw, 1))
-        p99 = float(np.percentile(he_chw, 99))
-        if p99 > p1:
-            he_chw = ((he_chw.astype(np.float32) - p1) / (p99 - p1) * 255).clip(0, 255).astype(np.uint8)
+        if args.register:
+            print("Computing affine registration via ECC on tissue masks ...")
+            mx_mask = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds)
+            M_full = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
+            print(f"  Warp matrix:\n{M_full}")
         else:
-            he_chw = np.zeros_like(he_chw, dtype=np.uint8)
-    he_overview = np.moveaxis(he_chw.astype(np.uint8), 0, -1)  # (H, W, 3)
+            M_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
 
-    print("Selecting tissue patches ...")
-    coords = get_tissue_patches(mask, he_w, he_h, patch_size, args.stride, args.tissue_min, ds)
-    print(f"  {len(coords)} patches selected")
+        he_chw = read_overview_chw(he_store, he_axes, he_h, he_w, ds)  # (C, H, W)
+        he_chw = he_chw[:3] if he_chw.shape[0] >= 3 else np.repeat(he_chw[:1], 3, axis=0)
+        if he_chw.dtype != np.uint8:
+            he_chw = percentile_to_uint8(he_chw)
+        he_overview = np.moveaxis(he_chw.astype(np.uint8), 0, -1)  # (H, W, 3)
 
-    print("Extracting patches ...")
-    index: list[dict]            = []
-    he_vis_coords: list[tuple[int, int]] = []
-    mx_vis_coords: list[tuple[int, int]] = []
-    
-    for idx, (x0, y0) in enumerate(coords[:10]):
-        if idx % 500 == 0:
-            print(f"  {idx}/{len(coords)} ...")
+        print("Selecting tissue patches ...")
+        coords = get_tissue_patches(mask, he_w, he_h, patch_size, args.stride, args.tissue_min, ds)
+        print(f"  {len(coords)} patches selected")
 
-        he_patch = read_he_patch(he_store, he_axes, he_w, he_h, y0, x0, patch_size)
-        Image.fromarray(he_patch).save(out_dir / "he" / f"{x0}_{y0}.png")
+        print("Extracting patches ...")
+        index: list[dict]            = []
+        he_vis_coords: list[tuple[int, int]] = []
+        mx_vis_coords: list[tuple[int, int]] = []
 
-        x0_mx, y0_mx = transform_he_to_mx_point(M_full, x0, y0)
-        size_mx = max(1, round(patch_size * scale))
-        has_mx  = (x0_mx + size_mx <= mx_w) and (y0_mx + size_mx <= mx_h)
+        for idx, (x0, y0) in enumerate(coords[:10]):
+            if idx % 500 == 0:
+                print(f"  {idx}/{len(coords)} ...")
 
-        if has_mx:
-            mx_patch = read_multiplex_patch(
-                mx_store, mx_axes, mx_w, mx_h,
-                y0_mx, x0_mx, size_mx, size_mx, channel_indices,
-            )
-            if mx_patch.shape[1] != patch_size or mx_patch.shape[2] != patch_size:
-                resized = np.zeros((mx_patch.shape[0], patch_size, patch_size), dtype=mx_patch.dtype)
-                for c in range(mx_patch.shape[0]):
-                    resized[c] = cv2.resize(mx_patch[c], (patch_size, patch_size),
-                                            interpolation=cv2.INTER_LINEAR)
-                mx_patch = resized
-            np.save(out_dir / "multiplex" / f"{x0}_{y0}.npy", mx_patch)
-            mx_vis_coords.append((x0_mx // ds, y0_mx // ds))
+            he_patch = read_he_patch(he_store, he_axes, he_w, he_h, y0, x0, patch_size)
+            Image.fromarray(he_patch).save(out_dir / "he" / f"{x0}_{y0}.png")
 
-        he_vis_coords.append((x0 // ds, y0 // ds))
-        index.append({"x0": x0, "y0": y0, "has_multiplex": has_mx})
+            x0_mx, y0_mx = transform_he_to_mx_point(M_full, x0, y0)
+            size_mx = max(1, round(patch_size * scale))
+            has_mx  = (x0_mx + size_mx <= mx_w) and (y0_mx + size_mx <= mx_h)
 
-    n_mx = sum(p["has_multiplex"] for p in index)
-    print(f"  Done. {n_mx}/{len(index)} patches have multiplex.")
+            if has_mx:
+                mx_patch = read_multiplex_patch(
+                    mx_store, mx_axes, mx_w, mx_h,
+                    y0_mx, x0_mx, size_mx, size_mx, channel_indices,
+                )
+                if mx_patch.shape[1] != patch_size or mx_patch.shape[2] != patch_size:
+                    resized = np.zeros((mx_patch.shape[0], patch_size, patch_size), dtype=mx_patch.dtype)
+                    for c in range(mx_patch.shape[0]):
+                        resized[c] = cv2.resize(mx_patch[c], (patch_size, patch_size),
+                                                interpolation=cv2.INTER_LINEAR)
+                    mx_patch = resized
+                np.save(out_dir / "multiplex" / f"{x0}_{y0}.npy", mx_patch)
+                mx_vis_coords.append((x0_mx // ds, y0_mx // ds))
 
-    with open(out_dir / "index.json", "w") as f:
-        json.dump({
-            "patches": index,
-            "patch_size": patch_size,
-            "stride": args.stride,
-            "tissue_min": args.tissue_min,
-            "img_w": he_w, "img_h": he_h,
-            "he_mpp": he_mpp_x, "mx_mpp": mx_mpp_x,
-            "scale_he_to_mx": scale,
-            "channels": resolved_names,
-            "warp_matrix": M_full.tolist(),
-            "registration": args.register,
-        }, f, indent=2)
+            he_vis_coords.append((x0 // ds, y0 // ds))
+            index.append({"x0": x0, "y0": y0, "has_multiplex": has_mx})
 
-    print(f"Index written to {out_dir / 'index.json'}")
-    print("Stage 1 complete.")
+        n_mx = sum(p["has_multiplex"] for p in index)
+        print(f"  Done. {n_mx}/{len(index)} patches have multiplex.")
+
+        with open(out_dir / "index.json", "w") as f:
+            json.dump({
+                "patches": index,
+                "patch_size": patch_size,
+                "stride": args.stride,
+                "tissue_min": args.tissue_min,
+                "img_w": he_w, "img_h": he_h,
+                "he_mpp": he_mpp_x, "mx_mpp": mx_mpp_x,
+                "scale_he_to_mx": scale,
+                "channels": resolved_names,
+                "warp_matrix": M_full.tolist(),
+                "registration": args.register,
+            }, f, indent=2)
+
+        print(f"Index written to {out_dir / 'index.json'}")
+        print("Stage 1 complete.")
+
+    finally:
+        he_tif.close()
+        if mx_tif is not None:
+            mx_tif.close()
 
 
 if __name__ == "__main__":

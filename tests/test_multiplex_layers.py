@@ -25,9 +25,12 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _multiplex_layers_script() -> str:
-    """Absolute path to multiplex_layers.py."""
-    return str(Path(__file__).resolve().parent.parent / "multiplex_layers.py")
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
+def _multiplex_layers_cmd() -> list[str]:
+    """Return subprocess args for running stages.multiplex_layers as a module."""
+    return [sys.executable, "-m", "stages.multiplex_layers"]
 
 
 def _write_metadata_csv(path: Path, targets: dict) -> None:
@@ -63,7 +66,7 @@ def test_load_multiplex_patch(tmp_path):
     - output.shape == (3, 64, 64)
     - output.dtype == uint16
     """
-    from multiplex_layers import load_multiplex_patch  # noqa: WPS433
+    from stages.multiplex_layers import load_multiplex_patch  # noqa: WPS433
 
     arr = np.zeros((3, 64, 64), dtype=np.uint16)
     arr[0] = 100
@@ -97,7 +100,7 @@ def test_get_channel_index_case_insensitive():
 
     Verifies the returned index for each of the three lookups.
     """
-    from multiplex_layers import get_channel_index  # noqa: WPS433
+    from stages.multiplex_layers import get_channel_index  # noqa: WPS433
 
     names = ["DNA", "CD31", "Ki67", "CD45"]
 
@@ -121,7 +124,7 @@ def test_get_channel_index_raises_on_missing():
 
     Verifies pytest.raises(ValueError) is triggered.
     """
-    from multiplex_layers import get_channel_index  # noqa: WPS433
+    from stages.multiplex_layers import get_channel_index  # noqa: WPS433
 
     names = ["DNA", "CD31", "Ki67"]
 
@@ -146,7 +149,7 @@ def test_extract_channel_shape():
 
     Verifies shape, dtype, and mean value of the extracted channel.
     """
-    from multiplex_layers import extract_channel  # noqa: WPS433
+    from stages.multiplex_layers import extract_channel  # noqa: WPS433
 
     patch = np.zeros((5, 64, 64), dtype=np.uint16)
     patch[2] = 999
@@ -176,7 +179,7 @@ def test_percentile_norm_range():
 
     Verifies dtype, min, max, and shape.
     """
-    from multiplex_layers import percentile_norm  # noqa: WPS433
+    from utils.normalize import percentile_norm  # noqa: WPS433
 
     arr = np.linspace(0, 65535, 64 * 64).reshape(64, 64).astype(np.float32)
 
@@ -199,7 +202,7 @@ def test_percentile_norm_uniform_returns_zeros():
 
     Verifies that the output is entirely zero.
     """
-    from multiplex_layers import percentile_norm  # noqa: WPS433
+    from utils.normalize import percentile_norm  # noqa: WPS433
 
     arr = np.full((64, 64), 1000, dtype=np.float32)
 
@@ -229,7 +232,7 @@ def test_binarize_otsu_splits_bimodal():
 
     Verifies dtype bool, shape (64, 64), and per-half mean values.
     """
-    from multiplex_layers import binarize_otsu  # noqa: WPS433
+    from stages.multiplex_layers import binarize_otsu  # noqa: WPS433
 
     arr = np.zeros((64, 64), dtype=np.float32)
     arr[:, :32] = 0.1   # background
@@ -264,7 +267,7 @@ def test_apply_colormap_shape_and_dtype():
 
     Verifies shape, dtype, and value range.
     """
-    from multiplex_layers import apply_colormap  # noqa: WPS433
+    from stages.multiplex_layers import apply_colormap  # noqa: WPS433
 
     arr = np.linspace(0, 1, 64 * 64).reshape(64, 64).astype(np.float32)
 
@@ -295,7 +298,7 @@ def test_make_vasculature_overlay_colors():
     - vessel center (32, 32): R == 255, alpha == 200
     - background corner (0, 0): alpha == 0 (transparent)
     """
-    from multiplex_layers import make_vasculature_overlay  # noqa: WPS433
+    from stages.multiplex_layers import make_vasculature_overlay  # noqa: WPS433
 
     mask = np.zeros((64, 64), dtype=bool)
     mask[20:44, 20:44] = True
@@ -341,7 +344,7 @@ def test_make_oxygen_map_shape_and_dtype():
 
     Verifies shape, dtype, and that vessel-center blue > corner blue.
     """
-    from multiplex_layers import make_oxygen_map  # noqa: WPS433
+    from stages.multiplex_layers import make_oxygen_map  # noqa: WPS433
 
     mask = np.zeros((64, 64), dtype=bool)
     mask[28:36, 28:36] = True  # center 8×8 vessel blob
@@ -381,7 +384,7 @@ def test_make_glucose_map_high_ki67_gives_bright_pixels():
     - High-Ki67 center pixel (32, 32) has a higher R value than the zero
       background corner (0, 0) — confirming brighter color for high demand.
     """
-    from multiplex_layers import make_glucose_map  # noqa: WPS433
+    from stages.multiplex_layers import make_glucose_map  # noqa: WPS433
 
     ki67 = np.zeros((64, 64), dtype=np.uint16)
     ki67[20:44, 20:44] = 5000
@@ -402,26 +405,24 @@ def test_make_glucose_map_high_ki67_gives_bright_pixels():
 
 
 # ---------------------------------------------------------------------------
-# Unit tests — load_channel_names
+# Unit tests — resolve_channel_indices (was load_channel_names)
 # ---------------------------------------------------------------------------
 
-def test_load_channel_names_validates_missing(tmp_path):
+def test_resolve_channel_indices_validates_missing(tmp_path):
     """
-    Contract: load_channel_names raises ValueError when any requested channel
-    name is not present in the metadata CSV (case-insensitive comparison).
+    Contract: resolve_channel_indices raises ValueError when any requested
+    channel name is not present in the metadata CSV (case-insensitive).
 
-    A minimal metadata CSV listing only CD31 and Ki67 is created.  Requesting
+    A minimal metadata CSV listing only CD31 and Ki67 is created. Requesting
     ['CD31', 'CD45'] must raise ValueError because CD45 is absent.
-
-    Verifies pytest.raises(ValueError) is triggered.
     """
-    from multiplex_layers import load_channel_names  # noqa: WPS433
+    from utils.channels import resolve_channel_indices  # noqa: WPS433
 
     csv_path = tmp_path / "metadata.csv"
     _write_metadata_csv(csv_path, {"CD31": "Channel:0:0", "Ki67": "Channel:0:1"})
 
     with pytest.raises(ValueError):
-        load_channel_names(str(csv_path), ["CD31", "CD45"])
+        resolve_channel_indices(str(csv_path), ["CD31", "CD45"])
 
 
 # ---------------------------------------------------------------------------
@@ -481,21 +482,19 @@ def test_cli_creates_all_three_layers(tmp_path):
     out_dir = tmp_path / "out"
 
     cmd = [
-        sys.executable,
-        _multiplex_layers_script(),
+        *_multiplex_layers_cmd(),
         "--multiplex-dir", str(mux_dir),
         "--index", str(index_path),
         "--metadata-csv", str(meta_path),
         "--out", str(out_dir),
         "--channels", "CD31", "Ki67", "PCNA",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
-        f"multiplex_layers.py exited with code {result.returncode}\n"
+        f"stages.multiplex_layers exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
-    # Vasculature overlay
     vasc_path = out_dir / "vasculature" / "0_0.png"
     assert vasc_path.exists(), "vasculature/0_0.png must be created"
     vasc_img = Image.open(str(vasc_path))
@@ -563,17 +562,16 @@ def test_cli_skips_missing_npy(tmp_path):
     out_dir = tmp_path / "out"
 
     cmd = [
-        sys.executable,
-        _multiplex_layers_script(),
+        *_multiplex_layers_cmd(),
         "--multiplex-dir", str(mux_dir),
         "--index", str(index_path),
         "--metadata-csv", str(meta_path),
         "--out", str(out_dir),
         "--channels", "CD31", "Ki67", "PCNA",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
-        f"multiplex_layers.py exited with code {result.returncode}\n"
+        f"stages.multiplex_layers exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 

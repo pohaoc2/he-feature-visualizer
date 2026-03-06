@@ -13,9 +13,8 @@ import pytest
 import tifffile
 import zarr
 
-# Import patchify module from project root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import patchify as m
+import stages.patchify as m
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +170,7 @@ def test_patchify_cli_same_size_he_multiplex(tmp_path):
 
     cmd = [
         sys.executable,
-        str(Path(__file__).resolve().parent.parent / "patchify.py"),
+        "-m", "stages.patchify",
         "--he-image", str(he_path),
         "--multiplex-image", str(mx_path),
         "--metadata-csv", str(csv_path),
@@ -181,7 +180,10 @@ def test_patchify_cli_same_size_he_multiplex(tmp_path):
         "--tissue-min", "0.05",
         "--channels", "CD31", "Ki67", "CD45", "PCNA",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_path)
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
     assert result.returncode == 0, (result.stdout, result.stderr)
 
     index_path = out_dir / "index.json"
@@ -254,8 +256,8 @@ def _make_cyx_tif(tmp_path, arr, name="test.ome.tif"):
     p = tmp_path / name
     tifffile.imwrite(str(p), arr, ome=True, metadata={"axes": "CYX"})
     tif = tifffile.TiffFile(str(p))
-    store = m._open_zarr_store(tif)
-    img_w, img_h, axes = m._get_image_dims(tif)
+    store = m.open_zarr_store(tif)
+    img_w, img_h, axes = m.get_image_dims(tif)
     return store, axes, img_w, img_h
 
 
@@ -290,8 +292,8 @@ def test_build_tissue_mask_yxc(tmp_path):
     p = tmp_path / "yxc.ome.tif"
     tifffile.imwrite(str(p), arr, ome=True, metadata={"axes": "YXC"})
     tif = tifffile.TiffFile(str(p))
-    store = m._open_zarr_store(tif)
-    img_w, img_h, axes = m._get_image_dims(tif)
+    store = m.open_zarr_store(tif)
+    img_w, img_h, axes = m.get_image_dims(tif)
 
     mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=16)
     assert mask.shape == (h // 16, w // 16)  # (8, 12)
@@ -306,8 +308,8 @@ def test_build_tissue_mask_uint16(tmp_path):
     p = tmp_path / "uint16.ome.tif"
     tifffile.imwrite(str(p), arr, ome=True, metadata={"axes": "CYX"})
     tif = tifffile.TiffFile(str(p))
-    store = m._open_zarr_store(tif)
-    img_w, img_h, axes = m._get_image_dims(tif)
+    store = m.open_zarr_store(tif)
+    img_w, img_h, axes = m.get_image_dims(tif)
 
     mask = m.build_tissue_mask(store, axes, img_w, img_h, downsample=16)
     assert isinstance(mask, np.ndarray)

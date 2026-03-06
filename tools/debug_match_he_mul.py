@@ -23,12 +23,9 @@ Usage:
 import argparse
 import json
 import sys
-import xml.etree.ElementTree as ET
 
 import cv2
 
-# Switch to non-interactive backend when --save-png is used so the script
-# can run without a display server.
 if "--save-png" in sys.argv:
     import matplotlib
     matplotlib.use("Agg")
@@ -37,63 +34,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.widgets as mwidgets
 import numpy as np
-import pandas as pd
 import tifffile
-import zarr
 
-
-# ---------------------------------------------------------------------------
-# OME helpers
-# ---------------------------------------------------------------------------
-
-def _get_ome_mpp(tif):
-    OME_NS = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
-    xml = getattr(tif, "ome_metadata", None)
-    if not xml and tif.pages:
-        xml = getattr(tif.pages[0], "description", None)
-    if not xml:
-        return None, None
-    try:
-        root = ET.fromstring(xml)
-    except ET.ParseError:
-        return None, None
-    px = root.find(".//ome:Pixels", OME_NS) or root.find(".//Pixels")
-    if px is None:
-        return None, None
-    def sf(x):
-        try: return float(x)
-        except: return None
-    return sf(px.get("PhysicalSizeX")), sf(px.get("PhysicalSizeY"))
-
-
-def _open_zarr(tif):
-    raw = zarr.open(tif.series[0].aszarr(), mode="r")
-    return raw if isinstance(raw, zarr.Array) else raw["0"]
-
-
-def _read_overview_chw(store, axes: str, img_h: int, img_w: int, ds: int) -> np.ndarray:
-    """Read a subsampled overview as (C, H, W) for any axis ordering."""
-    ax = axes.upper()
-    h_t = (img_h // ds) * ds
-    w_t = (img_w // ds) * ds
-    sl = []
-    for a in ax:
-        if a == "C":   sl.append(slice(None))
-        elif a == "Y": sl.append(slice(0, h_t, ds))
-        elif a == "X": sl.append(slice(0, w_t, ds))
-        else:          sl.append(0)
-    arr = np.array(store[tuple(sl)])
-    active = [a for a in ax if a in ("C", "Y", "X")]
-    if "C" in active:
-        target = [a for a in ("C", "Y", "X") if a in active]
-        if active != target:
-            arr = arr.transpose([active.index(a) for a in target])
-    else:
-        target = [a for a in ("Y", "X") if a in active]
-        if active != target:
-            arr = arr.transpose([active.index(a) for a in target])
-        arr = arr[np.newaxis]
-    return arr  # (C, H, W)
+from utils.channels import load_channel_metadata
+from utils.normalize import percentile_to_uint8
+from utils.ome import get_ome_mpp, open_zarr_store, read_overview_chw
 
 
 def _read_channel_overview(store, axes: str, img_h: int, img_w: int, ds: int,
@@ -107,63 +52,16 @@ def _read_channel_overview(store, axes: str, img_h: int, img_w: int, ds: int,
     w_t = (img_w // ds) * ds
     sl = []
     for a in ax:
-        if a == "C":   sl.append(c_idx)            # integer → C axis collapsed
+        if a == "C":   sl.append(c_idx)
         elif a == "Y": sl.append(slice(0, h_t, ds))
         elif a == "X": sl.append(slice(0, w_t, ds))
         else:          sl.append(0)
     arr = np.array(store[tuple(sl)])
-    # Ensure (H, W) order
     active = [a for a in ax if a in ("Y", "X")]
     target = [a for a in ("Y", "X") if a in active]
     if active != target:
         arr = arr.transpose([active.index(a) for a in target])
-    return arr  # (H, W)
-
-
-def _norm_uint8(arr: np.ndarray) -> np.ndarray:
-    """Percentile-normalise to uint8."""
-    lo = float(np.percentile(arr, 1))
-    hi = float(np.percentile(arr, 99))
-    if hi > lo:
-        return ((arr.astype(np.float32) - lo) / (hi - lo) * 255).clip(0, 255).astype(np.uint8)
-    return np.zeros_like(arr, dtype=np.uint8)
-
-
-# ---------------------------------------------------------------------------
-# Channel name loading
-# ---------------------------------------------------------------------------
-
-def load_channel_names(csv_path: str) -> dict[int, str]:
-    """Return {zarr_index: channel_name} from metadata CSV.
-
-    Supports two formats (auto-detected):
-      - Old format: 'Channel ID' ('Channel:0:N', 0-based) + 'Target Name'
-      - New format: 'Channel_Number' (1-based int) + 'Marker_Name'
-    """
-    df = pd.read_csv(csv_path)
-    df.columns = [c.strip() for c in df.columns]
-    names: dict[int, str] = {}
-    if "Channel_Number" in df.columns and "Marker_Name" in df.columns:
-        for _, row in df.iterrows():
-            try:
-                idx = int(row["Channel_Number"]) - 1  # convert to 0-based
-                name = str(row["Marker_Name"]).strip()
-                if idx not in names:
-                    names[idx] = name
-            except (ValueError, TypeError):
-                pass
-    else:
-        for _, row in df.iterrows():
-            ch_id = str(row.get("Channel ID", "")).strip()
-            target = str(row.get("Target Name", "")).strip()
-            parts = ch_id.split(":")
-            try:
-                idx = int(parts[-1])
-                if idx not in names:
-                    names[idx] = target
-            except (ValueError, IndexError):
-                pass
-    return names
+    return arr
 
 
 # ---------------------------------------------------------------------------
@@ -199,19 +97,14 @@ def main():
     he_ax  = he_s.axes.upper()
     he_h   = he_s.shape[he_ax.index("Y")]
     he_w   = he_s.shape[he_ax.index("X")]
-    he_store = _open_zarr(he_tif)
-    he_chw = _read_overview_chw(he_store, he_ax, he_h, he_w, ds)  # (C, H, W)
+    he_store = open_zarr_store(he_tif)
+    he_chw = read_overview_chw(he_store, he_ax, he_h, he_w, ds)
     he_chw = he_chw[:3] if he_chw.shape[0] >= 3 else np.repeat(he_chw[:1], 3, axis=0)
     if he_chw.dtype != np.uint8:
-        lo = float(np.percentile(he_chw, 1))
-        hi = float(np.percentile(he_chw, 99))
-        if hi > lo:
-            he_chw = ((he_chw.astype(np.float32) - lo) / (hi - lo) * 255).clip(0, 255).astype(np.uint8)
-        else:
-            he_chw = np.zeros_like(he_chw, dtype=np.uint8)
-    he_rgb = np.moveaxis(he_chw.astype(np.uint8), 0, -1)  # (H_he, W_he, 3)
+        he_chw = percentile_to_uint8(he_chw)
+    he_rgb = np.moveaxis(he_chw.astype(np.uint8), 0, -1)
     H_he, W_he = he_rgb.shape[:2]
-    he_mpp, _ = _get_ome_mpp(he_tif)
+    he_mpp, _ = get_ome_mpp(he_tif)
     print(f"  H&E: {he_w}×{he_h} px  mpp={he_mpp}  overview: {W_he}×{H_he}")
 
     # ------------------------------------------------------------------
@@ -232,8 +125,8 @@ def main():
             print(f"  ECC warp matrix loaded from {args.index_json}")
             print(f"  M_disp (overview space):\n{M_disp}")
 
-    # Build name→index mapping from the metadata CSV
-    all_ch_names = load_channel_names(args.metadata_csv)   # {zarr_idx: name}
+    metadata = load_channel_metadata(args.metadata_csv)
+    all_ch_names = {idx: name for (idx, name) in metadata.values()}
     name_to_idx  = {v.lower(): k for k, v in all_ch_names.items()}
 
     if meta.get("channels"):
@@ -255,8 +148,8 @@ def main():
     mx_ax    = mx_s.axes.upper()
     mx_h     = mx_s.shape[mx_ax.index("Y")]
     mx_w     = mx_s.shape[mx_ax.index("X")]
-    mx_store = _open_zarr(mx_tif)
-    mx_mpp, _ = _get_ome_mpp(mx_tif)
+    mx_store = open_zarr_store(mx_tif)
+    mx_mpp, _ = get_ome_mpp(mx_tif)
     scale = (he_mpp / mx_mpp) if (he_mpp and mx_mpp) else (he_w / mx_w)
 
     if selected_indices:
@@ -272,7 +165,7 @@ def main():
             return selected_names[pos]
     else:
         print(f"  Loading all channels (no channel list in index.json) ...")
-        mx_chw_all = _read_overview_chw(mx_store, mx_ax, mx_h, mx_w, ds)
+        mx_chw_all = read_overview_chw(mx_store, mx_ax, mx_h, mx_w, ds)
         raw_list   = [mx_chw_all[c].astype(np.float32) for c in range(mx_chw_all.shape[0])]
         mx_chw_h, mx_chw_w = mx_chw_all.shape[1], mx_chw_all.shape[2]
         n_ch = len(raw_list)
@@ -302,7 +195,7 @@ def main():
     def channel_to_rgb(c_idx: int) -> np.ndarray:
         """Normalise channel c_idx and apply 'hot' colormap -> uint8 (H, W, 3)."""
         ch = mx_full[c_idx]
-        u8 = _norm_uint8(ch)
+        u8 = percentile_to_uint8(ch)
         rgba = cmap_hot(u8.astype(np.float32) / 255.0)  # (H, W, 4)
         return (rgba[:, :, :3] * 255).astype(np.uint8)
 

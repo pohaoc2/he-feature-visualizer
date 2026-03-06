@@ -51,9 +51,11 @@ import cv2
 import matplotlib
 import matplotlib.cm
 import numpy as np
-import pandas as pd
 import scipy.ndimage
 from PIL import Image
+
+from utils.channels import resolve_channel_indices
+from utils.normalize import percentile_norm
 
 
 # ---------------------------------------------------------------------------
@@ -84,18 +86,6 @@ def extract_channel(patch: np.ndarray, idx: int) -> np.ndarray:
     """Return patch[idx] as (H, W) uint16 array."""
     return patch[idx]
 
-
-def percentile_norm(arr: np.ndarray, p_low: float = 1.0, p_high: float = 99.0) -> np.ndarray:
-    """Clip arr to [p_low, p_high] percentiles, normalize to [0.0, 1.0] float32.
-
-    If p_high value == p_low value (uniform input), return zeros.
-    """
-    lo = float(np.percentile(arr, p_low))
-    hi = float(np.percentile(arr, p_high))
-    if hi == lo:
-        return np.zeros_like(arr, dtype=np.float32)
-    clipped = np.clip(arr.astype(np.float32), lo, hi)
-    return ((clipped - lo) / (hi - lo)).astype(np.float32)
 
 
 def binarize_otsu(arr: np.ndarray) -> np.ndarray:
@@ -178,39 +168,6 @@ def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray) -> np.ndarray:
     return apply_colormap(metabolic, "hot")
 
 
-def load_channel_names(metadata_csv: str, requested: list[str]) -> list[str]:
-    """Parse metadata CSV, check that every requested name is present.
-
-    Supports two formats (auto-detected):
-      - Old format: 'Channel ID' + 'Target Name'
-      - New format: 'Channel_Number' + 'Marker_Name'
-
-    Returns requested unchanged if all found; raises ValueError otherwise.
-    """
-    df = pd.read_csv(metadata_csv)
-    df.columns = [c.strip() for c in df.columns]
-
-    if "Marker_Name" in df.columns:
-        name_col = "Marker_Name"
-    elif "Target Name" in df.columns:
-        name_col = "Target Name"
-    else:
-        raise ValueError(
-            f"metadata CSV must have 'Marker_Name' or 'Target Name' column. "
-            f"Found: {list(df.columns)}"
-        )
-
-    available_lower = {str(v).strip().lower() for v in df[name_col].dropna()}
-
-    missing = [name for name in requested if name.lower() not in available_lower]
-    if missing:
-        raise ValueError(
-            f"Channel(s) not found in metadata CSV '{name_col}' column: {missing}\n"
-            f"Available names (case-insensitive): {sorted(available_lower)}"
-        )
-
-    return requested
-
 
 # ---------------------------------------------------------------------------
 # CLI entry point
@@ -263,7 +220,7 @@ def main() -> None:
     # 1. Validate channel names against metadata CSV
     # ------------------------------------------------------------------
     log.info("Validating channel names against metadata CSV: %s", args.metadata_csv)
-    load_channel_names(args.metadata_csv, args.channels)
+    resolve_channel_indices(args.metadata_csv, args.channels)
     log.info("  All requested channels found: %s", args.channels)
 
     # ------------------------------------------------------------------
@@ -300,10 +257,11 @@ def main() -> None:
     skipped   = 0
 
     for patch_meta in patches:
-        i = patch_meta["i"]
-        j = patch_meta["j"]
+        x0 = patch_meta["x0"]
+        y0 = patch_meta["y0"]
+        patch_id = f"{x0}_{y0}"
 
-        npy_path = multiplex_dir / f"{i}_{j}.npy"
+        npy_path = multiplex_dir / f"{patch_id}.npy"
         if not npy_path.exists():
             log.warning("Missing multiplex file: %s — skipping.", npy_path)
             skipped += 1
@@ -329,9 +287,9 @@ def main() -> None:
         glucose_rgba = make_glucose_map(ki67_raw, pcna_raw)
 
         # f. Save PNGs
-        Image.fromarray(vasc_rgba,    "RGBA").save(vasc_dir    / f"{i}_{j}.png")
-        Image.fromarray(oxygen_rgba,  "RGBA").save(oxygen_dir  / f"{i}_{j}.png")
-        Image.fromarray(glucose_rgba, "RGBA").save(glucose_dir / f"{i}_{j}.png")
+        Image.fromarray(vasc_rgba,    "RGBA").save(vasc_dir    / f"{patch_id}.png")
+        Image.fromarray(oxygen_rgba,  "RGBA").save(oxygen_dir  / f"{patch_id}.png")
+        Image.fromarray(glucose_rgba, "RGBA").save(glucose_dir / f"{patch_id}.png")
 
         processed += 1
         if processed % 50 == 0:

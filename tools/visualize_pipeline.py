@@ -26,6 +26,8 @@ import numpy as np
 import tifffile
 from PIL import Image
 
+from utils.normalize import percentile_norm, percentile_to_uint8
+
 # ---------------------------------------------------------------------------
 # Color legends (must match assign_cells.py CELL_TYPE_COLORS / CELL_STATE_COLORS)
 # ---------------------------------------------------------------------------
@@ -70,16 +72,6 @@ def _composite_rgba_on_black(rgba: np.ndarray) -> np.ndarray:
     out = (alpha * rgb).clip(0, 255).astype(np.uint8)
     return out
 
-
-def _normalize_percentile(arr: np.ndarray, p_low: float = 1.0, p_high: float = 99.0) -> np.ndarray:
-    """Normalize a float/int array to [0, 1] via percentile clipping."""
-    lo = float(np.percentile(arr, p_low))
-    hi = float(np.percentile(arr, p_high))
-    if hi > lo:
-        out = (arr.astype(np.float32) - lo) / (hi - lo)
-    else:
-        out = np.zeros_like(arr, dtype=np.float32)
-    return out.clip(0.0, 1.0)
 
 
 def _apply_colormap(norm: np.ndarray, cmap_name: str = "hot") -> np.ndarray:
@@ -144,12 +136,7 @@ def build_original_location(
 
             # Normalize dtype
             if arr.dtype != np.uint8:
-                p1 = float(np.percentile(arr, 1))
-                p99 = float(np.percentile(arr, 99))
-                if p99 > p1:
-                    arr = ((arr.astype(np.float32) - p1) / (p99 - p1) * 255.0).clip(0, 255).astype(np.uint8)
-                else:
-                    arr = np.zeros(arr.shape[:2] + (3,), dtype=np.uint8)
+                arr = percentile_to_uint8(arr)
 
             # Resize to 256x256 first, then draw rectangle in output space
             thumbnail = cv2.resize(arr, (256, 256), interpolation=cv2.INTER_AREA)
@@ -195,7 +182,7 @@ def build_multiplex_panel(npy_path: Path, channel_idx: int = 0, use_max_proj: bo
                 ch = arr[0].astype(np.float32)
         else:
             ch = arr.astype(np.float32)
-        norm = _normalize_percentile(ch)
+        norm = percentile_norm(ch)
         return _apply_colormap(norm, "hot")
     return _gray_placeholder("no multiplex")
 

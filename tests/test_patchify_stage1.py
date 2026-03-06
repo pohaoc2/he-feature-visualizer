@@ -29,9 +29,12 @@ def _write_ome_tiff(path, arr: np.ndarray, axes: str) -> None:
     tifffile.imwrite(str(path), arr, ome=True, metadata={"axes": axes})
 
 
-def _patchify_script() -> str:
-    """Absolute path to patchify.py."""
-    return str(Path(__file__).resolve().parent.parent / "patchify.py")
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
+def _patchify_cmd() -> list[str]:
+    """Return subprocess args for running stages.patchify as a module."""
+    return [sys.executable, "-m", "stages.patchify"]
 
 
 def _minimal_metadata_csv(path: Path, targets: dict) -> None:
@@ -67,7 +70,7 @@ def test_tissue_mask_hsv_detects_tissue():
     channel, so high-saturation pink tissue is reliably separated from the
     zero-saturation white background regardless of brightness.
     """
-    from patchify import tissue_mask_hsv  # noqa: WPS433
+    from stages.patchify import tissue_mask_hsv  # noqa: WPS433
 
     h, w = 64, 64
     rgb = np.full((h, w, 3), 255, dtype=np.uint8)  # white background
@@ -96,7 +99,7 @@ def test_tissue_mask_hsv_rejects_gray_background():
     Verifies mean(mask) < 0.1 across the entire uniform-gray image, confirming
     that fewer than 10 % of pixels are falsely labelled as tissue.
     """
-    from patchify import tissue_mask_hsv  # noqa: WPS433
+    from stages.patchify import tissue_mask_hsv  # noqa: WPS433
 
     h, w = 64, 64
     rgb = np.full((h, w, 3), 200, dtype=np.uint8)  # uniform dark-ish gray
@@ -119,7 +122,7 @@ def test_tissue_fraction_range():
 
     Verifies: 0.3 < tissue_fraction(rgb) < 0.7
     """
-    from patchify import tissue_fraction  # noqa: WPS433
+    from stages.patchify import tissue_fraction  # noqa: WPS433
 
     h, w = 64, 64
     rgb = np.full((h, w, 3), 255, dtype=np.uint8)  # white background
@@ -144,7 +147,7 @@ def test_get_patch_grid_no_overlap():
     Verifies the returned set equals exactly {(0,0),(0,1),(1,0),(1,1)} and that
     no duplicates are present.
     """
-    from patchify import get_patch_grid  # noqa: WPS433
+    from stages.patchify import get_patch_grid  # noqa: WPS433
 
     patches = get_patch_grid(img_w=512, img_h=512, patch_size=256, stride=256)
 
@@ -166,7 +169,7 @@ def test_get_patch_grid_excludes_edge_patches():
     Verifies that every returned patch satisfies:
         x1 = x0 + patch_size <= img_w  and  y1 = y0 + patch_size <= img_h
     """
-    from patchify import get_patch_grid  # noqa: WPS433
+    from stages.patchify import get_patch_grid  # noqa: WPS433
 
     patch_size = 256
     img_w = img_h = 600
@@ -194,7 +197,7 @@ def test_read_he_patch_cyx_axes(tmp_path):
     - output.shape == (256, 256, 3)
     - output.dtype == uint8
     """
-    from patchify import read_he_patch  # noqa: WPS433
+    from stages.patchify import read_he_patch  # noqa: WPS433
 
     img_h, img_w = 512, 512
     arr = np.zeros((3, img_h, img_w), dtype=np.uint8)
@@ -238,7 +241,7 @@ def test_read_multiplex_patch_selects_channels(tmp_path):
 
     Verifies shape (3, 256, 256), dtype uint16, and per-channel mean values.
     """
-    from patchify import read_multiplex_patch  # noqa: WPS433
+    from stages.patchify import read_multiplex_patch  # noqa: WPS433
 
     img_h, img_w = 512, 512
     arr = np.zeros((10, img_h, img_w), dtype=np.uint16)
@@ -320,8 +323,7 @@ def test_cli_creates_outputs(tmp_path):
     out_dir = tmp_path / "processed"
 
     cmd = [
-        sys.executable,
-        _patchify_script(),
+        *_patchify_cmd(),
         "--he-image", str(he_path),
         "--multiplex-image", str(mux_path),
         "--metadata-csv", str(meta_path),
@@ -331,9 +333,9 @@ def test_cli_creates_outputs(tmp_path):
         "--tissue-min", "0.0",
         "--channels", "CD31", "Ki67",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
-        f"patchify.py exited with code {result.returncode}\n"
+        f"stages.patchify exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
@@ -396,8 +398,7 @@ def test_cli_tissue_filter_drops_background_patches(tmp_path):
     out_dir = tmp_path / "processed"
 
     cmd = [
-        sys.executable,
-        _patchify_script(),
+        *_patchify_cmd(),
         "--he-image", str(he_path),
         "--multiplex-image", str(mux_path),
         "--metadata-csv", str(meta_path),
@@ -407,20 +408,20 @@ def test_cli_tissue_filter_drops_background_patches(tmp_path):
         "--tissue-min", "0.5",
         "--channels", "CD31",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
-        f"patchify.py exited with code {result.returncode}\n"
+        f"stages.patchify exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
     data = json.loads((out_dir / "index.json").read_text())
-    kept = [(p["i"], p["j"]) for p in data["patches"]]
+    kept = [(p["x0"], p["y0"]) for p in data["patches"]]
 
     assert len(kept) == 1, (
         f"Expected exactly 1 patch to survive tissue filter, got {len(kept)}: {kept}"
     )
     assert kept[0] == (0, 0), (
-        f"The surviving patch should be (i=0, j=0), got {kept[0]}"
+        f"The surviving patch should be (x0=0, y0=0), got {kept[0]}"
     )
 
 
@@ -455,8 +456,7 @@ def test_index_json_schema(tmp_path):
     out_dir = tmp_path / "processed"
 
     cmd = [
-        sys.executable,
-        _patchify_script(),
+        *_patchify_cmd(),
         "--he-image", str(he_path),
         "--multiplex-image", str(mux_path),
         "--metadata-csv", str(meta_path),
@@ -466,9 +466,9 @@ def test_index_json_schema(tmp_path):
         "--tissue-min", "0.0",
         "--channels", "CD45",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
-        f"patchify.py exited with code {result.returncode}\n"
+        f"stages.patchify exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
@@ -485,7 +485,7 @@ def test_index_json_schema(tmp_path):
 
     # Per-patch schema — need at least one patch to validate
     assert len(data["patches"]) >= 1, "Need at least one patch to validate per-patch schema"
-    required_patch = {"i", "j", "x0", "y0", "x1", "y1"}
+    required_patch = {"x0", "y0", "has_multiplex"}
     for patch in data["patches"]:
         missing_patch = required_patch - set(patch.keys())
         assert not missing_patch, (

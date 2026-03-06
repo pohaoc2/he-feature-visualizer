@@ -11,17 +11,41 @@ Given a pair of H&E and multiplex OME-TIFF images, this pipeline:
 3. Refines cell type assignments using multiplex marker intensities
 4. Produces per-patch feature layers (cell type maps, vasculature, signaling channels) suitable for downstream spatial analysis or model training
 
+## Project Structure
+
+```
+stages/
+  patchify.py            # Stage 1: extract 256×256 H&E patches + multiplex arrays + ECC registration
+  assign_cells.py        # Stage 3: assign cell types from CellViT + multiplex markers
+  multiplex_layers.py    # Stage 4: derive vasculature/signaling layers
+utils/
+  normalize.py           # percentile_norm, percentile_to_uint8
+  channels.py            # load_channel_metadata, resolve_channel_indices
+  ome.py                 # get_ome_mpp, open_zarr_store, read_overview_chw, get_image_dims
+tools/
+  build_pyramid.py       # Convert mask TIF to pyramidal OME-TIFF
+  viz_mask.py            # Visualize mask + OME side-by-side (overview / crop)
+  check_shape.py         # Inspect OME-TIFF dimensions (local or S3)
+  debug_match_he_mul.py  # Interactive/headless H&E↔multiplex alignment viewer (QC)
+  visualize_pipeline.py  # 6-panel pipeline summary figure
+cellvit_backend.py       # CellViT model integration stub
+notebooks/               # Stage 2: GPU cell segmentation on Colab
+server.py                # FastAPI server — DZI tiles, heatmap/cell data (WSI viewer)
+preprocess.py            # One-time preprocessing: CSV + TIFF → cache/ (WSI viewer)
+tests/                   # pytest test suite
+```
+
 ## Pipeline Overview
 
 ```
 Local machine                          Google Colab (GPU)
 ─────────────────────────────          ──────────────────────────────────
-Stage 1: python patchify.py
+Stage 1: python -m stages.patchify
   → processed/he/*.png
   → processed/multiplex/*.npy
   → processed/index.json
          │
-         │ upload patches
+         │ upload patches (aws s3 sync)
          ▼
       [AWS S3]                    ──►   cellvit_colab_stage2.ipynb
                                           ↓
@@ -29,8 +53,8 @@ Stage 1: python patchify.py
          ◄─────────────────────────────────
          │ download results
          ▼
-Stage 3: python assign_cells.py
-Stage 4: python multiplex_layers.py
+Stage 3: python -m stages.assign_cells
+Stage 4: python -m stages.multiplex_layers
 ```
 
 ---
@@ -57,10 +81,10 @@ lin-2021-crc-atlas/
 
 ## Stage 1 — Patch Extraction
 
-Run `patchify.py` to extract 256×256 H&E patches and corresponding multiplex arrays. ECC affine registration between the two images is performed automatically (use `--no-register` to disable).
+Run `stages.patchify` to extract 256×256 H&E patches and corresponding multiplex arrays. ECC affine registration between the two images is performed automatically (use `--no-register` to disable).
 
 ```bash
-python patchify.py \
+python -m stages.patchify \
   --he-image data/CRC02-HE.ome.tif \
   --multiplex-image data/CRC02.ome.tif \
   --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
@@ -120,7 +144,6 @@ Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negl
 3. **Runtime → Change runtime type → T4 GPU → Save**
 4. Edit the **Configuration cell** (Cell 1) at the top:
 
-
 | Variable          | Description                          | Example                                |
 | ----------------- | ------------------------------------ | -------------------------------------- |
 | `STORAGE_BACKEND` | Storage backend                      | `'s3'`                                 |
@@ -130,11 +153,9 @@ Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negl
 | `BATCH_SIZE`      | Patches per GPU batch                | `32` (reduce to 8 if OOM)              |
 | `MAGNIFICATION`   | Scan magnification                   | `40` (use `20` if 20x slide)           |
 
-
 1. **Runtime → Run all**
 
 Expected timeline on a T4 GPU:
-
 
 | Step                                             | Time                   |
 | ------------------------------------------------ | ---------------------- |
@@ -143,7 +164,6 @@ Expected timeline on a T4 GPU:
 | Copy patches from S3 to Colab local SSD          | ~1 min per 500 patches |
 | Inference (CellViT-256 at batch size 32)         | ~1 s per 32 patches    |
 | Total for 1000 patches                           | ~20 min                |
-
 
 ### Download results
 
@@ -177,7 +197,6 @@ Each JSON file corresponds to one 256×256 patch, named by patch coordinate (e.g
 
 Cell type IDs used by CellViT:
 
-
 | ID  | Type         |
 | --- | ------------ |
 | 1   | Neoplastic   |
@@ -186,7 +205,6 @@ Cell type IDs used by CellViT:
 | 4   | Dead         |
 | 5   | Epithelial   |
 
-
 ---
 
 ## Stage 3 — Cell Type Assignment
@@ -194,7 +212,7 @@ Cell type IDs used by CellViT:
 Assign cell types and states using CellViT detections combined with multiplex marker features:
 
 ```bash
-python assign_cells.py \
+python -m stages.assign_cells \
   --cellvit-dir processed/cellvit/ \
   --features-csv data/CRC02.csv \
   --out processed/ \
@@ -204,13 +222,26 @@ python assign_cells.py \
 
 ---
 
+## Stage 4 — Multiplex Layers
+
+Derive vasculature and oxygen/glucose layers from multiplex channels:
+
+```bash
+python -m stages.multiplex_layers \
+  --multiplex-dir processed/multiplex/ \
+  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
+  --out processed/
+```
+
+---
+
 ## Alignment QC
 
-Use `debug_match_he_mul.py` to visually verify H&E↔multiplex registration. Without `--index-json` it does a naive resize; with it, it applies the ECC `warp_matrix` from `index.json`.
+Use `tools.debug_match_he_mul` to visually verify H&E↔multiplex registration. Without `--index-json` it does a naive resize; with it, it applies the ECC `warp_matrix` from `index.json`.
 
 ```bash
 # Interactive viewer (requires display)
-python debug_match_he_mul.py \
+python -m tools.debug_match_he_mul \
   --he-image data/CRC02-HE.ome.tif \
   --multiplex-image data/CRC02.ome.tif \
   --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
@@ -218,7 +249,7 @@ python debug_match_he_mul.py \
   --index-json processed/index.json
 
 # Headless — save static 3-panel PNG (no display needed)
-python debug_match_he_mul.py \
+python -m tools.debug_match_he_mul \
   --he-image data/CRC02-HE.ome.tif \
   --multiplex-image data/CRC02.ome.tif \
   --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
@@ -237,34 +268,21 @@ Generate a 6-panel summary figure for a single patch or a grid of random patches
 
 ```bash
 # Single patch (patch key is x0_y0 in pixel coordinates)
-python visualize_pipeline.py \
+python -m tools.visualize_pipeline \
   --processed processed/ \
   --patch 58624_4096 \
   --he-image data/CRC02-HE.ome.tif
 
 # Random grid of N patches
-python visualize_pipeline.py \
+python -m tools.visualize_pipeline \
   --processed processed/ \
   --random 6 \
   --seed 42 \
   --he-image data/CRC02-HE.ome.tif \
-  --mx-channel 0        # 0–3
+  --mx-channel 0
 ```
 
 Panels shown per patch: original location · H&E · multiplex channel · cell segmentation · cell type · cell state.
-
----
-
-## Stage 4 — Multiplex Layers
-
-Derive vasculature and oxygen/glucose layers from multiplex channels:
-
-```bash
-python multiplex_layers.py \
-  --multiplex-dir processed/multiplex/ \
-  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
-  --out processed/
-```
 
 ---
 
@@ -306,7 +324,6 @@ At low zoom a kernel-density heatmap is shown; zoom past level 3 for individual 
 
 Thresholds are the **95th percentile** of each marker across all cells.
 
-
 | Mode        | Marker        | Color  |
 | ----------- | ------------- | ------ |
 | Tumor       | Keratin > p95 | Pink   |
@@ -319,4 +336,12 @@ Thresholds are the **95th percentile** of each marker across all cells.
 | CD4         | CD4 > p95     | Yellow |
 | CD20        | CD20 > p95    | Cyan   |
 
+---
 
+## Tests
+
+```bash
+pytest tests/ -v
+```
+
+All tests use synthetic data — no real images or data files are required.

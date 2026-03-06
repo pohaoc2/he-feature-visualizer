@@ -4,6 +4,7 @@ data/
 docs/*
 !docs/plans/
 processed*/
+*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -45,9 +45,12 @@ CELL_STATE_COLORS = {
 # Helper
 # ---------------------------------------------------------------------------
 
-def _assign_cells_script() -> str:
-    """Absolute path to assign_cells.py."""
-    return str(Path(__file__).resolve().parent.parent / "assign_cells.py")
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
+def _assign_cells_cmd() -> list[str]:
+    """Return subprocess args for running stages.assign_cells as a module."""
+    return [sys.executable, "-m", "stages.assign_cells"]
 
 
 def _make_cell(centroid, contour, bbox=None, type_cellvit=1, type_prob=0.9):
@@ -87,7 +90,7 @@ def test_build_csv_index_returns_kdtree():
     - A nearest-neighbour query for (100, 100) must return distance ~0,
       because that exact point exists in the tree.
     """
-    from assign_cells import build_csv_index  # noqa: WPS433
+    from stages.assign_cells import build_csv_index  # noqa: WPS433
 
     df = pd.DataFrame({"Xt": [100, 200, 300], "Yt": [100, 200, 300]})
     tree = build_csv_index(df, x_col="Xt", y_col="Yt")
@@ -114,7 +117,7 @@ def test_assign_type_priority_order():
     When multiple markers exceed their threshold the highest-priority type wins.
     When only one marker is elevated the corresponding type is returned.
     """
-    from assign_cells import assign_type  # noqa: WPS433
+    from stages.assign_cells import assign_type  # noqa: WPS433
 
     thresholds = {
         "CD31":    500.0,
@@ -171,7 +174,7 @@ def test_assign_type_missing_markers():
     A row with no marker columns at all must return 'other' without raising
     an exception.
     """
-    from assign_cells import assign_type  # noqa: WPS433
+    from stages.assign_cells import assign_type  # noqa: WPS433
 
     empty_row = pd.Series(dtype=float)
     thresholds = {"CD31": 500.0, "Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0}
@@ -195,7 +198,7 @@ def test_assign_state_proliferating():
     - PCNA high alone → 'proliferating'
     - Both Ki67 and PCNA high (with EMT conditions also met) → 'proliferating'
     """
-    from assign_cells import assign_state  # noqa: WPS433
+    from stages.assign_cells import assign_state  # noqa: WPS433
 
     thresholds = {
         "Ki67":      500.0,
@@ -237,7 +240,7 @@ def test_assign_state_emt():
     - High Vimentin + High Ecadherin → 'other' (Ecadherin not sufficiently low)
     - Low Vimentin + Low Ecadherin → 'other' (Vimentin not high enough)
     """
-    from assign_cells import assign_state  # noqa: WPS433
+    from stages.assign_cells import assign_state  # noqa: WPS433
 
     thresholds = {
         "Ki67":      500.0,
@@ -284,7 +287,7 @@ def test_match_cells_finds_nearby_cell():
 
     Verifies: resulting cell dict contains cell_type == 'tumor'.
     """
-    from assign_cells import build_csv_index, match_cells  # noqa: WPS433
+    from stages.assign_cells import build_csv_index, match_cells  # noqa: WPS433
 
     thresholds = {
         "CD31": 500.0, "Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0,
@@ -340,7 +343,7 @@ def test_match_cells_unmatched_when_far():
 
     Verifies: cell_type == 'other', cell_state == 'other'.
     """
-    from assign_cells import build_csv_index, match_cells  # noqa: WPS433
+    from stages.assign_cells import build_csv_index, match_cells  # noqa: WPS433
 
     thresholds = {
         "CD31": 500.0, "Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0,
@@ -402,7 +405,7 @@ def test_rasterize_cells_produces_rgba_array():
     - Center of immune contour: B > 150, R < 100
     - Pixel (0, 0) has alpha == 0
     """
-    from assign_cells import rasterize_cells  # noqa: WPS433
+    from stages.assign_cells import rasterize_cells  # noqa: WPS433
 
     tumor_cell = _make_cell(
         centroid=[60, 60],
@@ -464,7 +467,7 @@ def test_rasterize_cells_state_other_is_transparent():
     CELL_STATE_COLORS['other'] == (0, 0, 0, 0), so drawing it is equivalent
     to drawing nothing — the entire alpha channel must remain 0.
     """
-    from assign_cells import rasterize_cells  # noqa: WPS433
+    from stages.assign_cells import rasterize_cells  # noqa: WPS433
 
     cell = _make_cell(
         centroid=[128, 128],
@@ -545,17 +548,16 @@ def test_cli_creates_output_dirs(tmp_path):
     index_path.write_text(json.dumps(index_data))
 
     cmd = [
-        sys.executable,
-        _assign_cells_script(),
+        *_assign_cells_cmd(),
         "--cellvit-dir", str(cellvit_dir),
         "--features-csv", str(features_path),
         "--index", str(index_path),
         "--out", str(out_dir),
         "--max-dist", "15.0",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
-        f"assign_cells.py exited with code {result.returncode}\n"
+        f"stages.assign_cells exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
@@ -633,17 +635,16 @@ def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
     index_path.write_text(json.dumps(index_data))
 
     cmd = [
-        sys.executable,
-        _assign_cells_script(),
+        *_assign_cells_cmd(),
         "--cellvit-dir", str(cellvit_dir),
         "--features-csv", str(features_path),
         "--index", str(index_path),
         "--out", str(out_dir),
         "--max-dist", "15.0",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
-        f"assign_cells.py exited with code {result.returncode}\n"
+        f"stages.assign_cells exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
 
