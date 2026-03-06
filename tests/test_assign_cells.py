@@ -142,7 +142,13 @@ def test_assign_type_missing_markers():
     from stages.assign_cells import assign_type
 
     empty_row = pd.Series(dtype=float)
-    thresholds = {"Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0, "CD31": 500.0}
+    thresholds = {
+        "Keratin": 500.0, "NaKATPase": 500.0, "CDX2": 500.0,
+        "CD45": 500.0, "CD3": 500.0, "CD4": 500.0, "CD8a": 500.0,
+        "CD20": 500.0, "CD45RO": 500.0, "CD68": 500.0, "CD163": 500.0,
+        "FOXP3": 500.0, "PD1": 500.0,
+        "aSMA": 500.0, "CD31": 500.0, "Desmin": 500.0, "Collagen": 500.0,
+    }
     assert assign_type(empty_row, thresholds) == "other"
 
 
@@ -766,7 +772,7 @@ def test_assign_type_any_positive_stromal():
                    "aSMA", "CD31", "Desmin", "Collagen"]
     thresholds = {m: 500.0 for m in all_markers}
 
-    for marker in ["Desmin", "Collagen"]:
+    for marker in ["aSMA", "CD31", "Desmin", "Collagen"]:
         row = pd.Series({m: (1000.0 if m == marker else 0.0) for m in all_markers})
         result = assign_type(row, thresholds)
         assert result == "stromal", (
