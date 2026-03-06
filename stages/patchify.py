@@ -343,6 +343,51 @@ def read_he_patch(zarr_store, axes: str, img_w: int, img_h: int,
     return arr
 
 
+def read_mask_patch(zarr_store, axes: str, img_w: int, img_h: int,
+                    y0: int, x0: int, size: int) -> np.ndarray:
+    """Read a cell-segmentation mask patch as uint32 (size, size).
+
+    The mask is assumed to be in H&E pixel space (same resolution, same
+    registration) so the caller passes the same (x0, y0) used for the H&E
+    patch — no coordinate transform is required.
+
+    Pixel values are integer label IDs (0 = background).  If the stored
+    dtype is narrower than uint32 it is safely upcast; float masks are
+    rounded and cast.
+
+    Handle axes permutations (YX, CYX with C=1, XY, etc.).
+    Clip to image bounds, zero-pad if the patch extends beyond the edge.
+    """
+    arr, dy, dx, rh, rw = _clip_and_read(zarr_store, axes, img_w, img_h, y0, x0, size, size)
+
+    # Collapse a redundant channel axis (C=1 segmentation masks)
+    if arr.ndim == 3:
+        # Bring C first if needed
+        active = [ax for ax in axes if ax in ("C", "Y", "X")]
+        if "C" in active and active.index("C") > 0:
+            perm = [active.index(a) for a in ("C", "Y", "X") if a in active]
+            arr = arr.transpose(perm)
+        if arr.shape[0] == 1:
+            arr = arr[0]  # (1, H, W) → (H, W)
+        else:
+            arr = arr[0]  # take first channel if C > 1
+
+    # Upcast to uint32 (handles uint8, uint16, int32, float)
+    if np.issubdtype(arr.dtype, np.floating):
+        arr = np.round(arr).astype(np.uint32)
+    else:
+        arr = arr.astype(np.uint32)
+
+    # Zero-pad to (size, size)
+    if arr.shape[0] != size or arr.shape[1] != size:
+        out = np.zeros((size, size), dtype=np.uint32)
+        if rh > 0 and rw > 0:
+            out[dy: dy + rh, dx: dx + rw] = arr[:rh, :rw]
+        return out
+
+    return arr
+
+
 def read_multiplex_patch(zarr_store, axes: str, img_w: int, img_h: int,
                          y0: int, x0: int, size_y: int, size_x: int,
                          channel_indices: list[int]) -> np.ndarray:
@@ -418,6 +463,9 @@ def main():
                         help="3 multiplex channel indices for RGB composite in vis")
     parser.add_argument("--register", action=argparse.BooleanOptionalAction, default=True,
                         help="Run ECC affine registration between H&E and MX tissue masks (default: on)")
+    parser.add_argument("--mask-image", default=None,
+                        help="Optional cell segmentation mask OME-TIFF in H&E pixel space. "
+                             "Patches saved to processed/masks/{x0}_{y0}.npy as uint32 label IDs.")
     args = parser.parse_args()
 
     out_dir    = Path(args.out)
@@ -425,6 +473,8 @@ def main():
     patch_size = args.patch_size
     (out_dir / "he").mkdir(parents=True, exist_ok=True)
     (out_dir / "multiplex").mkdir(parents=True, exist_ok=True)
+    if args.mask_image:
+        (out_dir / "masks").mkdir(parents=True, exist_ok=True)
 
     print("Resolving channel indices ...")
     channel_indices, resolved_names = load_channel_indices(args.metadata_csv, args.channels)
@@ -432,6 +482,7 @@ def main():
     print("Opening H&E image ...")
     he_tif = tifffile.TiffFile(args.he_image)
     mx_tif = None
+    seg_tif = None
     try:
         he_w, he_h, he_axes = get_image_dims(he_tif)
         he_store = open_zarr_store(he_tif)
@@ -465,6 +516,14 @@ def main():
             he_chw = percentile_to_uint8(he_chw)
         he_overview = np.moveaxis(he_chw.astype(np.uint8), 0, -1)  # (H, W, 3)
 
+        seg_store = seg_axes = seg_w = seg_h = None
+        if args.mask_image:
+            print("Opening cell mask image ...")
+            seg_tif = tifffile.TiffFile(args.mask_image)
+            seg_w, seg_h, seg_axes = get_image_dims(seg_tif)
+            seg_store = open_zarr_store(seg_tif)
+            print(f"  {seg_w} x {seg_h}  axes={seg_axes}")
+
         print("Selecting tissue patches ...")
         coords = get_tissue_patches(mask, he_w, he_h, patch_size, args.stride, args.tissue_min, ds)
         print(f"  {len(coords)} patches selected")
@@ -480,6 +539,13 @@ def main():
 
             he_patch = read_he_patch(he_store, he_axes, he_w, he_h, y0, x0, patch_size)
             Image.fromarray(he_patch).save(out_dir / "he" / f"{x0}_{y0}.png")
+
+            has_seg = False
+            if seg_store is not None:
+                seg_patch = read_mask_patch(seg_store, seg_axes, seg_w, seg_h,
+                                            y0, x0, patch_size)
+                np.save(out_dir / "masks" / f"{x0}_{y0}.npy", seg_patch)
+                has_seg = True
 
             x0_mx, y0_mx = transform_he_to_mx_point(M_full, x0, y0)
             size_mx = max(1, round(patch_size * scale))
@@ -500,13 +566,19 @@ def main():
                 mx_vis_coords.append((x0_mx // ds, y0_mx // ds))
 
             he_vis_coords.append((x0 // ds, y0 // ds))
-            index.append({"x0": x0, "y0": y0, "has_multiplex": has_mx})
+            entry: dict = {"x0": x0, "y0": y0, "has_multiplex": has_mx}
+            if seg_store is not None:
+                entry["has_mask"] = has_seg
+            index.append(entry)
 
         n_mx = sum(p["has_multiplex"] for p in index)
         print(f"  Done. {n_mx}/{len(index)} patches have multiplex.")
+        if seg_store is not None:
+            n_seg = sum(p.get("has_mask", False) for p in index)
+            print(f"        {n_seg}/{len(index)} patches have cell mask.")
 
         with open(out_dir / "index.json", "w") as f:
-            json.dump({
+            meta: dict = {
                 "patches": index,
                 "patch_size": patch_size,
                 "stride": args.stride,
@@ -517,7 +589,10 @@ def main():
                 "channels": resolved_names,
                 "warp_matrix": M_full.tolist(),
                 "registration": args.register,
-            }, f, indent=2)
+            }
+            if args.mask_image:
+                meta["mask_image"] = str(args.mask_image)
+            json.dump(meta, f, indent=2)
 
         print(f"Index written to {out_dir / 'index.json'}")
         print("Stage 1 complete.")
@@ -526,6 +601,8 @@ def main():
         he_tif.close()
         if mx_tif is not None:
             mx_tif.close()
+        if seg_tif is not None:
+            seg_tif.close()
 
 
 if __name__ == "__main__":

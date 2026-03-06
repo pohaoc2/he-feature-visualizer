@@ -1,5 +1,10 @@
 # H&E + Multiplex Feature Generator
 
+[![Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml/badge.svg)](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer/branch/main/graph/badge.svg)](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+
 A pipeline for generating spatially-resolved, multi-channel feature maps from co-registered H&E and multiplex immunofluorescence (mIF) whole-slide images.
 
 ## Goal
@@ -340,8 +345,31 @@ Thresholds are the **95th percentile** of each marker across all cells.
 
 ## Tests
 
+All tests use synthetic data — no real images or data files are required.
+
 ```bash
+# Run all tests
 pytest tests/ -v
+
+# Run with coverage report
+pytest tests/ -v --cov=stages --cov=utils --cov-report=term-missing
+
+# Run only registration / mapping tests
+pytest tests/test_patchify_registration.py -v
 ```
 
-All tests use synthetic data — no real images or data files are required.
+Coverage is reported automatically on every CI run via [Codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer).
+
+## Code Style & Linting
+
+The project uses [Ruff](https://docs.astral.sh/ruff/) for linting. Ruff runs automatically in CI on every push and pull request.
+
+```bash
+# Check for lint errors
+ruff check stages/ utils/ tools/ tests/
+
+# Auto-fix safe issues
+ruff check --fix stages/ utils/ tools/ tests/
+```
+
+Ruff is configured to enforce PEP 8 style, flag unused imports, and catch common Python anti-patterns. No separate `pyproject.toml` or `.ruff.toml` is required — the defaults cover the project's conventions.
