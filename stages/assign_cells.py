@@ -65,47 +65,23 @@ def build_csv_index(df: pd.DataFrame, x_col: str, y_col: str) -> scipy.spatial.K
 
 
 def assign_type(row: pd.Series, thresholds: dict[str, float]) -> str:
-    """Assign cell type from marker intensities. Priority:
-      tumor   if Keratin >= thresholds['Keratin']
-      immune  if CD45   >= thresholds['CD45']
-      stromal if aSMA   >= thresholds['aSMA']  (CD31+ endothelial cells also fall here)
-      other   otherwise
-    Note: vasculature is a tissue-level feature tracked via the CD31 channel in
-    multiplex_layers.py, not a cell type — endothelial cells are classified as stromal.
-    Missing markers treated as 0. Never raises."""
-    try:
-        keratin = float(
-            row.get("Keratin", 0)
-            if hasattr(row, "get")
-            else getattr(row, "Keratin", 0) if hasattr(row, "Keratin") else 0
-        )
-        cd45 = float(
-            row.get("CD45", 0)
-            if hasattr(row, "get")
-            else getattr(row, "CD45", 0) if hasattr(row, "CD45") else 0
-        )
-        asma = float(
-            row.get("aSMA", 0)
-            if hasattr(row, "get")
-            else getattr(row, "aSMA", 0) if hasattr(row, "aSMA") else 0
-        )
-        cd31 = float(
-            row.get("CD31", 0)
-            if hasattr(row, "get")
-            else getattr(row, "CD31", 0) if hasattr(row, "CD31") else 0
-        )
-    except Exception:
-        return "other"
+    """Assign cell type using grouped any-positive rule. Priority: tumor > immune > stromal > other.
+
+    For each group in TYPE_MARKERS, returns that type if ANY marker in the group
+    exceeds its individual threshold. Missing markers treated as 0. Never raises."""
+
+    def _get(key: str) -> float:
+        try:
+            val = row.get(key, 0) if hasattr(row, "get") else getattr(row, key, 0)
+            return float(val) if val is not None else 0.0
+        except Exception:
+            return 0.0
 
     try:
-        if keratin >= thresholds.get("Keratin", float("inf")):
-            return "tumor"
-        if cd45 >= thresholds.get("CD45", float("inf")):
-            return "immune"
-        if asma >= thresholds.get("aSMA", float("inf")) or cd31 >= thresholds.get(
-            "CD31", float("inf")
-        ):
-            return "stromal"
+        for type_name, markers in TYPE_MARKERS.items():
+            for marker in markers:
+                if _get(marker) >= thresholds.get(marker, float("inf")):
+                    return type_name
     except Exception:
         pass
 

@@ -109,81 +109,41 @@ def test_build_csv_index_returns_kdtree():
 
 
 def test_assign_type_priority_order():
-    """
-    Contract: assign_type follows a strict priority order:
-      vasculature > tumor > immune > stromal > other
-
-    When multiple markers exceed their threshold the highest-priority type wins.
-    When only one marker is elevated the corresponding type is returned.
-    """
-    from stages.assign_cells import assign_type  # noqa: WPS433
+    """assign_type follows tumor > immune > stromal > other priority."""
+    from stages.assign_cells import assign_type
 
     thresholds = {
-        "CD31": 500.0,
-        "Keratin": 500.0,
-        "CD45": 500.0,
-        "aSMA": 500.0,
+        "Keratin": 500.0, "NaKATPase": 500.0, "CDX2": 500.0,
+        "CD45": 500.0, "CD3": 500.0, "CD4": 500.0, "CD8a": 500.0,
+        "CD20": 500.0, "CD45RO": 500.0, "CD68": 500.0, "CD163": 500.0,
+        "FOXP3": 500.0, "PD1": 500.0,
+        "aSMA": 500.0, "CD31": 500.0, "Desmin": 500.0, "Collagen": 500.0,
     }
 
-    # All markers above threshold → tumor wins (vasculature removed as cell type)
-    all_high = pd.Series(
-        {"CD31": 1000.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0}
-    )
-    assert (
-        assign_type(all_high, thresholds) == "tumor"
-    ), "When all markers are high, tumor (Keratin) wins"
+    # All markers high → tumor wins (first group checked)
+    all_high = pd.Series({m: 1000.0 for m in thresholds})
+    assert assign_type(all_high, thresholds) == "tumor"
 
-    # Only Keratin → tumor
-    tumor_row = pd.Series(
-        {"CD31": 0.0, "Keratin": 1000.0, "CD45": 1000.0, "aSMA": 1000.0}
-    )
-    assert (
-        assign_type(tumor_row, thresholds) == "tumor"
-    ), "Keratin should win over CD45/aSMA"
-
-    # Only CD45 → immune
-    immune_row = pd.Series(
-        {"CD31": 0.0, "Keratin": 0.0, "CD45": 1000.0, "aSMA": 1000.0}
-    )
-    assert (
-        assign_type(immune_row, thresholds) == "immune"
-    ), "Without CD31/Keratin, CD45 should win over aSMA"
+    # Only CD45 and aSMA high → immune wins over stromal
+    row = pd.Series({**{m: 0.0 for m in thresholds}, "CD45": 1000.0, "aSMA": 1000.0})
+    assert assign_type(row, thresholds) == "immune"
 
     # Only aSMA → stromal
-    stromal_row = pd.Series({"CD31": 0.0, "Keratin": 0.0, "CD45": 0.0, "aSMA": 1000.0})
-    assert assign_type(stromal_row, thresholds) == "stromal"
+    row = pd.Series({**{m: 0.0 for m in thresholds}, "aSMA": 1000.0})
+    assert assign_type(row, thresholds) == "stromal"
 
-    # No markers above threshold → other
-    other_row = pd.Series({"CD31": 0.0, "Keratin": 0.0, "CD45": 0.0, "aSMA": 0.0})
-    assert assign_type(other_row, thresholds) == "other"
-
-    # Each type in isolation (CD31 now maps to stromal, no vasculature cell type)
-    for marker, expected_type in [
-        ("CD31", "stromal"),
-        ("Keratin", "tumor"),
-        ("CD45", "immune"),
-        ("aSMA", "stromal"),
-    ]:
-        single = pd.Series({m: (1000.0 if m == marker else 0.0) for m in thresholds})
-        assert (
-            assign_type(single, thresholds) == expected_type
-        ), f"Only {marker} high should yield '{expected_type}'"
+    # Nothing above threshold → other
+    row = pd.Series({m: 0.0 for m in thresholds})
+    assert assign_type(row, thresholds) == "other"
 
 
 def test_assign_type_missing_markers():
-    """
-    Contract: assign_type treats any marker absent from the row as 0.
-
-    A row with no marker columns at all must return 'other' without raising
-    an exception.
-    """
-    from stages.assign_cells import assign_type  # noqa: WPS433
+    """assign_type treats any marker absent from the row as 0."""
+    from stages.assign_cells import assign_type
 
     empty_row = pd.Series(dtype=float)
-    thresholds = {"CD31": 500.0, "Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0}
-
-    result = assign_type(empty_row, thresholds)
-    assert result == "other", f"Empty row should yield 'other', got '{result}'"
+    thresholds = {"Keratin": 500.0, "CD45": 500.0, "aSMA": 500.0, "CD31": 500.0}
+    assert assign_type(empty_row, thresholds) == "other"
 
 
 # ---------------------------------------------------------------------------
@@ -760,3 +720,71 @@ def test_compute_thresholds_missing_marker_is_inf():
     thresholds = compute_thresholds(df)
     assert thresholds["NaKATPase"] == float("inf")
     assert thresholds["CD3"] == float("inf")
+
+
+def test_assign_type_any_positive_immune():
+    """Any single immune marker above threshold → 'immune'."""
+    from stages.assign_cells import assign_type
+
+    immune_markers = ["CD45", "CD3", "CD4", "CD8a", "CD20",
+                      "CD45RO", "CD68", "CD163", "FOXP3", "PD1"]
+    all_markers = ["Keratin", "NaKATPase", "CDX2"] + immune_markers + \
+                  ["aSMA", "CD31", "Desmin", "Collagen"]
+    thresholds = {m: 500.0 for m in all_markers}
+
+    for marker in immune_markers:
+        row = pd.Series({m: (1000.0 if m == marker else 0.0) for m in all_markers})
+        result = assign_type(row, thresholds)
+        assert result == "immune", (
+            f"Only {marker} high should yield 'immune', got '{result}'"
+        )
+
+
+def test_assign_type_any_positive_tumor():
+    """NaKATPase or CDX2 above threshold (without Keratin) → 'tumor'."""
+    from stages.assign_cells import assign_type
+
+    all_markers = ["Keratin", "NaKATPase", "CDX2", "CD45", "CD3", "CD4", "CD8a",
+                   "CD20", "CD45RO", "CD68", "CD163", "FOXP3", "PD1",
+                   "aSMA", "CD31", "Desmin", "Collagen"]
+    thresholds = {m: 500.0 for m in all_markers}
+
+    for marker in ["NaKATPase", "CDX2"]:
+        row = pd.Series({m: (1000.0 if m == marker else 0.0) for m in all_markers})
+        result = assign_type(row, thresholds)
+        assert result == "tumor", (
+            f"Only {marker} high should yield 'tumor', got '{result}'"
+        )
+
+
+def test_assign_type_any_positive_stromal():
+    """Desmin or Collagen above threshold (without tumor/immune) → 'stromal'."""
+    from stages.assign_cells import assign_type
+
+    all_markers = ["Keratin", "NaKATPase", "CDX2", "CD45", "CD3", "CD4", "CD8a",
+                   "CD20", "CD45RO", "CD68", "CD163", "FOXP3", "PD1",
+                   "aSMA", "CD31", "Desmin", "Collagen"]
+    thresholds = {m: 500.0 for m in all_markers}
+
+    for marker in ["Desmin", "Collagen"]:
+        row = pd.Series({m: (1000.0 if m == marker else 0.0) for m in all_markers})
+        result = assign_type(row, thresholds)
+        assert result == "stromal", (
+            f"Only {marker} high should yield 'stromal', got '{result}'"
+        )
+
+
+def test_assign_type_tumor_beats_immune():
+    """tumor > immune priority: Keratin + CD45 both high → 'tumor'."""
+    from stages.assign_cells import assign_type
+
+    thresholds = {
+        "Keratin": 500.0, "NaKATPase": 500.0, "CDX2": 500.0,
+        "CD45": 500.0, "CD3": 500.0, "CD4": 500.0, "CD8a": 500.0,
+        "CD20": 500.0, "CD45RO": 500.0, "CD68": 500.0, "CD163": 500.0,
+        "FOXP3": 500.0, "PD1": 500.0,
+        "aSMA": 500.0, "CD31": 500.0, "Desmin": 500.0, "Collagen": 500.0,
+    }
+    row = pd.Series({**{m: 0.0 for m in thresholds},
+                     "Keratin": 1000.0, "CD45": 1000.0})
+    assert assign_type(row, thresholds) == "tumor"
