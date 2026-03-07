@@ -1,0 +1,255 @@
+"""Affine and deformable registration helpers."""
+
+import cv2
+import numpy as np
+
+from .qc import _full_affine_to_overview, _iou, _warp_mx_mask_to_he_template
+
+REG_MODE_AFFINE = "affine"
+REG_MODE_DEFORMABLE = "deformable"
+
+
+def register_he_mx_affine(  # pylint: disable=unused-argument
+    he_mask: np.ndarray,
+    mx_mask: np.ndarray,
+    ds: int,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+) -> np.ndarray:
+    """Compute affine warp M_full (2x3) mapping H&E full-res -> MX full-res."""
+    he_ov_h, he_ov_w = he_mask.shape
+    mx_ov_h, mx_ov_w = mx_mask.shape
+
+    mx_resized = cv2.resize(
+        mx_mask.astype(np.float32), (he_ov_w, he_ov_h), interpolation=cv2.INTER_LINEAR
+    )
+    he_f32 = he_mask.astype(np.float32)
+    he_f32 = cv2.GaussianBlur(he_f32, (5, 5), 0)
+    mx_resized = cv2.GaussianBlur(mx_resized, (5, 5), 0)
+
+    m_ov = np.eye(2, 3, dtype=np.float32)
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 500, 1e-6)
+    try:
+        _, m_ov = cv2.findTransformECC(
+            he_f32, mx_resized, m_ov, cv2.MOTION_AFFINE, criteria
+        )
+    except cv2.error as e:  # pylint: disable=catching-non-exception
+        print(f"  WARNING: ECC registration failed ({e}). Falling back to mpp scale.")
+        scale = he_w / mx_w
+        return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
+
+    rx = he_ov_w / mx_ov_w
+    ry = he_ov_h / mx_ov_h
+    m_full = np.array(
+        [
+            [m_ov[0, 0] / rx, m_ov[0, 1] / rx, m_ov[0, 2] * ds / rx],
+            [m_ov[1, 0] / ry, m_ov[1, 1] / ry, m_ov[1, 2] * ds / ry],
+        ],
+        dtype=np.float32,
+    )
+    return m_full
+
+
+def _apply_inverse_flow(
+    image: np.ndarray, flow_dx: np.ndarray, flow_dy: np.ndarray
+) -> np.ndarray:
+    """Sample image at (x-flow_dx, y-flow_dy), returning image in template space."""
+    h, w = image.shape
+    grid_x, grid_y = np.meshgrid(
+        np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32)
+    )
+    map_x = grid_x - flow_dx.astype(np.float32)
+    map_y = grid_y - flow_dy.astype(np.float32)
+    return cv2.remap(
+        image.astype(np.float32),
+        map_x,
+        map_y,
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+
+
+def estimate_deformable_field(
+    he_mask: np.ndarray,
+    mx_mask: np.ndarray,
+    m_full: np.ndarray,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+) -> dict[str, object]:
+    """Estimate an overview-space dense field that refines affine registration."""
+    m_ov = _full_affine_to_overview(m_full, he_mask, mx_mask, he_h, he_w, mx_h, mx_w)
+    he_f = cv2.GaussianBlur((he_mask > 0).astype(np.float32), (0, 0), sigmaX=1.5)
+    mx_aff = cv2.warpAffine(
+        (mx_mask > 0).astype(np.float32),
+        m_ov.astype(np.float32),
+        (he_mask.shape[1], he_mask.shape[0]),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    mx_f = cv2.GaussianBlur(mx_aff.astype(np.float32), (0, 0), sigmaX=1.5)
+
+    flow = cv2.calcOpticalFlowFarneback(
+        mx_f,
+        he_f,
+        None,
+        pyr_scale=0.5,
+        levels=3,
+        winsize=41,
+        iterations=6,
+        poly_n=7,
+        poly_sigma=1.5,
+        flags=0,
+    )
+    flow = cv2.GaussianBlur(flow, (0, 0), sigmaX=1.0)
+
+    max_disp = 0.08 * float(min(he_mask.shape))
+    mag = np.hypot(flow[..., 0], flow[..., 1])
+    scale = np.ones_like(mag, dtype=np.float32)
+    valid = mag > (max_disp + 1e-6)
+    scale[valid] = max_disp / mag[valid]
+    flow[..., 0] *= scale
+    flow[..., 1] *= scale
+
+    mx_aff_bin = mx_aff > 0.5
+    mx_def = _apply_inverse_flow(mx_aff.astype(np.float32), flow[..., 0], flow[..., 1])
+    mx_def_bin = mx_def > 0.5
+    iou_aff = _iou(he_mask > 0, mx_aff_bin)
+    iou_def = _iou(he_mask > 0, mx_def_bin)
+
+    return {
+        "flow_dx_ov": flow[..., 0].astype(np.float32),
+        "flow_dy_ov": flow[..., 1].astype(np.float32),
+        "iou_affine": float(iou_aff),
+        "iou_deformable": float(iou_def),
+        "mean_disp_ov": float(np.mean(np.hypot(flow[..., 0], flow[..., 1]))),
+        "max_disp_ov": float(np.max(np.hypot(flow[..., 0], flow[..., 1]))),
+    }
+
+
+def compute_deformable_patch_qc_metrics(
+    he_mask: np.ndarray,
+    mx_mask: np.ndarray,
+    m_full: np.ndarray,
+    flow_dx_ov: np.ndarray,
+    flow_dy_ov: np.ndarray,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+    sample_count: int = 50,
+    patch_size_ov: int = 24,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Patch-level gain metrics comparing deformable result to affine baseline."""
+    he_bin = he_mask > 0
+    he_ov_h, he_ov_w = he_bin.shape
+
+    m_ov = _full_affine_to_overview(m_full, he_mask, mx_mask, he_h, he_w, mx_h, mx_w)
+    mx_aff = cv2.warpAffine(
+        (mx_mask > 0).astype(np.float32),
+        m_ov.astype(np.float32),
+        (he_ov_w, he_ov_h),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    mx_aff_bin = mx_aff > 0.5
+    mx_def = _apply_inverse_flow(mx_aff, flow_dx_ov, flow_dy_ov)
+    mx_def_bin = mx_def > 0.5
+
+    valid_aff = cv2.warpAffine(
+        np.ones(mx_mask.shape, dtype=np.float32),
+        m_ov.astype(np.float32),
+        (he_ov_w, he_ov_h),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    valid_def = _apply_inverse_flow(valid_aff, flow_dx_ov, flow_dy_ov)
+
+    edge = (
+        cv2.morphologyEx(
+            he_bin.astype(np.uint8),
+            cv2.MORPH_GRADIENT,
+            np.ones((3, 3), dtype=np.uint8),
+        )
+        > 0
+    )
+    ys, xs = np.nonzero(edge)
+    if len(xs) < max(10, sample_count // 2):
+        ys, xs = np.nonzero(he_bin)
+    if len(xs) == 0:
+        return {
+            "sample_count": 0.0,
+            "improved_fraction": 0.0,
+            "median_gain": 0.0,
+            "inside_fraction_pass_rate": 0.0,
+            "mean_gain": 0.0,
+        }
+
+    rng = np.random.default_rng(seed)
+    n = min(sample_count, len(xs))
+    pick = rng.choice(len(xs), size=n, replace=False)
+    half = max(1, patch_size_ov // 2)
+
+    gains = []
+    inside = []
+    for idx in pick:
+        cy = int(ys[idx])
+        cx = int(xs[idx])
+        y0 = max(0, cy - half)
+        y1 = min(he_ov_h, cy + half)
+        x0 = max(0, cx - half)
+        x1 = min(he_ov_w, cx + half)
+        he_local = he_bin[y0:y1, x0:x1]
+        cand_local = mx_def_bin[y0:y1, x0:x1]
+        base_local = mx_aff_bin[y0:y1, x0:x1]
+        gains.append(float(_iou(he_local, cand_local) - _iou(he_local, base_local)))
+        inside.append(float(valid_def[y0:y1, x0:x1].mean()))
+
+    gains_arr = np.array(gains, dtype=np.float64)
+    inside_arr = np.array(inside, dtype=np.float64)
+    return {
+        "sample_count": float(len(gains)),
+        "improved_fraction": float(np.mean(gains_arr > 1e-9)),
+        "median_gain": float(np.median(gains_arr)),
+        "inside_fraction_pass_rate": float(np.mean(inside_arr >= 0.85)),
+        "mean_gain": float(np.mean(gains_arr)),
+    }
+
+
+def transform_he_to_mx_point(m_full: np.ndarray, x0: int, y0: int) -> tuple[int, int]:
+    """Apply the 2x3 affine m_full to (x0, y0) and return rounded (x_mx, y_mx)."""
+    pt = np.array([x0, y0, 1.0], dtype=np.float64)
+    result = m_full.astype(np.float64) @ pt
+    return int(round(result[0])), int(round(result[1]))
+
+
+def _transform_points_affine(m: np.ndarray, points_xy: np.ndarray) -> np.ndarray:
+    """Apply a 2x3 affine matrix to Nx2 points and return Nx2 transformed points."""
+    pts = np.asarray(points_xy, dtype=np.float64)
+    ones = np.ones((pts.shape[0], 1), dtype=np.float64)
+    hom = np.concatenate([pts, ones], axis=1)
+    return (m.astype(np.float64) @ hom.T).T
+
+
+def _he_patch_to_mx_local_affine(
+    m_full: np.ndarray, he_x0: int, he_y0: int
+) -> np.ndarray:
+    """Return affine mapping patch-local (u,v) -> MX full-res (x,y)."""
+    m = m_full.astype(np.float64)
+    a, b, tx = m[0]
+    c, d, ty = m[1]
+    return np.array(
+        [
+            [a, b, a * he_x0 + b * he_y0 + tx],
+            [c, d, c * he_x0 + d * he_y0 + ty],
+        ],
+        dtype=np.float64,
+    )

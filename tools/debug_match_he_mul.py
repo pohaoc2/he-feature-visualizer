@@ -22,6 +22,7 @@ Usage:
 
 import argparse
 import json
+from pathlib import Path
 import sys
 
 import cv2
@@ -70,6 +71,26 @@ def _read_channel_overview(
     if active != target:
         arr = arr.transpose([active.index(a) for a in target])
     return arr
+
+
+def _apply_inverse_flow(
+    image: np.ndarray, flow_dx: np.ndarray, flow_dy: np.ndarray
+) -> np.ndarray:
+    """Sample image at (x-flow_dx, y-flow_dy) in destination template space."""
+    h, w = image.shape
+    grid_x, grid_y = np.meshgrid(
+        np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32)
+    )
+    map_x = grid_x - flow_dx.astype(np.float32)
+    map_y = grid_y - flow_dy.astype(np.float32)
+    return cv2.remap(
+        image.astype(np.float32),
+        map_x,
+        map_y,
+        interpolation=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +162,9 @@ def main():
     meta = {}
     registered = False
     m_disp = None
+    flow_dx = None
+    flow_dy = None
+    deformable_mode = False
     if args.index_json:
         with open(args.index_json, encoding="utf-8") as f:
             meta = json.load(f)
@@ -152,6 +176,19 @@ def main():
             registered = True
             print(f"  ECC warp matrix loaded from {args.index_json}")
             print(f"  m_disp (overview space):\n{m_disp}")
+        deformable_mode = meta.get("registration_mode") == "deformable"
+        if deformable_mode:
+            reg_dir = Path(args.index_json).resolve().parent / "registration"
+            flow_path = reg_dir / "deform_field.npz"
+            if flow_path.exists():
+                dd = np.load(flow_path)
+                flow_dx = dd["flow_dx_ov"].astype(np.float32)
+                flow_dy = dd["flow_dy_ov"].astype(np.float32)
+                print(f"  Deformable field loaded from {flow_path}")
+            else:
+                print(
+                    f"  WARNING: registration_mode=deformable but {flow_path} not found"
+                )
 
     metadata = load_channel_metadata(args.metadata_csv)
     all_ch_names = dict(metadata.values())
@@ -179,7 +216,7 @@ def main():
     mx_w = mx_s.shape[mx_ax.index("X")]
     mx_store = open_zarr_store(mx_tif)
     mx_mpp, _ = get_ome_mpp(mx_tif)
-    scale = (he_mpp / mx_mpp) if (he_mpp and mx_mpp) else (he_w / mx_w)
+    scale = (he_mpp / mx_mpp) if (he_mpp and mx_mpp) else (mx_w / he_w)
 
     if selected_indices:
         print(f"  Loading {len(selected_indices)} channels: {selected_names}")
@@ -216,16 +253,35 @@ def main():
 
     # Warp or resize each channel into H&E overview space
     action = "Warping" if registered else "Resizing"
-    print(f"  {action} {n_ch} channels to {w_he}×{h_he} ...")
+    action2 = " + deformable remap" if (registered and flow_dx is not None) else ""
+    print(f"  {action}{action2} {n_ch} channels to {w_he}×{h_he} ...")
     mx_full = np.zeros((n_ch, h_he, w_he), dtype=np.float32)
+    flow_dx_disp = flow_dy_disp = None
+    if flow_dx is not None:
+        fh, fw = flow_dx.shape
+        if (fh, fw) != (h_he, w_he):
+            sx = w_he / float(max(1, fw))
+            sy = h_he / float(max(1, fh))
+            flow_dx_disp = (
+                cv2.resize(flow_dx, (w_he, h_he), interpolation=cv2.INTER_LINEAR) * sx
+            )
+            flow_dy_disp = (
+                cv2.resize(flow_dy, (w_he, h_he), interpolation=cv2.INTER_LINEAR) * sy
+            )
+        else:
+            flow_dx_disp = flow_dx
+            flow_dy_disp = flow_dy
     for i, ch in enumerate(raw_list):
         if registered:
-            mx_full[i] = cv2.warpAffine(
+            warped = cv2.warpAffine(
                 ch,
                 m_disp,
                 (w_he, h_he),
                 flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
             )
+            if flow_dx_disp is not None:
+                warped = _apply_inverse_flow(warped, flow_dx_disp, flow_dy_disp)
+            mx_full[i] = warped
         else:
             mx_full[i] = cv2.resize(ch, (w_he, h_he), interpolation=cv2.INTER_LINEAR)
 
@@ -285,7 +341,12 @@ def main():
     ax_ov.set_yticks([])
     ax_ov.set_facecolor("black")
 
-    reg_label = "ECC-registered" if registered else "naive resize (no registration)"
+    if registered and flow_dx is not None:
+        reg_label = "ECC + deformable"
+    elif registered:
+        reg_label = "ECC-registered"
+    else:
+        reg_label = "naive resize (no registration)"
     fig.suptitle(
         f"H&E vs Multiplex  |  downsample={ds}x  |  {n_ch} channels  "
         f"|  H&E {w_he}x{h_he}  MX {mx_chw_w}x{mx_chw_h}  |  {reg_label}",

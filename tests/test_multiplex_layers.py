@@ -334,6 +334,146 @@ def test_make_vasculature_overlay_colors():
     ), f"Background pixel alpha should be 0, got {overlay[0, 0, 3]}"
 
 
+def test_refine_vasculature_with_sma_keeps_only_adjacent_sma():
+    """
+    Contract: SMA refinement must only add SMA-positive pixels adjacent to CD31.
+
+    Setup:
+    - cd31_mask contains a 2x2 vessel at rows/cols 4:6.
+    - sma_mask contains one adjacent pixel at (6, 5) and one far pixel at (0, 0).
+    - adjacency radius is 1 px.
+
+    Verifies:
+    - adjacent SMA pixel is included in refined mask.
+    - far SMA pixel is not included.
+    """
+    from stages.multiplex_layers import refine_vasculature_with_sma  # noqa: WPS433
+
+    cd31_mask = np.zeros((10, 10), dtype=bool)
+    cd31_mask[4:6, 4:6] = True
+
+    sma_mask = np.zeros((10, 10), dtype=bool)
+    sma_mask[6, 5] = True  # adjacent to vessel component
+    sma_mask[0, 0] = True  # far from vessel
+
+    refined = refine_vasculature_with_sma(cd31_mask, sma_mask, adjacency_px=1)
+
+    assert refined[6, 5], "Adjacent SMA-positive pixel should be included"
+    assert not refined[0, 0], "Far SMA-positive pixel should not be included"
+
+
+def test_build_vessel_source_map_applies_mask_and_weight():
+    """Vessel source map should keep vessel pixels and apply optional weighting."""
+    from stages.multiplex_layers import build_vessel_source_map  # noqa: WPS433
+
+    mask = np.zeros((4, 4), dtype=bool)
+    mask[1, 1] = True
+    mask[2, 2] = True
+
+    weight = np.zeros((4, 4), dtype=np.float32)
+    weight[1, 1] = 0.25
+    weight[2, 2] = 0.75
+
+    source = build_vessel_source_map(mask, weight)
+
+    assert source.dtype == np.float32
+    assert source.shape == (4, 4)
+    assert source[1, 1] == pytest.approx(0.25)
+    assert source[2, 2] == pytest.approx(0.75)
+    assert source[0, 0] == pytest.approx(0.0)
+
+
+def test_build_consumption_map_combines_base_and_demand_weight():
+    """Consumption map should be base + demand_weight*demand."""
+    from stages.multiplex_layers import build_consumption_map  # noqa: WPS433
+
+    demand = np.array([[0.0, 0.5, 1.0]], dtype=np.float32)
+    k = build_consumption_map(demand, base_rate=0.1, demand_weight=0.4)
+
+    assert k.dtype == np.float32
+    assert k.shape == (1, 3)
+    assert k[0, 0] == pytest.approx(0.1)
+    assert k[0, 1] == pytest.approx(0.3)
+    assert k[0, 2] == pytest.approx(0.5)
+
+
+def test_solve_steady_state_diffusion_is_bounded_and_nonzero_for_source():
+    """PDE solver should return bounded field and respond to nonzero source."""
+    from stages.multiplex_layers import solve_steady_state_diffusion  # noqa: WPS433
+
+    src = np.zeros((33, 33), dtype=np.float32)
+    src[16, 16] = 1.0
+    k = np.full((33, 33), 0.2, dtype=np.float32)
+
+    u = solve_steady_state_diffusion(
+        source_map=src,
+        consumption_map=k,
+        diffusion=1.0,
+        max_iters=800,
+        tol=1e-5,
+    )
+
+    assert u.dtype == np.float32
+    assert u.shape == (33, 33)
+    assert float(u.min()) >= 0.0
+    assert float(u.max()) <= 1.0
+    assert float(u[16, 16]) > float(u[0, 0]), "Center should exceed corner"
+    assert float(u[16, 16]) > 0.0, "Center response must be nonzero"
+
+
+def test_solve_steady_state_diffusion_has_radial_decay_from_center_source():
+    """Homogeneous medium should decay with distance from a central source."""
+    from stages.multiplex_layers import solve_steady_state_diffusion  # noqa: WPS433
+
+    src = np.zeros((65, 65), dtype=np.float32)
+    src[32, 32] = 1.0
+    k = np.full((65, 65), 0.15, dtype=np.float32)
+
+    u = solve_steady_state_diffusion(
+        source_map=src,
+        consumption_map=k,
+        diffusion=1.0,
+        max_iters=1000,
+        tol=1e-5,
+    )
+
+    center = float(u[32, 32])
+    near = float(u[32, 37])  # distance 5
+    far = float(u[32, 47])  # distance 15
+    assert center > near > far, (
+        f"Expected center>near>far, got center={center:.4f}, "
+        f"near={near:.4f}, far={far:.4f}"
+    )
+
+
+def test_solve_steady_state_diffusion_raises_on_shape_mismatch():
+    """Solver should reject incompatible source/consumption shapes."""
+    from stages.multiplex_layers import solve_steady_state_diffusion  # noqa: WPS433
+
+    src = np.zeros((8, 8), dtype=np.float32)
+    k = np.zeros((7, 8), dtype=np.float32)
+    with pytest.raises(ValueError):
+        solve_steady_state_diffusion(src, k)
+
+
+def test_compute_metabolic_demand_map_uses_channelwise_max():
+    """Demand map should be max(norm(Ki67), norm(PCNA)) per pixel."""
+    from stages.multiplex_layers import compute_metabolic_demand_map  # noqa: WPS433
+
+    ki67 = np.zeros((4, 4), dtype=np.float32)
+    pcna = np.zeros((4, 4), dtype=np.float32)
+    ki67[1, 1] = 100.0
+    pcna[2, 2] = 200.0
+
+    demand = compute_metabolic_demand_map(ki67, pcna)
+
+    assert demand.shape == (4, 4)
+    assert demand.dtype == np.float32
+    assert float(demand[1, 1]) > 0.0
+    assert float(demand[2, 2]) > 0.0
+    assert float(demand[0, 0]) == pytest.approx(0.0)
+
+
 # ---------------------------------------------------------------------------
 # Unit tests — make_oxygen_map
 # ---------------------------------------------------------------------------
@@ -371,6 +511,34 @@ def test_make_oxygen_map_shape_and_dtype():
     assert (
         center_blue > corner_blue
     ), f"Vessel center blue ({center_blue}) should exceed corner blue ({corner_blue})"
+
+
+def test_make_oxygen_map_pde_shape_and_dtype():
+    """PDE oxygen map should be RGBA and higher near vessel source."""
+    from stages.multiplex_layers import make_oxygen_map_pde  # noqa: WPS433
+
+    vessel_mask = np.zeros((64, 64), dtype=bool)
+    vessel_mask[28:36, 28:36] = True
+    demand_map = np.zeros((64, 64), dtype=np.float32)
+
+    out = make_oxygen_map_pde(
+        vessel_mask=vessel_mask,
+        demand_map=demand_map,
+        diffusion=1.0,
+        max_iters=500,
+        tol=1e-5,
+        base_consumption=0.1,
+        demand_weight=0.3,
+    )
+
+    assert out.shape == (64, 64, 4), f"Expected shape (64, 64, 4), got {out.shape}"
+    assert out.dtype == np.uint8, f"Expected uint8, got {out.dtype}"
+
+    center_blue = int(out[32, 32, 2])
+    corner_blue = int(out[0, 0, 2])
+    assert (
+        center_blue > corner_blue
+    ), f"PDE oxygen center blue ({center_blue}) should exceed corner blue ({corner_blue})"
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +584,35 @@ def test_make_glucose_map_high_ki67_gives_bright_pixels():
     ), f"High-Ki67 center R ({center_r}) should exceed background corner R ({corner_r})"
 
 
+def test_make_glucose_map_pde_shape_and_dtype():
+    """PDE glucose map should be RGBA and brighter near vessel source."""
+    from stages.multiplex_layers import make_glucose_map_pde  # noqa: WPS433
+
+    vessel_mask = np.zeros((64, 64), dtype=bool)
+    vessel_mask[28:36, 28:36] = True
+    demand_map = np.zeros((64, 64), dtype=np.float32)
+    demand_map[:, :32] = 1.0  # heterogeneous demand to exercise consumption map
+
+    out = make_glucose_map_pde(
+        vessel_mask=vessel_mask,
+        demand_map=demand_map,
+        diffusion=1.0,
+        max_iters=500,
+        tol=1e-5,
+        base_consumption=0.1,
+        demand_weight=0.3,
+    )
+
+    assert out.shape == (64, 64, 4), f"Expected shape (64, 64, 4), got {out.shape}"
+    assert out.dtype == np.uint8, f"Expected uint8, got {out.dtype}"
+
+    center_r = int(out[32, 32, 0])
+    corner_r = int(out[0, 0, 0])
+    assert (
+        center_r > corner_r
+    ), f"PDE glucose center R ({center_r}) should exceed corner R ({corner_r})"
+
+
 # ---------------------------------------------------------------------------
 # Unit tests — resolve_channel_indices (was load_channel_names)
 # ---------------------------------------------------------------------------
@@ -445,8 +642,9 @@ def test_resolve_channel_indices_validates_missing(tmp_path):
 
 def test_cli_creates_all_three_layers(tmp_path):
     """
-    Contract: the CLI produces vasculature/{i}_{j}.png, oxygen/{i}_{j}.png,
-    and glucose/{i}_{j}.png under --out for each patch in index.json.
+    Contract: the CLI produces vasculature/{i}_{j}.png,
+    vasculature_mask/{i}_{j}.npy, oxygen/{i}_{j}.png, and glucose/{i}_{j}.png
+    under --out for each patch in index.json.
 
     Setup:
     - processed/multiplex/0_0.npy: (3, 256, 256) uint16
@@ -459,6 +657,7 @@ def test_cli_creates_all_three_layers(tmp_path):
 
     Verifies:
     - vasculature/0_0.png exists and is a valid RGBA image (H, W, 4)
+    - vasculature_mask/0_0.npy exists and is a boolean mask with shape (256, 256)
     - oxygen/0_0.png exists and is a valid RGBA image
     - glucose/0_0.png exists and is a valid RGBA image
     """
@@ -526,6 +725,18 @@ def test_cli_creates_all_three_layers(tmp_path):
         256,
         4,
     ), f"Expected (256, 256, 4), got {vasc_arr.shape}"
+
+    # Vasculature binary mask
+    vasc_mask_path = out_dir / "vasculature_mask" / "0_0.npy"
+    assert vasc_mask_path.exists(), "vasculature_mask/0_0.npy must be created"
+    vasc_mask = np.load(str(vasc_mask_path))
+    assert vasc_mask.shape == (
+        256,
+        256,
+    ), f"Expected (256, 256), got {vasc_mask.shape}"
+    assert (
+        vasc_mask.dtype == np.bool_
+    ), f"Expected bool mask dtype, got {vasc_mask.dtype}"
 
     # Oxygen map
     oxy_path = out_dir / "oxygen" / "0_0.png"
@@ -609,8 +820,82 @@ def test_cli_skips_missing_npy(tmp_path):
     assert (
         out_dir / "vasculature" / "0_0.png"
     ).exists(), "vasculature/0_0.png must be created for the existing patch"
+    assert (
+        out_dir / "vasculature_mask" / "0_0.npy"
+    ).exists(), "vasculature_mask/0_0.npy must be created for the existing patch"
 
     # Patch 0_1 must be silently skipped
     assert not (
         out_dir / "vasculature" / "0_1.png"
     ).exists(), "vasculature/0_1.png must NOT be created when .npy is missing"
+    assert not (
+        out_dir / "vasculature_mask" / "0_1.npy"
+    ).exists(), "vasculature_mask/0_1.npy must NOT be created when .npy is missing"
+
+
+def test_cli_runs_pde_models_and_writes_outputs(tmp_path):
+    """
+    Contract: the CLI accepts --oxygen-model pde and --glucose-model pde
+    and produces output artifacts.
+    """
+    mux_dir = tmp_path / "multiplex"
+    mux_dir.mkdir(parents=True)
+
+    patch = np.zeros((3, 128, 128), dtype=np.uint16)
+    patch[0, 56:72, 56:72] = 5000
+    patch[1, 40:88, 40:88] = 8000
+    np.save(str(mux_dir / "0_0.npy"), patch)
+
+    meta_path = tmp_path / "metadata.csv"
+    _write_metadata_csv(
+        meta_path,
+        {"CD31": "Channel:0:0", "Ki67": "Channel:0:1", "PCNA": "Channel:0:2"},
+    )
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 128, "y1": 128}],
+        "patch_size": 128,
+        "stride": 128,
+        "channels": ["CD31", "Ki67", "PCNA"],
+    }
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps(index_data))
+
+    out_dir = tmp_path / "out"
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        str(mux_dir),
+        "--index",
+        str(index_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "CD31",
+        "Ki67",
+        "PCNA",
+        "--oxygen-model",
+        "pde",
+        "--glucose-model",
+        "pde",
+        "--pde-max-iters",
+        "120",
+        "--pde-tol",
+        "1e-4",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, (
+        f"stages.multiplex_layers exited with code {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert (
+        "Falling back" not in result.stderr
+    ), "PDE model run should not log fallback behavior once PDE wiring is enabled"
+
+    assert (
+        out_dir / "vasculature_mask" / "0_0.npy"
+    ).exists(), "vasculature_mask/0_0.npy must be created in pde mode"
+    assert (out_dir / "oxygen" / "0_0.png").exists(), "oxygen/0_0.png must be created"
+    assert (out_dir / "glucose" / "0_0.png").exists(), "glucose/0_0.png must be created"

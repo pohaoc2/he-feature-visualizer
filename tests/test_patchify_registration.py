@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 import tifffile
@@ -946,3 +947,475 @@ class TestEndToEndCoordMapping:
             expected_y = int(round(y0 * scale))
             assert x_mx == expected_x, f"x_mx={x_mx}, expected {expected_x}"
             assert y_mx == expected_y, f"y_mx={y_mx}, expected {expected_y}"
+
+
+# ===========================================================================
+# read_multiplex_patch_affine
+# ===========================================================================
+
+
+class TestReadMultiplexPatchAffine:
+    """Tests for affine-accurate multiplex patch extraction."""
+
+    def test_identity_transform_matches_direct_crop(self):
+        """Identity warp should match direct MX crop at the same coordinates."""
+        arr = np.zeros((2, 64, 64), dtype=np.uint16)
+        yy, xx = np.indices((64, 64))
+        arr[0] = (yy * 100 + xx).astype(np.uint16)
+        arr[1] = (yy * 3 + xx * 2).astype(np.uint16)
+        store = zarr.array(arr)
+        M = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        patch, inside = m.read_multiplex_patch_affine(
+            store,
+            "CYX",
+            img_w=64,
+            img_h=64,
+            he_x0=10,
+            he_y0=12,
+            patch_size=16,
+            m_full=M,
+            channel_indices=[0, 1],
+        )
+
+        expected = arr[[0, 1], 12:28, 10:26]
+        assert inside is True
+        np.testing.assert_array_equal(patch, expected)
+
+    def test_translation_transform_matches_shifted_crop(self):
+        """Pure translation in M_full should shift the extracted MX crop."""
+        arr = np.zeros((1, 80, 80), dtype=np.uint16)
+        yy, xx = np.indices((80, 80))
+        arr[0] = (yy * 200 + xx).astype(np.uint16)
+        store = zarr.array(arr)
+        M = np.array([[1.0, 0.0, 5.0], [0.0, 1.0, 7.0]], dtype=np.float32)
+
+        patch, inside = m.read_multiplex_patch_affine(
+            store,
+            "CYX",
+            img_w=80,
+            img_h=80,
+            he_x0=10,
+            he_y0=12,
+            patch_size=16,
+            m_full=M,
+            channel_indices=[0],
+        )
+
+        expected = arr[[0], 19:35, 15:31]
+        assert inside is True
+        np.testing.assert_array_equal(patch, expected)
+
+    def test_reports_out_of_bounds_when_affine_footprint_exits_image(self):
+        """If mapped patch footprint is outside MX bounds, inside=False and output is padded."""
+        arr = np.full((1, 64, 64), 999, dtype=np.uint16)
+        store = zarr.array(arr)
+        M = np.array([[1.0, 0.0, -30.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        patch, inside = m.read_multiplex_patch_affine(
+            store,
+            "CYX",
+            img_w=64,
+            img_h=64,
+            he_x0=4,
+            he_y0=8,
+            patch_size=16,
+            m_full=M,
+            channel_indices=[0],
+        )
+
+        assert inside is False
+        assert patch.shape == (1, 16, 16)
+        assert patch.sum() == 0
+
+
+class TestReadMultiplexPatchAffineDeform:
+    """Tests for deformable-refined multiplex patch extraction."""
+
+    def test_zero_flow_matches_affine_reader(self):
+        arr = np.zeros((1, 64, 64), dtype=np.uint16)
+        yy, xx = np.indices((64, 64))
+        arr[0] = (yy * 100 + xx).astype(np.uint16)
+        store = zarr.array(arr)
+        M = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+        flow_x = np.zeros((64, 64), dtype=np.float32)
+        flow_y = np.zeros((64, 64), dtype=np.float32)
+
+        patch_a, inside_a = m.read_multiplex_patch_affine(
+            store,
+            "CYX",
+            img_w=64,
+            img_h=64,
+            he_x0=10,
+            he_y0=12,
+            patch_size=16,
+            m_full=M,
+            channel_indices=[0],
+        )
+        patch_d, inside_d = m.read_multiplex_patch_affine_deform(
+            store,
+            "CYX",
+            img_w=64,
+            img_h=64,
+            he_x0=10,
+            he_y0=12,
+            patch_size=16,
+            m_full=M,
+            channel_indices=[0],
+            flow_dx_ov=flow_x,
+            flow_dy_ov=flow_y,
+            he_full_w=64,
+            he_full_h=64,
+        )
+
+        assert inside_a == inside_d
+        np.testing.assert_array_equal(patch_d, patch_a)
+
+    def test_constant_flow_applies_expected_shift(self):
+        arr = np.zeros((1, 80, 80), dtype=np.uint16)
+        yy, xx = np.indices((80, 80))
+        arr[0] = (yy * 200 + xx).astype(np.uint16)
+        store = zarr.array(arr)
+        M = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        # Flow is defined as warped-MX -> HE; inverse application samples from (x-flow, y-flow)
+        flow_x = np.full((80, 80), 3.0, dtype=np.float32)
+        flow_y = np.full((80, 80), 2.0, dtype=np.float32)
+        patch, inside = m.read_multiplex_patch_affine_deform(
+            store,
+            "CYX",
+            img_w=80,
+            img_h=80,
+            he_x0=10,
+            he_y0=12,
+            patch_size=16,
+            m_full=M,
+            channel_indices=[0],
+            flow_dx_ov=flow_x,
+            flow_dy_ov=flow_y,
+            he_full_w=80,
+            he_full_h=80,
+        )
+
+        expected = arr[[0], 10:26, 7:23]
+        assert inside is True
+        np.testing.assert_array_equal(patch, expected)
+
+
+class TestPatchifyDebugLimit:
+    """Regression test for the current debug-only extraction cap."""
+
+    def test_patchify_limits_to_first_10_patches(self, tmp_path):
+        """Pipeline currently caps extraction to coords[:10] for debug runs."""
+        he_path = tmp_path / "he.ome.tif"
+        mx_path = tmp_path / "mx.ome.tif"
+        csv_path = tmp_path / "meta.csv"
+        out_dir = tmp_path / "processed"
+
+        he = np.zeros((3, 1024, 1024), dtype=np.uint8)
+        he[0] = 180
+        he[1] = 40
+        he[2] = 120
+        _write_ome(he_path, he, "CYX")
+
+        mx = np.full((1, 1024, 1024), 2000, dtype=np.uint16)
+        _write_ome(mx_path, mx, "CYX")
+        _write_metadata_csv(csv_path, ["DNA"])
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "stages.patchify",
+            "--he-image",
+            str(he_path),
+            "--multiplex-image",
+            str(mx_path),
+            "--metadata-csv",
+            str(csv_path),
+            "--out",
+            str(out_dir),
+            "--patch-size",
+            "256",
+            "--stride",
+            "256",
+            "--tissue-min",
+            "0.0",
+            "--channels",
+            "DNA",
+            "--no-register",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+        assert result.returncode == 0, result.stderr
+
+        data = json.loads((out_dir / "index.json").read_text())
+        assert len(data["patches"]) == 10
+
+
+class TestChannelDriftQC:
+    """Unit tests for CyCIF channel drift metrics and gate thresholds."""
+
+    def test_single_channel_metrics_are_zero(self):
+        ch0 = np.zeros((64, 64), dtype=np.float32)
+        ch0[16:48, 20:44] = 1.0
+        chw = np.stack([ch0], axis=0)
+
+        metrics = m.compute_channel_drift_metrics(chw, ref_channel=0)
+
+        assert metrics["n_channels"] == 1
+        assert metrics["median_drift_px"] == pytest.approx(0.0)
+        assert metrics["max_drift_px"] == pytest.approx(0.0)
+        assert m.channel_drift_passes(metrics)
+
+    def test_phase_correlation_detects_known_shift(self):
+        ref = np.zeros((96, 96), dtype=np.float32)
+        ref[30:66, 35:60] = 1.0
+        dx, dy = 3.0, -2.0
+        moving = cv2.warpAffine(
+            ref,
+            np.array([[1.0, 0.0, dx], [0.0, 1.0, dy]], dtype=np.float32),
+            (96, 96),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0.0,
+        )
+        chw = np.stack([ref, moving], axis=0)
+
+        metrics = m.compute_channel_drift_metrics(chw, ref_channel=0)
+        drift = metrics["per_channel"][0]["drift_px"]
+
+        assert drift == pytest.approx((dx * dx + dy * dy) ** 0.5, abs=0.75)
+        assert metrics["max_drift_px"] == pytest.approx(drift)
+
+    def test_gate_fails_when_drift_exceeds_thresholds(self):
+        metrics = {
+            "median_drift_px": 2.0,
+            "max_drift_px": 5.1,
+        }
+        assert not m.channel_drift_passes(metrics, median_thresh=1.5, max_thresh=4.0)
+
+
+class TestGlobalRegistrationQC:
+    """Unit tests for global registration QC metrics and thresholds."""
+
+    def test_identity_masks_pass_global_qc(self):
+        he = np.zeros((64, 64), dtype=bool)
+        he[16:48, 14:50] = True
+        mx = he.copy()
+        m_full = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        metrics = m.compute_global_qc_metrics(
+            he_mask=he,
+            mx_mask=mx,
+            m_full=m_full,
+            he_h=640,
+            he_w=640,
+            mx_h=640,
+            mx_w=640,
+        )
+
+        assert metrics["mask_iou"] == pytest.approx(1.0, abs=1e-5)
+        assert metrics["centroid_offset_pct"] == pytest.approx(0.0, abs=1e-5)
+        assert metrics["scale_error_pct"] == pytest.approx(0.0, abs=1e-5)
+        assert m.global_qc_passes(metrics)
+
+    def test_large_translation_fails_global_qc(self):
+        he = np.zeros((64, 64), dtype=bool)
+        he[12:52, 10:48] = True
+        mx = he.copy()
+        m_full = np.array([[1.0, 0.0, 90.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        metrics = m.compute_global_qc_metrics(
+            he_mask=he,
+            mx_mask=mx,
+            m_full=m_full,
+            he_h=640,
+            he_w=640,
+            mx_h=640,
+            mx_w=640,
+        )
+
+        assert metrics["mask_iou"] < 0.75
+        assert not m.global_qc_passes(metrics)
+
+    def test_scale_sanity_detects_mismatch(self):
+        he = np.zeros((48, 48), dtype=bool)
+        he[8:40, 8:40] = True
+        mx = he.copy()
+        # Expected H&E->MX scale is 0.5, but this matrix says 0.8
+        m_full = np.array([[0.8, 0.0, 0.0], [0.0, 0.8, 0.0]], dtype=np.float32)
+
+        metrics = m.compute_global_qc_metrics(
+            he_mask=he,
+            mx_mask=mx,
+            m_full=m_full,
+            he_h=960,
+            he_w=960,
+            mx_h=480,
+            mx_w=480,
+        )
+
+        assert metrics["scale_error_pct"] > 10.0
+        assert not m.global_qc_passes(metrics)
+
+
+class TestPatchLevelQC:
+    """Unit tests for patch-level local overlap quality checks."""
+
+    def test_correct_translation_improves_local_iou(self):
+        he = np.zeros((128, 128), dtype=bool)
+        he[28:108, 20:100] = True
+        mx = np.zeros_like(he)
+        mx[28:108, 32:112] = True  # shifted +12 in x
+        m_full = np.array([[1.0, 0.0, 12.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        metrics = m.compute_patch_qc_metrics(
+            he_mask=he,
+            mx_mask=mx,
+            m_full=m_full,
+            he_h=128,
+            he_w=128,
+            mx_h=128,
+            mx_w=128,
+            sample_count=60,
+            patch_size_ov=24,
+            seed=0,
+        )
+
+        assert metrics["improved_fraction"] >= 0.8
+        assert metrics["median_gain"] > 0.0
+        assert m.patch_qc_passes(metrics)
+
+    def test_no_gain_fails_patch_gate(self):
+        he = np.zeros((96, 96), dtype=bool)
+        he[20:76, 18:74] = True
+        mx = np.zeros_like(he)
+        mx[20:76, 30:86] = True  # shifted +12 in x
+        m_full = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        metrics = m.compute_patch_qc_metrics(
+            he_mask=he,
+            mx_mask=mx,
+            m_full=m_full,
+            he_h=96,
+            he_w=96,
+            mx_h=96,
+            mx_w=96,
+            sample_count=30,
+            patch_size_ov=20,
+            seed=1,
+        )
+
+        assert metrics["improved_fraction"] == pytest.approx(0.0, abs=1e-6)
+        assert metrics["median_gain"] == pytest.approx(0.0, abs=1e-6)
+        assert not m.patch_qc_passes(metrics)
+
+
+class TestRegistrationDecisionGate:
+    """Decision routing between pass/global-fail/local-fail paths."""
+
+    def test_global_fail_routes_to_landmarks(self):
+        global_metrics = {
+            "mask_iou": 0.4,
+            "centroid_offset_pct": 20.0,
+            "scale_error_pct": 5.0,
+        }
+        patch_metrics = {
+            "improved_fraction": 1.0,
+            "median_gain": 0.2,
+            "inside_fraction_pass_rate": 1.0,
+        }
+        decision = m.decide_registration_path(global_metrics, patch_metrics)
+        assert decision == "FAIL_GLOBAL_NEEDS_LANDMARKS"
+
+    def test_local_fail_routes_to_deformable(self):
+        global_metrics = {
+            "mask_iou": 0.92,
+            "centroid_offset_pct": 0.8,
+            "scale_error_pct": 1.2,
+        }
+        patch_metrics = {
+            "improved_fraction": 0.25,
+            "median_gain": 0.0,
+            "inside_fraction_pass_rate": 0.96,
+        }
+        decision = m.decide_registration_path(global_metrics, patch_metrics)
+        assert decision == "FAIL_LOCAL_NEEDS_DEFORMABLE"
+
+    def test_all_pass_routes_to_affine_accept(self):
+        global_metrics = {
+            "mask_iou": 0.90,
+            "centroid_offset_pct": 1.2,
+            "scale_error_pct": 2.0,
+        }
+        patch_metrics = {
+            "improved_fraction": 0.95,
+            "median_gain": 0.03,
+            "inside_fraction_pass_rate": 0.99,
+        }
+        decision = m.decide_registration_path(global_metrics, patch_metrics)
+        assert decision == "PASS_AFFINE"
+
+
+class TestRegistrationArtifacts:
+    """Integration checks for registration artifacts written by patchify."""
+
+    def test_patchify_writes_qc_artifacts(self, tmp_path):
+        he_path = tmp_path / "he.ome.tif"
+        mx_path = tmp_path / "mx.ome.tif"
+        csv_path = tmp_path / "meta.csv"
+        out_dir = tmp_path / "processed"
+
+        he = np.full((3, 512, 512), 230, dtype=np.uint8)
+        he[:, 80:420, 90:430] = np.array([180, 60, 120])[:, None, None]
+        _write_ome(he_path, he, "CYX")
+
+        mx = np.zeros((2, 512, 512), dtype=np.uint16)
+        mx[0, 80:420, 100:440] = 3000  # DNA with a mild shift
+        mx[1, 80:420, 100:440] = 1500
+        _write_ome(mx_path, mx, "CYX")
+        _write_metadata_csv(csv_path, ["DNA", "CD45"])
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "stages.patchify",
+            "--he-image",
+            str(he_path),
+            "--multiplex-image",
+            str(mx_path),
+            "--metadata-csv",
+            str(csv_path),
+            "--out",
+            str(out_dir),
+            "--patch-size",
+            "256",
+            "--stride",
+            "256",
+            "--tissue-min",
+            "0.05",
+            "--channels",
+            "DNA",
+            "--register",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+        assert result.returncode == 0, result.stderr
+
+        reg_dir = out_dir / "registration"
+        assert (reg_dir / "affine.json").exists()
+        assert (reg_dir / "qc_metrics.json").exists()
+        assert (reg_dir / "final_transform.json").exists()
+
+        qc = json.loads((reg_dir / "qc_metrics.json").read_text())
+        assert "channel_drift" in qc
+        assert "global_qc" in qc
+        assert "patch_qc" in qc
+        assert "decision" in qc
+        assert "registration_mode" in qc
+        assert "deformable" in qc
+
+        final_t = json.loads((reg_dir / "final_transform.json").read_text())
+        assert final_t["mode"] in {"affine", "deformable"}
+        assert "warp_matrix" in final_t
+
+        data = json.loads((out_dir / "index.json").read_text())
+        assert data["registration_mode"] in {"affine", "deformable"}

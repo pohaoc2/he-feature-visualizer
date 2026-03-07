@@ -1,8 +1,8 @@
 # H&E + Multiplex Feature Generator
 
-[![Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml/badge.svg)](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer/branch/main/graph/badge.svg)](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
+[codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
+[Python 3.13](https://www.python.org/downloads/)
 
 A pipeline for generating spatially-resolved, multi-channel feature maps from co-registered H&E and multiplex immunofluorescence (mIF) whole-slide images.
 
@@ -89,36 +89,37 @@ lin-2021-crc-atlas/
 Run `stages.patchify` to extract 256×256 H&E patches and corresponding multiplex arrays. ECC affine registration between the two images is performed automatically (use `--no-register` to disable).
 
 ```bash
-python -m stages.patchify \
-  --he-image data/CRC02-HE.ome.tif \
-  --multiplex-image data/CRC02.ome.tif \
-  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
-  --out processed/ \
-  --patch-size 256 \
-  --stride 256 \
-  --tissue-min 0.1 \
-  --channels CD31 Ki67 CD45 PCNA \
-  --overview-downsample 64 \
-  --vis-channels 0 10 20
+python3 -m stages.patchify \
+  --he-image data/WD-76845-096.ome.tif \
+  --multiplex-image data/WD-76845-097.ome.tif \
+  --metadata-csv data/WD-76845-097-metadata.csv \
+  --out processed_wd \
+  --channels DNA \
+  # --register
   # add --no-register to skip ECC and use mpp-ratio scaling only
   # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed/masks/
 ```
 
 ### Registration
 
-By default, Stage 1 computes an affine warp between the H&E and multiplex images using `cv2.findTransformECC` on binary tissue masks (H&E: HSV saturation → Otsu; MX: DNA/DAPI ch0 → Otsu) at ~1/64 overview resolution. This corrects translational and rotational misalignment without requiring manual landmarks.
+By default, Stage 1 computes an affine warp between the H&E and multiplex images using `cv2.findTransformECC` on binary tissue masks (H&E: HSV saturation → Otsu; MX: DNA/DAPI ch0 with blur+morphology) at overview resolution. This corrects translational and rotational misalignment without requiring manual landmarks.
 
-The resulting 2×3 `warp_matrix` (H&E full-res → MX full-res) is stored in `index.json` and used to compute multiplex patch coordinates for every H&E patch.
+Stage 1 then runs QC gates (channel drift, global IoU/centroid/scale, patch-level gain). If QC returns `FAIL_LOCAL_NEEDS_DEFORMABLE`, a deformable refinement is attempted and only applied when it improves QC.
+
+The resulting 2×3 `warp_matrix` (H&E full-res → MX full-res) is stored in `index.json`. During patch extraction, each multiplex patch is sampled with this transform (affine or deformable-refined) into the H&E patch frame (not only top-left scale mapping), improving patch-level correspondence when shear/rotation offsets exist.
 
 ### Outputs
 
-| Output                      | Contents                                              | Used in         |
-| --------------------------- | ----------------------------------------------------- | --------------- |
-| `processed/he/`             | RGB PNG patches                                       | Stage 2 (Colab) |
-| `processed/multiplex/`      | Per-channel `.npy` arrays (uint16)                    | Stage 4         |
+
+| Output                      | Contents                                                                        | Used in         |
+| --------------------------- | ------------------------------------------------------------------------------- | --------------- |
+| `processed/he/`             | RGB PNG patches                                                                 | Stage 2 (Colab) |
+| `processed/multiplex/`      | Per-channel `.npy` arrays (uint16)                                              | Stage 4         |
 | `processed/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given | Downstream      |
-| `processed/index.json`      | Patch coordinate index + `warp_matrix` + `registration` + `has_mask` per patch | All stages      |
-| `processed/vis_patches.jpg` | H&E + multiplex overview with patch grid              | QC              |
+| `processed/index.json`      | Patch coordinate index + `warp_matrix` + `registration_mode` + flags per patch  | All stages      |
+| `processed/registration/`   | `affine.json`, `qc_metrics.json`, `final_transform.json`, optional `deform_field.npz` | QC / debug |
+| `processed/vis_patches.jpg` | H&E + multiplex overview with patch grid                                        | QC              |
+
 
 Only `processed/he/` needs to be uploaded to Colab for Stage 2.
 
@@ -151,6 +152,7 @@ Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negl
 3. **Runtime → Change runtime type → T4 GPU → Save**
 4. Edit the **Configuration cell** (Cell 1) at the top:
 
+
 | Variable          | Description                          | Example                                |
 | ----------------- | ------------------------------------ | -------------------------------------- |
 | `STORAGE_BACKEND` | Storage backend                      | `'s3'`                                 |
@@ -160,9 +162,11 @@ Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negl
 | `BATCH_SIZE`      | Patches per GPU batch                | `32` (reduce to 8 if OOM)              |
 | `MAGNIFICATION`   | Scan magnification                   | `40` (use `20` if 20x slide)           |
 
+
 1. **Runtime → Run all**
 
 Expected timeline on a T4 GPU:
+
 
 | Step                                             | Time                   |
 | ------------------------------------------------ | ---------------------- |
@@ -171,6 +175,7 @@ Expected timeline on a T4 GPU:
 | Copy patches from S3 to Colab local SSD          | ~1 min per 500 patches |
 | Inference (CellViT-256 at batch size 32)         | ~1 s per 32 patches    |
 | Total for 1000 patches                           | ~20 min                |
+
 
 ### Download results
 
@@ -204,6 +209,7 @@ Each JSON file corresponds to one 256×256 patch, named by patch coordinate (e.g
 
 Cell type IDs used by CellViT:
 
+
 | ID  | Type         |
 | --- | ------------ |
 | 1   | Neoplastic   |
@@ -211,6 +217,7 @@ Cell type IDs used by CellViT:
 | 3   | Connective   |
 | 4   | Dead         |
 | 5   | Epithelial   |
+
 
 ---
 
@@ -244,7 +251,7 @@ python -m stages.multiplex_layers \
 
 ## Alignment QC
 
-Use `tools.debug_match_he_mul` to visually verify H&E↔multiplex registration. Without `--index-json` it does a naive resize; with it, it applies the ECC `warp_matrix` from `index.json`.
+Use `tools.debug_match_he_mul` to visually verify H&E↔multiplex registration. Without `--index-json` it does a naive resize; with it, it applies the registration transform from `index.json` (ECC affine, plus deformable field when available and active).
 
 ```bash
 # Interactive viewer (requires display)
@@ -257,15 +264,14 @@ python -m tools.debug_match_he_mul \
 
 # Headless — save static 3-panel PNG (no display needed)
 python -m tools.debug_match_he_mul \
-  --he-image data/CRC02-HE.ome.tif \
-  --multiplex-image data/CRC02.ome.tif \
-  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
-  --downsample 64 \
-  --index-json processed/index.json \
-  --save-png /tmp/vis_registered.png
+  --he-image data/WD-76845-096.ome.tif \
+  --multiplex-image data/WD-76845-097.ome.tif \
+  --metadata-csv data/WD-76845-097-metadata.csv \
+  --index-json processed_wd/index.json \
+  --save-png processed_wd/vis_registered_check.png
 ```
 
-The overlay panel (right) shows H&E blended with the selected multiplex channel. With good registration, tissue boundaries should coincide. The title bar indicates whether ECC registration was applied.
+The overlay panel (right) shows H&E blended with the selected multiplex channel. With good registration, tissue boundaries should coincide. The title bar indicates whether affine or deformable registration was applied.
 
 ---
 
@@ -331,6 +337,7 @@ At low zoom a kernel-density heatmap is shown; zoom past level 3 for individual 
 
 Thresholds are the **95th percentile** of each marker across all cells.
 
+
 | Mode        | Marker        | Color  |
 | ----------- | ------------- | ------ |
 | Tumor       | Keratin > p95 | Pink   |
@@ -342,6 +349,7 @@ Thresholds are the **95th percentile** of each marker across all cells.
 | FOXP3       | FOXP3 > p95   | Purple |
 | CD4         | CD4 > p95     | Yellow |
 | CD20        | CD20 > p95    | Cyan   |
+
 
 ---
 
