@@ -1,7 +1,13 @@
 import pandas as pd
 import pytest
 
-from utils.minerva_groups import GROUP_SPECS, build_group_flags, build_group_meta, compute_marker_thresholds
+from utils.minerva_groups import (
+    GROUP_SPECS,
+    build_group_flags,
+    build_group_meta,
+    compute_marker_thresholds,
+    resolve_component_sources,
+)
 
 
 def test_compute_marker_thresholds_uses_requested_percentile():
@@ -41,7 +47,7 @@ def test_build_group_flags_assigns_multiple_groups():
     assert flags["grp_cancer"].tolist() == [False, True, False, False]
     assert flags["grp_vasculature"].tolist() == [False, False, True, False]
     assert flags["grp_proliferative"].tolist() == [False, False, False, True]
-    assert flags["grp_tissue"].tolist() == [False, False, False, True]
+    assert flags["grp_tissue"].tolist() == [False, True, False, True]
 
 
 def test_build_group_meta_counts_rows_per_group():
@@ -55,7 +61,8 @@ def test_build_group_meta_counts_rows_per_group():
         }
     )
 
-    meta = build_group_meta(df)
+    component_sources = resolve_component_sources({"CD45": 1.0, "CD31": 1.0, "Keratin": 1.0, "aSMA": 1.0})
+    meta = build_group_meta(df, component_sources=component_sources)
     counts = {item["id"]: item["count"] for item in meta}
 
     assert set(counts) == set(GROUP_SPECS)
@@ -64,6 +71,25 @@ def test_build_group_meta_counts_rows_per_group():
     assert counts["cancer"] == 1
     assert counts["proliferative"] == 0
     assert counts["vasculature"] == 2
+    tissue = next(item for item in meta if item["id"] == "tissue")
+    assert tissue["components"][0]["id"] == "dna1"
+    assert tissue["components"][1]["id"] == "panck"
+    assert tissue["components"][2]["id"] == "asma"
+
+
+def test_resolve_component_sources_uses_alias_fallbacks():
+    thresholds = {
+        "Hoechst0": 1.0,
+        "Keratin": 2.0,
+        "aSMA": 3.0,
+        "CD45": 4.0,
+    }
+    resolved = resolve_component_sources(thresholds)
+
+    assert resolved["tissue"]["dna1"] == "Hoechst0"
+    assert resolved["tissue"]["panck"] == "Keratin"
+    assert resolved["tissue"]["asma"] == "aSMA"
+    assert resolved["immune"]["cd45"] == "CD45"
 
 
 def test_compute_marker_thresholds_rejects_invalid_percentile():

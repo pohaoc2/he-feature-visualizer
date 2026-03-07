@@ -416,25 +416,66 @@ Thresholds are the **95th percentile** of each marker across all cells.
 
 If you want a minimal interactive viewer (zoom/pan + group switching only), use the isolated Minerva-style entrypoint:
 
+### Local machine
+
 ```bash
+# optional, if not already installed
+pip install -r requirements.txt
+
 python server_minerva.py \
   --image data/WD-76845-096.ome.tif \
   --features data/WD-76845-097.csv \
+  --index-json processed_wd/index.json \
+  --min-render-level 1 \
+  --max-render-dim 7000 \
   --port 8010
 ```
 
 Open **[http://127.0.0.1:8010](http://127.0.0.1:8010)**.
 
+### Remote machine (EC2)
+
+On the EC2 instance:
+
+```bash
+# from the repo root on EC2
+pip install -r requirements.txt
+
+python server_minerva.py \
+  --image data/WD-76845-096.ome.tif \
+  --features data/WD-76845-097.csv \
+  --index-json processed_wd/index.json \
+  --min-render-level 1 \
+  --max-render-dim 7000 \
+  --host 127.0.0.1 \
+  --port 8010
+```
+
+From your local machine, create an SSH tunnel:
+
+```bash
+ssh -i /path/to/key.pem -L 8010:127.0.0.1:8010 ec2-user@<EC2_PUBLIC_DNS_OR_IP>
+```
+
+Then open **[http://127.0.0.1:8010](http://127.0.0.1:8010)** in your local browser.
+
+Notes:
+- `--index-json processed_wd/index.json` applies the HE↔multiplex affine from patchify (`warp_matrix`), fixing overlay offset.
+- `--min-render-level 1` skips TIFF full-resolution level 0 for faster startup and lower RAM use.
+- `--max-render-dim` controls preloaded pyramid resolution for smooth interaction on huge WSIs.
+  You can set `--render-level` directly if you want an exact level (it will be clamped to `--min-render-level`).
+
 ### Included groups (default)
 
 - `H&E` (no overlay)
-- `Immune` (`CD45`, `CD3`, `CD4`, `CD8a`, `CD20`, `CD68`, `CD163`, `FOXP3`, `CD45RO`)
-- `Tissue/Stromal` (`aSMA`, `Vimentin`, `Collagen`, `Desmin`)
-- `Cancer` (`Keratin`, `CDX2`, `Ecadherin`)
-- `Proliferative` (`Ki67`, `Ki67_570`, `PCNA`)
+- `Immune` composite (`CD45`, `CD3`, `CD4`, `CD8a`, `CD20`, `CD68`, `CD163`, `FOXP3`, `CD45RO`) with marker-specific colors
+- `Tissue/Stromal` composite (`DNA1` + `PanCk` + `aSMA`) with marker-specific colors
+- `Cancer` composite (`Keratin`, `CDX2`, `Ecadherin`) with marker-specific colors
+- `Proliferative` composite (`Ki67`, `Ki67_570`, `PCNA`) with marker-specific colors
 - `Vasculature` (`CD31`)
 
 Each marker uses a positivity cutoff at the selected percentile (default: `--marker-percentile 95`).
+Marker aliases are supported for common naming differences (for example `DNA1 -> Hoechst0`, `PanCk -> Keratin` when the preferred column is unavailable).
 
 ---
 
