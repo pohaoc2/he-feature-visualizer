@@ -489,7 +489,16 @@ def main():
     parser.add_argument("--stride", type=int, default=256)
     parser.add_argument("--tissue-min", type=float, default=0.1)
     parser.add_argument(
-        "--channels", nargs="+", default=["CD31", "Ki67", "CD45", "PCNA"]
+        "--channels",
+        nargs="+",
+        default=[
+            "Keratin", "NaKATPase", "CDX2",
+            "CD45", "CD3", "CD4", "CD8a", "CD20", "CD45RO", "CD68", "CD163", "FOXP3", "PD1",
+            "aSMA", "CD31", "Desmin", "Collagen",
+            "Ki67", "PCNA", "Vimentin", "Ecadherin",
+        ],
+        metavar="NAME",
+        help="Multiplex channel names to extract (default: full Stage 3 marker panel, 21 channels).",
     )
     parser.add_argument(
         "--overview-downsample",

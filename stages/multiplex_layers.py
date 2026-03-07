@@ -210,11 +210,16 @@ def main() -> None:
     parser.add_argument(
         "--channels",
         nargs="+",
-        default=["CD31", "Ki67", "PCNA"],
+        default=[
+            "Keratin", "NaKATPase", "CDX2",
+            "CD45", "CD3", "CD4", "CD8a", "CD20", "CD45RO", "CD68", "CD163", "FOXP3", "PD1",
+            "aSMA", "CD31", "Desmin", "Collagen",
+            "Ki67", "PCNA", "Vimentin", "Ecadherin",
+        ],
         metavar="NAME",
         help="Multiplex channel names present in the .npy files, in order "
         "(must match --channels passed to patchify.py). "
-        "Default: CD31 Ki67 PCNA",
+        "Default: full Stage 3 marker panel, 21 channels.",
     )
     args = parser.parse_args()
 
