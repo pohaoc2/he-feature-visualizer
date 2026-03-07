@@ -206,6 +206,47 @@ def read_multiplex_patch(
     return arr
 
 
+def multiplex_patch_overlap_fraction_affine(
+    he_x0: int,
+    he_y0: int,
+    patch_size: int,
+    m_full: np.ndarray,
+    mx_w: int,
+    mx_h: int,
+) -> float:
+    """Fraction of a warped affine patch footprint that lies inside MX bounds."""
+    if patch_size <= 1 or mx_w <= 0 or mx_h <= 0:
+        return 0.0
+
+    m_local = _he_patch_to_mx_local_affine(m_full, he_x0, he_y0)
+    corners = np.array(
+        [
+            [0.0, 0.0],
+            [patch_size - 1.0, 0.0],
+            [patch_size - 1.0, patch_size - 1.0],
+            [0.0, patch_size - 1.0],
+        ],
+        dtype=np.float64,
+    )
+    poly = _transform_points_affine(m_local, corners).astype(np.float32)
+    full_area = float(abs(cv2.contourArea(poly)))
+    if full_area <= 1e-9:
+        return 0.0
+
+    bounds = np.array(
+        [
+            [0.0, 0.0],
+            [float(mx_w), 0.0],
+            [float(mx_w), float(mx_h)],
+            [0.0, float(mx_h)],
+        ],
+        dtype=np.float32,
+    )
+    inter_area, _ = cv2.intersectConvexConvex(poly, bounds)
+    frac = float(inter_area) / full_area
+    return float(np.clip(frac, 0.0, 1.0))
+
+
 def read_multiplex_patch_affine(
     zarr_store,
     axes: str,
@@ -279,25 +320,17 @@ def read_multiplex_patch_affine(
     return out, inside
 
 
-def read_multiplex_patch_affine_deform(
-    zarr_store,
-    axes: str,
-    img_w: int,
-    img_h: int,
+def _deform_he_patch_to_mx_maps(
     he_x0: int,
     he_y0: int,
     patch_size: int,
     m_full: np.ndarray,
-    channel_indices: list[int],
     flow_dx_ov: np.ndarray,
     flow_dy_ov: np.ndarray,
     he_full_w: int,
     he_full_h: int,
-) -> tuple[np.ndarray, bool]:
-    """Read a deformable-refined MX patch in H&E patch frame."""
-    n_ch = len(channel_indices)
-    out = np.zeros((n_ch, patch_size, patch_size), dtype=np.uint16)
-
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build destination-pixel -> MX coordinate maps for deformable sampling."""
     uu, vv = np.meshgrid(
         np.arange(patch_size, dtype=np.float32),
         np.arange(patch_size, dtype=np.float32),
@@ -333,6 +366,72 @@ def read_multiplex_patch_affine_deform(
     c, d, ty = map(float, m_full[1])
     map_mx_x = a * x_corr + b * y_corr + tx
     map_mx_y = c * x_corr + d * y_corr + ty
+    return map_mx_x, map_mx_y
+
+
+def multiplex_patch_overlap_fraction_deform(
+    he_x0: int,
+    he_y0: int,
+    patch_size: int,
+    m_full: np.ndarray,
+    flow_dx_ov: np.ndarray,
+    flow_dy_ov: np.ndarray,
+    he_full_w: int,
+    he_full_h: int,
+    mx_w: int,
+    mx_h: int,
+) -> float:
+    """Fraction of deform-warped destination pixels with valid MX sampling coords."""
+    if patch_size <= 0 or mx_w <= 0 or mx_h <= 0:
+        return 0.0
+    map_mx_x, map_mx_y = _deform_he_patch_to_mx_maps(
+        he_x0=he_x0,
+        he_y0=he_y0,
+        patch_size=patch_size,
+        m_full=m_full,
+        flow_dx_ov=flow_dx_ov,
+        flow_dy_ov=flow_dy_ov,
+        he_full_w=he_full_w,
+        he_full_h=he_full_h,
+    )
+    inside = (
+        (map_mx_x >= 0.0)
+        & (map_mx_y >= 0.0)
+        & (map_mx_x < float(mx_w))
+        & (map_mx_y < float(mx_h))
+    )
+    return float(inside.mean())
+
+
+def read_multiplex_patch_affine_deform(
+    zarr_store,
+    axes: str,
+    img_w: int,
+    img_h: int,
+    he_x0: int,
+    he_y0: int,
+    patch_size: int,
+    m_full: np.ndarray,
+    channel_indices: list[int],
+    flow_dx_ov: np.ndarray,
+    flow_dy_ov: np.ndarray,
+    he_full_w: int,
+    he_full_h: int,
+) -> tuple[np.ndarray, bool]:
+    """Read a deformable-refined MX patch in H&E patch frame."""
+    n_ch = len(channel_indices)
+    out = np.zeros((n_ch, patch_size, patch_size), dtype=np.uint16)
+
+    map_mx_x, map_mx_y = _deform_he_patch_to_mx_maps(
+        he_x0=he_x0,
+        he_y0=he_y0,
+        patch_size=patch_size,
+        m_full=m_full,
+        flow_dx_ov=flow_dx_ov,
+        flow_dy_ov=flow_dy_ov,
+        he_full_w=he_full_w,
+        he_full_h=he_full_h,
+    )
 
     inside = bool(
         np.all(map_mx_x >= 0.0)

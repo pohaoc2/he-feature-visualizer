@@ -1028,6 +1028,20 @@ class TestReadMultiplexPatchAffine:
         assert patch.shape == (1, 16, 16)
         assert patch.sum() == 0
 
+    def test_overlap_fraction_affine_reports_partial_coverage(self):
+        """Overlap fraction reports partial coverage for translated affine footprints."""
+        M = np.array([[1.0, 0.0, -8.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+        frac = m.multiplex_patch_overlap_fraction_affine(
+            he_x0=0,
+            he_y0=0,
+            patch_size=16,
+            m_full=M,
+            mx_w=64,
+            mx_h=64,
+        )
+        # 8px shift on a 16px patch -> about 50% overlap.
+        assert 0.45 <= frac <= 0.55, f"Expected ~0.5 overlap, got {frac:.4f}"
+
 
 class TestReadMultiplexPatchAffineDeform:
     """Tests for deformable-refined multiplex patch extraction."""
@@ -1100,6 +1114,70 @@ class TestReadMultiplexPatchAffineDeform:
         expected = arr[[0], 10:26, 7:23]
         assert inside is True
         np.testing.assert_array_equal(patch, expected)
+
+
+def test_cli_min_multiplex_overlap_allows_partial_save(tmp_path, monkeypatch):
+    """CLI saves partially overlapping multiplex patches when threshold is relaxed."""
+    he_path = tmp_path / "he.ome.tif"
+    mx_path = tmp_path / "mx.ome.tif"
+    csv_path = tmp_path / "meta.csv"
+    out_strict = tmp_path / "out_strict"
+    out_partial = tmp_path / "out_partial"
+
+    he = np.full((3, 256, 256), 180, dtype=np.uint8)
+    mx = np.full((1, 256, 256), 1000, dtype=np.uint16)
+    _write_ome(he_path, he, "CYX")
+    _write_ome(mx_path, mx, "CYX")
+    _write_metadata_csv(csv_path, ["DNA"])
+
+    monkeypatch.setattr(
+        m,
+        "register_he_mx_affine",
+        lambda *args, **kwargs: np.array(
+            [[1.0, 0.0, -32.0], [0.0, 1.0, 0.0]], dtype=np.float32
+        ),
+    )
+    monkeypatch.setattr(
+        m, "decide_registration_path", lambda *args, **kwargs: m.PASS_AFFINE
+    )
+
+    base = [
+        "patchify.py",
+        "--he-image",
+        str(he_path),
+        "--multiplex-image",
+        str(mx_path),
+        "--metadata-csv",
+        str(csv_path),
+        "--patch-size",
+        "256",
+        "--stride",
+        "256",
+        "--tissue-min",
+        "0.0",
+        "--channels",
+        "DNA",
+        "--overview-downsample",
+        "1",
+    ]
+
+    sys.argv = [*base, "--out", str(out_strict), "--min-multiplex-overlap", "1.0"]
+    m.main()
+    strict_index = json.loads((out_strict / "index.json").read_text())
+    assert len(strict_index["patches"]) == 1
+    strict_patch = strict_index["patches"][0]
+    assert strict_patch["has_multiplex"] is False
+    assert 0.0 < strict_patch["multiplex_overlap_fraction"] < 1.0
+    assert not (out_strict / "multiplex" / "0_0.npy").exists()
+
+    sys.argv = [*base, "--out", str(out_partial), "--min-multiplex-overlap", "0.85"]
+    m.main()
+    partial_index = json.loads((out_partial / "index.json").read_text())
+    assert len(partial_index["patches"]) == 1
+    partial_patch = partial_index["patches"][0]
+    assert partial_patch["has_multiplex"] is True
+    assert 0.0 < partial_patch["multiplex_overlap_fraction"] < 1.0
+    assert (out_partial / "multiplex" / "0_0.npy").exists()
 
 
 class TestPatchifyDebugLimit:

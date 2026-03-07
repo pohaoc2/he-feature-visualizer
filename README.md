@@ -1,8 +1,9 @@
 # H&E + Multiplex Feature Generator
 
-[Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
-[codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
-[Python 3.13](https://www.python.org/downloads/)
+[![Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml/badge.svg)](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer/graph/badge.svg)](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/release/python-3130/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 A pipeline for generating spatially-resolved, multi-channel feature maps from co-registered H&E and multiplex immunofluorescence (mIF) whole-slide images.
 

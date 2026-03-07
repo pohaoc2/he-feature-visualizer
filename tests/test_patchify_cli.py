@@ -122,3 +122,28 @@ def test_patchify_filters_dirty_gray_background_with_hsv_method(tmp_path):
     data = json.loads((out / "index.json").read_text())
     kept = {(p["x0"], p["y0"]) for p in data["patches"]}
     assert kept == {(0, 0)}
+
+
+def test_patchify_rejects_invalid_min_multiplex_overlap():
+    """CLI must reject overlap thresholds outside [0.0, 1.0]."""
+    cmd = [
+        sys.executable,
+        "-m",
+        "stages.patchify",
+        "--he-image",
+        "dummy_he.ome.tif",
+        "--multiplex-image",
+        "dummy_mx.ome.tif",
+        "--metadata-csv",
+        "dummy_meta.csv",
+        "--min-multiplex-overlap",
+        "1.1",
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
+    assert result.returncode != 0
+    assert "--min-multiplex-overlap must be between 0.0 and 1.0." in result.stderr

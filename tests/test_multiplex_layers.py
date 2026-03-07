@@ -883,6 +883,24 @@ def test_cli_skips_missing_npy(tmp_path):
     ).exists(), "vasculature_mask/0_1.npy must NOT be created when .npy is missing"
 
 
+def test_cli_rejects_invalid_vasc_noisy_max_fraction():
+    """CLI must reject vessel-mask noisy-threshold values outside (0, 1]."""
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        "dummy_multiplex",
+        "--index",
+        "dummy_index.json",
+        "--metadata-csv",
+        "dummy_metadata.csv",
+        "--vasc-noisy-max-fraction",
+        "0",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode != 0
+    assert "--vasc-noisy-max-fraction must be in (0, 1]" in result.stderr
+
+
 def test_cli_runs_pde_models_and_writes_outputs(tmp_path):
     """
     Contract: the CLI accepts --oxygen-model pde and --glucose-model pde

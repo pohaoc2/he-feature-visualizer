@@ -1088,6 +1088,72 @@ def test_cli_summary_contains_agreement_stats(tmp_path):
     ), f"Expected 'marker=immune,cellvit=tumor' in conflict_pairs, got: {summary['conflict_pairs']}"
 
 
+def test_cli_summary_no_match_low_without_conflict_pairs(tmp_path):
+    """No-match fallbacks should count as low-confidence without conflict-pair entries."""
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+    out_dir = tmp_path / "out"
+
+    cell_data = {
+        "cells": [
+            {
+                "centroid": [64, 64],
+                "contour": _small_rect_contour(64, 64),
+                "bbox": [[54, 54], [74, 74]],
+                "type_cellvit": 2,  # immune fallback type
+                "type_prob": 0.9,
+            }
+        ]
+    }
+    (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
+
+    # Keep CSV coordinates far away so no nearest-neighbor match within max_dist.
+    features_path = tmp_path / "CRC02.csv"
+    features_path.write_text(
+        "Xt,Yt,Keratin,CD45,Ki67,PCNA,Vimentin,Ecadherin\n"
+        "5000,5000,5000,0,0,0,0,500\n"
+    )
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
+        "stride": 256,
+        "patch_size": 256,
+        "tissue_min": 0.0,
+        "img_w": 256,
+        "img_h": 256,
+        "channels": [],
+    }
+    (tmp_path / "index.json").write_text(json.dumps(index_data))
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "stages.assign_cells",
+        "--cellvit-dir",
+        str(cellvit_dir),
+        "--features-csv",
+        str(features_path),
+        "--index",
+        str(tmp_path / "index.json"),
+        "--out",
+        str(out_dir),
+        "--max-dist",
+        "5.0",
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    summary = json.loads((out_dir / "cell_summary.json").read_text())
+    assert summary["agreement"].get("low", 0) == 1
+    assert summary["conflict_pairs"] == {}
+    assert summary["cell_types"].get("immune", 0) == 1
+
+
 def test_cli_custom_type_percentile(tmp_path):
     """--type-percentile is passed through to compute_thresholds()."""
     cellvit_dir = tmp_path / "cellvit"

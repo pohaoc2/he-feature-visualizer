@@ -1245,6 +1245,12 @@ read_mask_patch = _readers.read_mask_patch
 read_multiplex_patch = _readers.read_multiplex_patch
 read_multiplex_patch_affine = _readers.read_multiplex_patch_affine
 read_multiplex_patch_affine_deform = _readers.read_multiplex_patch_affine_deform
+multiplex_patch_overlap_fraction_affine = (
+    _readers.multiplex_patch_overlap_fraction_affine
+)
+multiplex_patch_overlap_fraction_deform = (
+    _readers.multiplex_patch_overlap_fraction_deform
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1317,11 +1323,21 @@ def main():
         help="Optional cell segmentation mask OME-TIFF in H&E pixel space. "
         "Patches saved to processed/masks/{x0}_{y0}.npy as uint32 label IDs.",
     )
+    parser.add_argument(
+        "--min-multiplex-overlap",
+        type=float,
+        default=1.0,
+        help="Minimum MX overlap fraction required to save multiplex patch "
+        "(0.0-1.0, default: 1.0 for full-coverage only).",
+    )
     args = parser.parse_args()
+    if not (0.0 <= args.min_multiplex_overlap <= 1.0):
+        parser.error("--min-multiplex-overlap must be between 0.0 and 1.0.")
 
     out_dir = Path(args.out)
     ds = args.overview_downsample
     patch_size = args.patch_size
+    min_mx_overlap = float(args.min_multiplex_overlap)
     (out_dir / "he").mkdir(parents=True, exist_ok=True)
     (out_dir / "multiplex").mkdir(parents=True, exist_ok=True)
     if args.mask_image:
@@ -1475,6 +1491,7 @@ def main():
         index: list[dict] = []
         he_vis_coords: list[tuple[int, int]] = []
         mx_vis_coords: list[tuple[int, int]] = []
+        print(f"  Multiplex save threshold: overlap >= {min_mx_overlap:.3f}")
 
         for idx, (x0, y0) in enumerate(coords[:10]):
             if idx % 500 == 0:
@@ -1492,7 +1509,7 @@ def main():
                 has_seg = True
 
             if registration_mode == REG_MODE_DEFORMABLE and deform_state is not None:
-                mx_patch, has_mx = read_multiplex_patch_affine_deform(
+                mx_patch, inside_mx = read_multiplex_patch_affine_deform(
                     mx_store,
                     mx_axes,
                     mx_w,
@@ -1507,8 +1524,20 @@ def main():
                     he_full_w=he_w,
                     he_full_h=he_h,
                 )
+                mx_overlap = multiplex_patch_overlap_fraction_deform(
+                    he_x0=x0,
+                    he_y0=y0,
+                    patch_size=patch_size,
+                    m_full=m_full,
+                    flow_dx_ov=deform_state["flow_dx_ov"],
+                    flow_dy_ov=deform_state["flow_dy_ov"],
+                    he_full_w=he_w,
+                    he_full_h=he_h,
+                    mx_w=mx_w,
+                    mx_h=mx_h,
+                )
             else:
-                mx_patch, has_mx = read_multiplex_patch_affine(
+                mx_patch, inside_mx = read_multiplex_patch_affine(
                     mx_store,
                     mx_axes,
                     mx_w,
@@ -1519,6 +1548,18 @@ def main():
                     m_full=m_full,
                     channel_indices=channel_indices,
                 )
+                mx_overlap = multiplex_patch_overlap_fraction_affine(
+                    he_x0=x0,
+                    he_y0=y0,
+                    patch_size=patch_size,
+                    m_full=m_full,
+                    mx_w=mx_w,
+                    mx_h=mx_h,
+                )
+            if min_mx_overlap >= 1.0 - 1e-9:
+                has_mx = bool(inside_mx)
+            else:
+                has_mx = bool(mx_overlap >= min_mx_overlap)
             if has_mx:
                 np.save(out_dir / "multiplex" / f"{x0}_{y0}.npy", mx_patch)
 
@@ -1526,7 +1567,12 @@ def main():
             mx_vis_coords.append((x0_mx // ds, y0_mx // ds))
 
             he_vis_coords.append((x0 // ds, y0 // ds))
-            entry: dict = {"x0": x0, "y0": y0, "has_multiplex": has_mx}
+            entry: dict = {
+                "x0": x0,
+                "y0": y0,
+                "has_multiplex": has_mx,
+                "multiplex_overlap_fraction": float(mx_overlap),
+            }
             if seg_store is not None:
                 entry["has_mask"] = has_seg
             index.append(entry)
