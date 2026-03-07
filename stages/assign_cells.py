@@ -377,6 +377,25 @@ def main() -> None:
         "Set to he_mpp/csv_mpp when H&E and CSV use different pixel spacings "
         "(e.g. 0.5 when H&E is 0.325 µm/px and CSV is in 20x/0.650 µm/px space).",
     )
+    parser.add_argument(
+        "--type-percentile",
+        type=float,
+        default=95.0,
+        help="Percentile for type marker thresholds (default: 95). "
+             "Per-marker overrides via --thresholds-config take precedence.",
+    )
+    parser.add_argument(
+        "--state-percentile",
+        type=float,
+        default=75.0,
+        help="Percentile for state marker thresholds Ki67/PCNA/Vimentin (default: 75).",
+    )
+    parser.add_argument(
+        "--thresholds-config",
+        default=None,
+        help="Path to JSON file with per-marker percentile overrides, "
+             'e.g. {"CD3": 85, "CDX2": 90}.',
+    )
     args = parser.parse_args()
 
     cellvit_dir = pathlib.Path(args.cellvit_dir)
@@ -403,8 +422,24 @@ def main() -> None:
     x_col, y_col = _resolve_coord_cols(df)
     log.info("  Using coordinate columns: (%s, %s)", x_col, y_col)
 
-    log.info("Computing per-marker thresholds …")
-    thresholds = compute_thresholds(df)
+    config_overrides: dict[str, float] = {}
+    if args.thresholds_config:
+        config_path = pathlib.Path(args.thresholds_config)
+        with config_path.open(encoding="utf-8") as fh:
+            config_overrides = json.load(fh)
+        log.info("Loaded threshold config from %s: %s", config_path, config_overrides)
+
+    log.info(
+        "Computing per-marker thresholds (type_pct=%.0f, state_pct=%.0f) …",
+        args.type_percentile,
+        args.state_percentile,
+    )
+    thresholds = compute_thresholds(
+        df,
+        default_type_percentile=args.type_percentile,
+        default_state_percentile=args.state_percentile,
+        config_overrides=config_overrides,
+    )
     for marker, val in thresholds.items():
         log.info("  %-12s → %.4f", marker, val)
 
@@ -433,6 +468,8 @@ def main() -> None:
     per_patch_summary: dict[str, dict] = {}
     global_type_counts: Counter = Counter()
     global_state_counts: Counter = Counter()
+    global_agreement_counts: Counter = Counter()
+    global_conflict_pairs: Counter = Counter()
 
     for patch_meta in patches:
         x0 = patch_meta["x0"]
@@ -453,6 +490,19 @@ def main() -> None:
             cells, kdtree, df, thresholds, x0, y0, max_dist, coord_scale
         )
         total_cells += len(cells)
+
+        # Accumulate agreement stats
+        for c in cells:
+            conf = c.get("cell_type_confidence", "low")
+            global_agreement_counts[conf] += 1
+            # Only log conflict_pairs for matched cells where types truly conflict
+            # (not for no-match fallback cells where cell_type IS the CellViT type)
+            if conf == "low":
+                marker_t = c.get("cell_type", "other")
+                cv_t = CELLVIT_TYPE_MAP.get(int(c.get("type_cellvit", 0)), "other")
+                if marker_t != cv_t:
+                    key = f"marker={marker_t},cellvit={cv_t}"
+                    global_conflict_pairs[key] += 1
 
         # 5. Rasterize
         type_img = rasterize_cells(cells, patch_size, "cell_type", CELL_TYPE_COLORS)
@@ -488,8 +538,13 @@ def main() -> None:
         "n_patches": processed,
         "n_cells": total_cells,
         "coord_scale": coord_scale,
+        "type_percentile": args.type_percentile,
+        "state_percentile": args.state_percentile,
+        "thresholds_config": args.thresholds_config,
         "cell_types": dict(global_type_counts),
         "cell_states": dict(global_state_counts),
+        "agreement": dict(global_agreement_counts),
+        "conflict_pairs": dict(global_conflict_pairs),
         "per_patch": per_patch_summary,
     }
     summary_path = out_dir / "cell_summary.json"

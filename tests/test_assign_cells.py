@@ -836,3 +836,163 @@ def test_match_cells_matched_disagreement_markers_win():
     result = match_cells([cell], tree, df, thresholds, x0=0, y0=0, max_dist=15.0)
     assert result[0]["cell_type"] == "tumor", "Markers win on conflict"
     assert result[0]["cell_type_confidence"] == "low"
+
+
+def test_cli_summary_contains_agreement_stats(tmp_path):
+    """cell_summary.json must contain 'agreement' and 'conflict_pairs' keys."""
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+    out_dir = tmp_path / "out"
+
+    # Two cells in the same patch:
+    # Cell 1: centroid at (64,64), CellViT type 1 (Neoplastic->tumor)
+    # Cell 2: centroid at (192,192), CellViT type 1 (Neoplastic->tumor)
+    cell_data = {
+        "cells": [
+            {"centroid": [64, 64], "contour": _small_rect_contour(64, 64),
+             "bbox": [[54, 54], [74, 74]], "type_cellvit": 1, "type_prob": 0.9},
+            {"centroid": [192, 192], "contour": _small_rect_contour(192, 192),
+             "bbox": [[182, 182], [202, 202]], "type_cellvit": 1, "type_prob": 0.9},
+        ]
+    }
+    (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
+
+    # CSV: cell 1 at (64,64) has high Keratin -> marker type = "tumor" (agrees with CellViT type 1)
+    #       cell 2 at (192,192) has high CD45  -> marker type = "immune" (disagrees with CellViT type 1)
+    # Only include the two discriminating type markers + state markers.
+    # Omitting all other type markers ensures they get threshold=inf and never trigger.
+    features_path = tmp_path / "CRC02.csv"
+    header = "Xt,Yt,Keratin,CD45,Ki67,PCNA,Vimentin,Ecadherin\n"
+    row1 = "64,64,5000,0,0,0,0,500\n"    # Keratin high → tumor
+    row2 = "192,192,0,5000,0,0,0,500\n"  # CD45 high   → immune
+    features_path.write_text(header + row1 + row2)
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
+        "stride": 256, "patch_size": 256, "tissue_min": 0.0,
+        "img_w": 256, "img_h": 256, "channels": [],
+    }
+    (tmp_path / "index.json").write_text(json.dumps(index_data))
+
+    cmd = [sys.executable, "-m", "stages.assign_cells",
+           "--cellvit-dir", str(cellvit_dir),
+           "--features-csv", str(features_path),
+           "--index", str(tmp_path / "index.json"),
+           "--out", str(out_dir),
+           "--max-dist", "15.0"]
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            cwd=str(Path(__file__).resolve().parent.parent))
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    summary = json.loads((out_dir / "cell_summary.json").read_text())
+
+    assert "agreement" in summary, "cell_summary.json missing 'agreement' key"
+    assert "high" in summary["agreement"]
+    assert "low" in summary["agreement"]
+    assert "conflict_pairs" in summary, "cell_summary.json missing 'conflict_pairs' key"
+
+    # Cell 1: Keratin high (tumor) + CellViT type 1 (tumor) -> agree -> high confidence
+    assert summary["agreement"]["high"] >= 1, "Expected at least 1 high-confidence cell"
+    # Cell 2: CD45 high (immune) + CellViT type 1 (tumor) -> disagree -> low confidence
+    assert summary["agreement"]["low"] >= 1, "Expected at least 1 low-confidence cell"
+    assert "marker=immune,cellvit=tumor" in summary["conflict_pairs"], (
+        f"Expected 'marker=immune,cellvit=tumor' in conflict_pairs, got: {summary['conflict_pairs']}"
+    )
+
+
+def test_cli_custom_type_percentile(tmp_path):
+    """--type-percentile is passed through to compute_thresholds()."""
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+
+    cell_data = {"cells": [
+        {"centroid": [64, 64], "contour": _small_rect_contour(64, 64),
+         "bbox": [[54, 54], [74, 74]], "type_cellvit": 1, "type_prob": 0.9}
+    ]}
+    (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
+
+    # Keratin values: [1, 100, 200] → p0=1.0
+    # At p95 (default), threshold ≈ 191 → Keratin=1 fails → cell_type="other" (via CellViT fallback=tumor, but matched)
+    # At p0, threshold=1.0 → Keratin=1 >= 1.0 → cell_type="tumor"
+    all_markers = "Keratin,NaKATPase,CDX2,CD45,CD3,CD4,CD8a,CD20,CD45RO,CD68,CD163,FOXP3,PD1,aSMA,CD31,Desmin,Collagen,Ki67,PCNA,Vimentin,Ecadherin"
+    header = f"Xt,Yt,{all_markers}\n"
+    features_path = tmp_path / "CRC02.csv"
+    features_path.write_text(
+        header +
+        "64,64,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
+        "200,200,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
+        "300,300,200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+    )
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
+        "stride": 256, "patch_size": 256, "tissue_min": 0.0,
+        "img_w": 256, "img_h": 256, "channels": [],
+    }
+    (tmp_path / "index.json").write_text(json.dumps(index_data))
+
+    out_dir = tmp_path / "out"
+    cmd = [sys.executable, "-m", "stages.assign_cells",
+           "--cellvit-dir", str(cellvit_dir),
+           "--features-csv", str(features_path),
+           "--index", str(tmp_path / "index.json"),
+           "--out", str(out_dir),
+           "--max-dist", "15.0",
+           "--type-percentile", "0"]  # p0 → threshold = min value = 1.0
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            cwd=str(Path(__file__).resolve().parent.parent))
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    summary = json.loads((out_dir / "cell_summary.json").read_text())
+    # With p0 threshold, Keratin=1 >= 1.0 → cell should be tumor
+    assert summary["cell_types"].get("tumor", 0) >= 1, (
+        "With --type-percentile 0, even Keratin=1 should qualify as tumor"
+    )
+
+
+def test_cli_thresholds_config(tmp_path):
+    """--thresholds-config JSON overrides per-marker percentile."""
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+
+    cell_data = {"cells": [
+        {"centroid": [64, 64], "contour": _small_rect_contour(64, 64),
+         "bbox": [[54, 54], [74, 74]], "type_cellvit": 1, "type_prob": 0.9}
+    ]}
+    (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
+
+    all_markers = "Keratin,NaKATPase,CDX2,CD45,CD3,CD4,CD8a,CD20,CD45RO,CD68,CD163,FOXP3,PD1,aSMA,CD31,Desmin,Collagen,Ki67,PCNA,Vimentin,Ecadherin"
+    header = f"Xt,Yt,{all_markers}\n"
+    features_path = tmp_path / "CRC02.csv"
+    features_path.write_text(
+        header +
+        "64,64,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
+        "200,200,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
+        "300,300,200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+    )
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
+        "stride": 256, "patch_size": 256, "tissue_min": 0.0,
+        "img_w": 256, "img_h": 256, "channels": [],
+    }
+    (tmp_path / "index.json").write_text(json.dumps(index_data))
+
+    # Config file overrides Keratin to p0 (threshold = 1.0)
+    config_path = tmp_path / "thresholds.json"
+    config_path.write_text(json.dumps({"Keratin": 0}))
+
+    out_dir = tmp_path / "out"
+    cmd = [sys.executable, "-m", "stages.assign_cells",
+           "--cellvit-dir", str(cellvit_dir),
+           "--features-csv", str(features_path),
+           "--index", str(tmp_path / "index.json"),
+           "--out", str(out_dir),
+           "--max-dist", "15.0",
+           "--thresholds-config", str(config_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            cwd=str(Path(__file__).resolve().parent.parent))
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+    summary = json.loads((out_dir / "cell_summary.json").read_text())
+    assert summary["cell_types"].get("tumor", 0) >= 1, (
+        "With Keratin threshold overridden to p0, cell should be classified as tumor"
+    )
