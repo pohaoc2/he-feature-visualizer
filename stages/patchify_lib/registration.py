@@ -42,10 +42,19 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
 
     rx = he_ov_w / mx_ov_w
     ry = he_ov_h / mx_ov_h
+
+    # ECC runs on `mx_resized`, where MX overview is resized onto HE overview grid.
+    # OpenCV resize uses pixel-center mapping:
+    #   x_resized = rx * (x_mx_ov + 0.5) - 0.5
+    #   y_resized = ry * (y_mx_ov + 0.5) - 0.5
+    # Convert ECC translation terms back from resized-MX coords to original
+    # MX overview coords before lifting to full-resolution pixels.
+    tx_ov = (float(m_ov[0, 2]) + 0.5) / rx - 0.5
+    ty_ov = (float(m_ov[1, 2]) + 0.5) / ry - 0.5
     m_full = np.array(
         [
-            [m_ov[0, 0] / rx, m_ov[0, 1] / rx, m_ov[0, 2] * ds / rx],
-            [m_ov[1, 0] / ry, m_ov[1, 1] / ry, m_ov[1, 2] * ds / ry],
+            [m_ov[0, 0] / rx, m_ov[0, 1] / rx, tx_ov * ds],
+            [m_ov[1, 0] / ry, m_ov[1, 1] / ry, ty_ov * ds],
         ],
         dtype=np.float32,
     )

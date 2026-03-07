@@ -135,6 +135,28 @@ def test_get_channel_index_raises_on_missing():
         get_channel_index(names, "PCNA")
 
 
+def test_get_first_matching_channel_index_respects_candidate_order():
+    """
+    Contract: get_first_matching_channel_index returns the first candidate name
+    (by candidate list order) found in channel_names.
+    """
+    from stages.multiplex_layers import get_first_matching_channel_index  # noqa: WPS433
+
+    names = ["DNA", "CD31", "Ki67", "PCNA"]
+    candidates = ["missing", "pcna", "cd31"]
+    idx = get_first_matching_channel_index(names, candidates)
+    assert idx == 3, f"Expected first matched candidate index 3 (PCNA), got {idx}"
+
+
+def test_get_first_matching_channel_index_returns_none_when_missing():
+    """If none of the candidate names exist, function returns None."""
+    from stages.multiplex_layers import get_first_matching_channel_index  # noqa: WPS433
+
+    names = ["DNA", "CD31", "Ki67"]
+    idx = get_first_matching_channel_index(names, ["foo", "bar", "baz"])
+    assert idx is None
+
+
 # ---------------------------------------------------------------------------
 # Unit tests — extract_channel
 # ---------------------------------------------------------------------------
@@ -410,6 +432,24 @@ def test_apply_vessel_mask_quality_fallback_handles_empty_and_noisy():
     )
     assert noisy_status == "noisy_fallback"
     assert np.array_equal(noisy_out, fallback)
+
+
+def test_apply_vessel_mask_quality_fallback_returns_empty_when_both_empty():
+    """When both candidate and fallback are empty, status should be 'empty'."""
+    from stages.multiplex_layers import (
+        apply_vessel_mask_quality_fallback,
+    )  # noqa: WPS433
+
+    candidate = np.zeros((10, 10), dtype=bool)
+    fallback = np.zeros((10, 10), dtype=bool)
+    out, status = apply_vessel_mask_quality_fallback(
+        candidate_mask=candidate,
+        cd31_fallback_mask=fallback,
+        noisy_max_fraction=0.95,
+    )
+    assert status == "empty"
+    assert out.dtype == bool
+    assert not np.any(out)
 
 
 def test_build_vessel_source_map_applies_mask_and_weight():
@@ -690,6 +730,85 @@ def test_resolve_channel_indices_validates_missing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_main_inprocess_runs_and_writes_outputs(tmp_path, monkeypatch):
+    """In-process main() execution should write all expected output artifacts."""
+    import stages.multiplex_layers as m  # noqa: WPS433
+
+    mux_dir = tmp_path / "multiplex"
+    mux_dir.mkdir(parents=True)
+    patch = np.zeros((3, 128, 128), dtype=np.uint16)
+    patch[0, 56:72, 56:72] = 5000  # CD31
+    patch[1, 40:88, 40:88] = 8000  # Ki67
+    np.save(str(mux_dir / "0_0.npy"), patch)
+
+    meta_path = tmp_path / "metadata.csv"
+    _write_metadata_csv(
+        meta_path,
+        {"CD31": "Channel:0:0", "Ki67": "Channel:0:1", "PCNA": "Channel:0:2"},
+    )
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 128, "y1": 128}],
+        "patch_size": 128,
+        "stride": 128,
+        "channels": ["CD31", "Ki67", "PCNA"],
+    }
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps(index_data))
+
+    out_dir = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "multiplex_layers.py",
+            "--multiplex-dir",
+            str(mux_dir),
+            "--index",
+            str(index_path),
+            "--metadata-csv",
+            str(meta_path),
+            "--out",
+            str(out_dir),
+            "--channels",
+            "CD31",
+            "Ki67",
+            "PCNA",
+        ],
+    )
+
+    m.main()
+
+    assert (out_dir / "vasculature" / "0_0.png").exists()
+    assert (out_dir / "vasculature_mask" / "0_0.npy").exists()
+    assert (out_dir / "oxygen" / "0_0.png").exists()
+    assert (out_dir / "glucose" / "0_0.png").exists()
+
+
+def test_main_inprocess_rejects_even_open_kernel_size(monkeypatch):
+    """In-process main() should raise ValueError for even open-kernel size."""
+    import stages.multiplex_layers as m  # noqa: WPS433
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "multiplex_layers.py",
+            "--multiplex-dir",
+            "dummy",
+            "--index",
+            "dummy",
+            "--metadata-csv",
+            "dummy",
+            "--vasc-open-kernel-size",
+            "2",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="vasc_open_kernel_size must be odd"):
+        m.main()
+
+
 def test_cli_creates_all_three_layers(tmp_path):
     """
     Contract: the CLI produces vasculature/{i}_{j}.png,
@@ -899,6 +1018,60 @@ def test_cli_rejects_invalid_vasc_noisy_max_fraction():
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode != 0
     assert "--vasc-noisy-max-fraction must be in (0, 1]" in result.stderr
+
+
+def test_cli_rejects_negative_vasc_min_area():
+    """CLI must reject negative values for --vasc-min-area."""
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        "dummy_multiplex",
+        "--index",
+        "dummy_index.json",
+        "--metadata-csv",
+        "dummy_metadata.csv",
+        "--vasc-min-area",
+        "-1",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode != 0
+    assert "--vasc-min-area must be >= 0" in result.stderr
+
+
+def test_cli_rejects_even_vasc_open_kernel_size():
+    """CLI must reject even values for --vasc-open-kernel-size."""
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        "dummy_multiplex",
+        "--index",
+        "dummy_index.json",
+        "--metadata-csv",
+        "dummy_metadata.csv",
+        "--vasc-open-kernel-size",
+        "2",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode != 0
+    assert "vasc_open_kernel_size must be odd" in result.stderr
+
+
+def test_cli_rejects_even_vasc_close_kernel_size():
+    """CLI must reject even values for --vasc-close-kernel-size."""
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        "dummy_multiplex",
+        "--index",
+        "dummy_index.json",
+        "--metadata-csv",
+        "dummy_metadata.csv",
+        "--vasc-close-kernel-size",
+        "2",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode != 0
+    assert "vasc_close_kernel_size must be odd" in result.stderr
 
 
 def test_cli_runs_pde_models_and_writes_outputs(tmp_path):

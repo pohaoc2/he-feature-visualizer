@@ -1324,6 +1324,12 @@ def main():
         "Patches saved to processed/masks/{x0}_{y0}.npy as uint32 label IDs.",
     )
     parser.add_argument(
+        "--force-deformable",
+        action="store_true",
+        help="Force deformable registration when local QC suggests deformable "
+        "refinement, even if auto-gating would keep affine.",
+    )
+    parser.add_argument(
         "--min-multiplex-overlap",
         type=float,
         default=1.0,
@@ -1448,6 +1454,8 @@ def main():
                 or deform_patch_qc["median_gain"] > 0.001
                 or deform_patch_qc["improved_fraction"] > 0.55
             )
+            if args.force_deformable:
+                use_deform = True
             print(
                 "  Deformable QC: "
                 f"iou_affine={deform_state['iou_affine']:.4f} "

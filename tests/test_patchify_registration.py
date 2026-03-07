@@ -163,6 +163,52 @@ class TestRegisterHEMXAffine:
         assert M.shape == (2, 3)
         assert M.dtype == np.float32
 
+    def test_resize_center_mapping_correction_applied(self, monkeypatch):
+        """Resized-space ECC translation is converted with pixel-center correction."""
+        he_mask = np.zeros((120, 180), dtype=bool)
+        mx_mask = np.zeros((80, 90), dtype=bool)
+        ds = 64
+
+        m_ov = np.array(
+            [[1.02, 0.03, 4.25], [-0.02, 0.98, -7.75]],
+            dtype=np.float32,
+        )
+
+        def _fake_ecc(*args, **kwargs):
+            return 1.0, m_ov.copy()
+
+        monkeypatch.setattr(m._registration.cv2, "findTransformECC", _fake_ecc)
+
+        M = m.register_he_mx_affine(
+            he_mask,
+            mx_mask,
+            ds=ds,
+            he_h=he_mask.shape[0] * ds,
+            he_w=he_mask.shape[1] * ds,
+            mx_h=mx_mask.shape[0] * ds,
+            mx_w=mx_mask.shape[1] * ds,
+        )
+
+        rx = he_mask.shape[1] / mx_mask.shape[1]
+        ry = he_mask.shape[0] / mx_mask.shape[0]
+        expected = np.array(
+            [
+                [
+                    m_ov[0, 0] / rx,
+                    m_ov[0, 1] / rx,
+                    (((m_ov[0, 2] + 0.5) / rx) - 0.5) * ds,
+                ],
+                [
+                    m_ov[1, 0] / ry,
+                    m_ov[1, 1] / ry,
+                    (((m_ov[1, 2] + 0.5) / ry) - 0.5) * ds,
+                ],
+            ],
+            dtype=np.float32,
+        )
+
+        assert M == pytest.approx(expected, abs=1e-5)
+
     def test_fallback_on_uniform_masks(self):
         """All-zero masks cause ECC to fail; fallback returns scale-only matrix."""
         he_mask = np.zeros((8, 8), dtype=bool)
@@ -1178,6 +1224,80 @@ def test_cli_min_multiplex_overlap_allows_partial_save(tmp_path, monkeypatch):
     assert partial_patch["has_multiplex"] is True
     assert 0.0 < partial_patch["multiplex_overlap_fraction"] < 1.0
     assert (out_partial / "multiplex" / "0_0.npy").exists()
+
+
+def test_force_deformable_cli_sets_registration_mode_deformable(tmp_path, monkeypatch):
+    """--force-deformable should select deformable mode when local QC requests it."""
+    he_path = tmp_path / "he.ome.tif"
+    mx_path = tmp_path / "mx.ome.tif"
+    csv_path = tmp_path / "meta.csv"
+    out_dir = tmp_path / "processed"
+
+    he = np.full((3, 256, 256), 180, dtype=np.uint8)
+    mx = np.full((1, 256, 256), 1000, dtype=np.uint16)
+    _write_ome(he_path, he, "CYX")
+    _write_ome(mx_path, mx, "CYX")
+    _write_metadata_csv(csv_path, ["DNA"])
+
+    monkeypatch.setattr(
+        m,
+        "decide_registration_path",
+        lambda *args, **kwargs: m.FAIL_LOCAL_NEEDS_DEFORMABLE,
+    )
+
+    def _fake_deform_state(he_mask, *args, **kwargs):
+        h, w = he_mask.shape
+        return {
+            "flow_dx_ov": np.zeros((h, w), dtype=np.float32),
+            "flow_dy_ov": np.zeros((h, w), dtype=np.float32),
+            "iou_affine": 0.90,
+            "iou_deformable": 0.90,
+            "mean_disp_ov": 0.0,
+            "max_disp_ov": 0.0,
+        }
+
+    monkeypatch.setattr(m, "estimate_deformable_field", _fake_deform_state)
+    monkeypatch.setattr(
+        m,
+        "compute_deformable_patch_qc_metrics",
+        lambda *args, **kwargs: {
+            "sample_count": 10.0,
+            "improved_fraction": 0.0,
+            "median_gain": 0.0,
+            "inside_fraction_pass_rate": 1.0,
+            "mean_gain": 0.0,
+        },
+    )
+
+    sys.argv = [
+        "patchify.py",
+        "--he-image",
+        str(he_path),
+        "--multiplex-image",
+        str(mx_path),
+        "--metadata-csv",
+        str(csv_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "DNA",
+        "--patch-size",
+        "128",
+        "--stride",
+        "128",
+        "--overview-downsample",
+        "1",
+        "--force-deformable",
+    ]
+    m.main()
+
+    data = json.loads((out_dir / "index.json").read_text())
+    assert data["registration_mode"] == "deformable"
+    final_t = json.loads(
+        (out_dir / "registration" / "final_transform.json").read_text()
+    )
+    assert final_t["mode"] == "deformable"
+    assert (out_dir / "registration" / "deform_field.npz").exists()
 
 
 class TestPatchifyDebugLimit:
