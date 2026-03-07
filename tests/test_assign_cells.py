@@ -82,14 +82,20 @@ def _small_rect_contour(cx, cy, half=8):
 def _expanded_thresholds() -> dict:
     """Full expanded thresholds dict for tests — all markers set to 500.0."""
     from stages.assign_cells import TYPE_MARKERS
+
     thresholds = {}
     for markers in TYPE_MARKERS.values():
         for m in markers:
             thresholds[m] = 500.0
-    thresholds.update({
-        "Ki67": 500.0, "PCNA": 500.0, "Vimentin": 500.0,
-        "Ecadherin": 200.0, "Ecadherin_high": 400.0,
-    })
+    thresholds.update(
+        {
+            "Ki67": 500.0,
+            "PCNA": 500.0,
+            "Vimentin": 500.0,
+            "Ecadherin": 200.0,
+            "Ecadherin_high": 400.0,
+        }
+    )
     return thresholds
 
 
@@ -130,11 +136,23 @@ def test_assign_type_priority_order():
     from stages.assign_cells import assign_type
 
     thresholds = {
-        "Keratin": 500.0, "NaKATPase": 500.0, "CDX2": 500.0,
-        "CD45": 500.0, "CD3": 500.0, "CD4": 500.0, "CD8a": 500.0,
-        "CD20": 500.0, "CD45RO": 500.0, "CD68": 500.0, "CD163": 500.0,
-        "FOXP3": 500.0, "PD1": 500.0,
-        "aSMA": 500.0, "CD31": 500.0, "Desmin": 500.0, "Collagen": 500.0,
+        "Keratin": 500.0,
+        "NaKATPase": 500.0,
+        "CDX2": 500.0,
+        "CD45": 500.0,
+        "CD3": 500.0,
+        "CD4": 500.0,
+        "CD8a": 500.0,
+        "CD20": 500.0,
+        "CD45RO": 500.0,
+        "CD68": 500.0,
+        "CD163": 500.0,
+        "FOXP3": 500.0,
+        "PD1": 500.0,
+        "aSMA": 500.0,
+        "CD31": 500.0,
+        "Desmin": 500.0,
+        "Collagen": 500.0,
     }
 
     # All markers high → tumor wins (first group checked)
@@ -160,11 +178,23 @@ def test_assign_type_missing_markers():
 
     empty_row = pd.Series(dtype=float)
     thresholds = {
-        "Keratin": 500.0, "NaKATPase": 500.0, "CDX2": 500.0,
-        "CD45": 500.0, "CD3": 500.0, "CD4": 500.0, "CD8a": 500.0,
-        "CD20": 500.0, "CD45RO": 500.0, "CD68": 500.0, "CD163": 500.0,
-        "FOXP3": 500.0, "PD1": 500.0,
-        "aSMA": 500.0, "CD31": 500.0, "Desmin": 500.0, "Collagen": 500.0,
+        "Keratin": 500.0,
+        "NaKATPase": 500.0,
+        "CDX2": 500.0,
+        "CD45": 500.0,
+        "CD3": 500.0,
+        "CD4": 500.0,
+        "CD8a": 500.0,
+        "CD20": 500.0,
+        "CD45RO": 500.0,
+        "CD68": 500.0,
+        "CD163": 500.0,
+        "FOXP3": 500.0,
+        "PD1": 500.0,
+        "aSMA": 500.0,
+        "CD31": 500.0,
+        "Desmin": 500.0,
+        "Collagen": 500.0,
     }
     assert assign_type(empty_row, thresholds) == "other"
 
@@ -314,7 +344,9 @@ def test_match_cells_finds_nearby_cell():
     assert (
         result[0]["cell_type"] == "tumor"
     ), f"Expected cell_type='tumor', got '{result[0]['cell_type']}'"
-    assert "cell_type_confidence" in result[0], "cell_type_confidence field must be present"
+    assert (
+        "cell_type_confidence" in result[0]
+    ), "cell_type_confidence field must be present"
 
 
 def test_match_cells_unmatched_when_far():
@@ -323,8 +355,17 @@ def test_match_cells_unmatched_when_far():
 
     thresholds = _expanded_thresholds()
     marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
-    df = pd.DataFrame({"Xt": [500.0], "Yt": [500.0], **marker_cols,
-                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    df = pd.DataFrame(
+        {
+            "Xt": [500.0],
+            "Yt": [500.0],
+            **marker_cols,
+            "Ki67": [0.0],
+            "PCNA": [0.0],
+            "Vimentin": [0.0],
+            "Ecadherin": [500.0],
+        }
+    )
     tree = build_csv_index(df, "Xt", "Yt")
 
     # type_cellvit=0 (Unknown) → "other"
@@ -418,7 +459,10 @@ def test_rasterize_cells_state_other_is_transparent():
     The alpha channel of an 'other' state cell must be 150, not 0.
     Background pixels outside all cells must remain transparent (alpha=0).
     """
-    from stages.assign_cells import rasterize_cells, CELL_STATE_COLORS as PROD_STATE_COLORS
+    from stages.assign_cells import (
+        rasterize_cells,
+        CELL_STATE_COLORS as PROD_STATE_COLORS,
+    )
 
     cell = _make_cell(
         centroid=[128, 128],
@@ -434,7 +478,11 @@ def test_rasterize_cells_state_other_is_transparent():
         color_map=PROD_STATE_COLORS,
     )
 
-    assert output.shape == (256, 256, 4), f"Expected shape (256, 256, 4), got {output.shape}"
+    assert output.shape == (
+        256,
+        256,
+        4,
+    ), f"Expected shape (256, 256, 4), got {output.shape}"
 
     # "other" state uses dark gray (80, 80, 80, 150) in production
     center_pixel = output[128, 128]
@@ -445,7 +493,9 @@ def test_rasterize_cells_state_other_is_transparent():
     )
 
     # Background pixels outside the cell must remain transparent
-    assert output[0, 0, 3] == 0, "Background pixel (0,0) should be transparent (alpha=0)"
+    assert (
+        output[0, 0, 3] == 0
+    ), "Background pixel (0,0) should be transparent (alpha=0)"
 
 
 # ---------------------------------------------------------------------------
@@ -635,29 +685,33 @@ def test_compute_thresholds_default_percentile():
     from stages.assign_cells import compute_thresholds
 
     # Include a sample of new markers alongside the original ones
-    df = pd.DataFrame({
-        "Keratin":   [0.0, 50.0, 100.0],
-        "CD45":      [0.0, 50.0, 100.0],
-        "NaKATPase": [0.0, 50.0, 100.0],
-        "CD8a":      [0.0, 50.0, 100.0],
-        "Desmin":    [0.0, 50.0, 100.0],
-    })
+    df = pd.DataFrame(
+        {
+            "Keratin": [0.0, 50.0, 100.0],
+            "CD45": [0.0, 50.0, 100.0],
+            "NaKATPase": [0.0, 50.0, 100.0],
+            "CD8a": [0.0, 50.0, 100.0],
+            "Desmin": [0.0, 50.0, 100.0],
+        }
+    )
     thresholds = compute_thresholds(df, default_type_percentile=50)
     # 50th percentile of [0, 50, 100] == 50.0 for all present type markers
     for marker in ["Keratin", "CD45", "NaKATPase", "CD8a", "Desmin"]:
-        assert thresholds[marker] == pytest.approx(50.0), (
-            f"Expected {marker} threshold at p50=50.0, got {thresholds[marker]}"
-        )
+        assert thresholds[marker] == pytest.approx(
+            50.0
+        ), f"Expected {marker} threshold at p50=50.0, got {thresholds[marker]}"
 
 
 def test_compute_thresholds_config_override():
     """Per-marker config_overrides replace the default percentile for that marker."""
     from stages.assign_cells import compute_thresholds
 
-    df = pd.DataFrame({
-        "Keratin": [0.0, 50.0, 100.0],
-        "CD45":    [0.0, 50.0, 100.0],
-    })
+    df = pd.DataFrame(
+        {
+            "Keratin": [0.0, 50.0, 100.0],
+            "CD45": [0.0, 50.0, 100.0],
+        }
+    )
     thresholds = compute_thresholds(
         df,
         default_type_percentile=95,
@@ -672,14 +726,29 @@ def test_compute_thresholds_new_markers_covered():
     """compute_thresholds produces thresholds for all expanded type markers."""
     from stages.assign_cells import compute_thresholds
 
-    new_markers = ["NaKATPase", "CDX2", "CD3", "CD4", "CD8a", "CD20",
-                   "CD45RO", "CD68", "CD163", "FOXP3", "PD1", "Desmin", "Collagen"]
+    new_markers = [
+        "NaKATPase",
+        "CDX2",
+        "CD3",
+        "CD4",
+        "CD8a",
+        "CD20",
+        "CD45RO",
+        "CD68",
+        "CD163",
+        "FOXP3",
+        "PD1",
+        "Desmin",
+        "Collagen",
+    ]
     data = {m: [0.0, 50.0, 100.0] for m in new_markers}
     df = pd.DataFrame(data)
     thresholds = compute_thresholds(df)
     for m in new_markers:
         assert m in thresholds, f"Threshold missing for marker '{m}'"
-        assert thresholds[m] < float("inf"), f"Threshold for '{m}' should not be inf when column exists"
+        assert thresholds[m] < float(
+            "inf"
+        ), f"Threshold for '{m}' should not be inf when column exists"
 
 
 def test_compute_thresholds_missing_marker_is_inf():
@@ -696,52 +765,97 @@ def test_assign_type_any_positive_immune():
     """Any single immune marker above threshold → 'immune'."""
     from stages.assign_cells import assign_type
 
-    immune_markers = ["CD45", "CD3", "CD4", "CD8a", "CD20",
-                      "CD45RO", "CD68", "CD163", "FOXP3", "PD1"]
-    all_markers = ["Keratin", "NaKATPase", "CDX2"] + immune_markers + \
-                  ["aSMA", "CD31", "Desmin", "Collagen"]
+    immune_markers = [
+        "CD45",
+        "CD3",
+        "CD4",
+        "CD8a",
+        "CD20",
+        "CD45RO",
+        "CD68",
+        "CD163",
+        "FOXP3",
+        "PD1",
+    ]
+    all_markers = (
+        ["Keratin", "NaKATPase", "CDX2"]
+        + immune_markers
+        + ["aSMA", "CD31", "Desmin", "Collagen"]
+    )
     thresholds = {m: 500.0 for m in all_markers}
 
     for marker in immune_markers:
         row = pd.Series({m: (1000.0 if m == marker else 0.0) for m in all_markers})
         result = assign_type(row, thresholds)
-        assert result == "immune", (
-            f"Only {marker} high should yield 'immune', got '{result}'"
-        )
+        assert (
+            result == "immune"
+        ), f"Only {marker} high should yield 'immune', got '{result}'"
 
 
 def test_assign_type_any_positive_tumor():
     """NaKATPase or CDX2 above threshold (without Keratin) → 'tumor'."""
     from stages.assign_cells import assign_type
 
-    all_markers = ["Keratin", "NaKATPase", "CDX2", "CD45", "CD3", "CD4", "CD8a",
-                   "CD20", "CD45RO", "CD68", "CD163", "FOXP3", "PD1",
-                   "aSMA", "CD31", "Desmin", "Collagen"]
+    all_markers = [
+        "Keratin",
+        "NaKATPase",
+        "CDX2",
+        "CD45",
+        "CD3",
+        "CD4",
+        "CD8a",
+        "CD20",
+        "CD45RO",
+        "CD68",
+        "CD163",
+        "FOXP3",
+        "PD1",
+        "aSMA",
+        "CD31",
+        "Desmin",
+        "Collagen",
+    ]
     thresholds = {m: 500.0 for m in all_markers}
 
     for marker in ["NaKATPase", "CDX2"]:
         row = pd.Series({m: (1000.0 if m == marker else 0.0) for m in all_markers})
         result = assign_type(row, thresholds)
-        assert result == "tumor", (
-            f"Only {marker} high should yield 'tumor', got '{result}'"
-        )
+        assert (
+            result == "tumor"
+        ), f"Only {marker} high should yield 'tumor', got '{result}'"
 
 
 def test_assign_type_any_positive_stromal():
     """Desmin or Collagen above threshold (without tumor/immune) → 'stromal'."""
     from stages.assign_cells import assign_type
 
-    all_markers = ["Keratin", "NaKATPase", "CDX2", "CD45", "CD3", "CD4", "CD8a",
-                   "CD20", "CD45RO", "CD68", "CD163", "FOXP3", "PD1",
-                   "aSMA", "CD31", "Desmin", "Collagen"]
+    all_markers = [
+        "Keratin",
+        "NaKATPase",
+        "CDX2",
+        "CD45",
+        "CD3",
+        "CD4",
+        "CD8a",
+        "CD20",
+        "CD45RO",
+        "CD68",
+        "CD163",
+        "FOXP3",
+        "PD1",
+        "aSMA",
+        "CD31",
+        "Desmin",
+        "Collagen",
+    ]
     thresholds = {m: 500.0 for m in all_markers}
 
     for marker in ["aSMA", "CD31", "Desmin", "Collagen"]:
         row = pd.Series({m: (1000.0 if m == marker else 0.0) for m in all_markers})
         result = assign_type(row, thresholds)
-        assert result == "stromal", (
-            f"Only {marker} high should yield 'stromal', got '{result}'"
-        )
+        assert (
+            result == "stromal"
+        ), f"Only {marker} high should yield 'stromal', got '{result}'"
 
 
 def test_assign_type_tumor_beats_immune():
@@ -749,14 +863,25 @@ def test_assign_type_tumor_beats_immune():
     from stages.assign_cells import assign_type
 
     thresholds = {
-        "Keratin": 500.0, "NaKATPase": 500.0, "CDX2": 500.0,
-        "CD45": 500.0, "CD3": 500.0, "CD4": 500.0, "CD8a": 500.0,
-        "CD20": 500.0, "CD45RO": 500.0, "CD68": 500.0, "CD163": 500.0,
-        "FOXP3": 500.0, "PD1": 500.0,
-        "aSMA": 500.0, "CD31": 500.0, "Desmin": 500.0, "Collagen": 500.0,
+        "Keratin": 500.0,
+        "NaKATPase": 500.0,
+        "CDX2": 500.0,
+        "CD45": 500.0,
+        "CD3": 500.0,
+        "CD4": 500.0,
+        "CD8a": 500.0,
+        "CD20": 500.0,
+        "CD45RO": 500.0,
+        "CD68": 500.0,
+        "CD163": 500.0,
+        "FOXP3": 500.0,
+        "PD1": 500.0,
+        "aSMA": 500.0,
+        "CD31": 500.0,
+        "Desmin": 500.0,
+        "Collagen": 500.0,
     }
-    row = pd.Series({**{m: 0.0 for m in thresholds},
-                     "Keratin": 1000.0, "CD45": 1000.0})
+    row = pd.Series({**{m: 0.0 for m in thresholds}, "Keratin": 1000.0, "CD45": 1000.0})
     assert assign_type(row, thresholds) == "tumor"
 
 
@@ -771,16 +896,25 @@ def test_match_cells_no_match_uses_cellvit_fallback():
 
     thresholds = _expanded_thresholds()
     marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
-    df = pd.DataFrame({"Xt": [500.0], "Yt": [500.0], **marker_cols,
-                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    df = pd.DataFrame(
+        {
+            "Xt": [500.0],
+            "Yt": [500.0],
+            **marker_cols,
+            "Ki67": [0.0],
+            "PCNA": [0.0],
+            "Vimentin": [0.0],
+            "Ecadherin": [500.0],
+        }
+    )
     tree = build_csv_index(df, "Xt", "Yt")
 
     # CellViT type 2 = Inflammatory → "immune"
     cell = _make_cell([10, 10], _small_rect_contour(10, 10), type_cellvit=2)
     result = match_cells([cell], tree, df, thresholds, x0=0, y0=0, max_dist=15.0)
-    assert result[0]["cell_type"] == "immune", (
-        f"No-match cell with cellvit type 2 should be 'immune', got '{result[0]['cell_type']}'"
-    )
+    assert (
+        result[0]["cell_type"] == "immune"
+    ), f"No-match cell with cellvit type 2 should be 'immune', got '{result[0]['cell_type']}'"
     assert result[0]["cell_type_confidence"] == "low"
 
 
@@ -790,8 +924,17 @@ def test_match_cells_no_match_cellvit_type5_is_tumor():
 
     thresholds = _expanded_thresholds()
     marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
-    df = pd.DataFrame({"Xt": [500.0], "Yt": [500.0], **marker_cols,
-                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    df = pd.DataFrame(
+        {
+            "Xt": [500.0],
+            "Yt": [500.0],
+            **marker_cols,
+            "Ki67": [0.0],
+            "PCNA": [0.0],
+            "Vimentin": [0.0],
+            "Ecadherin": [500.0],
+        }
+    )
     tree = build_csv_index(df, "Xt", "Yt")
 
     cell = _make_cell([10, 10], _small_rect_contour(10, 10), type_cellvit=5)
@@ -808,8 +951,17 @@ def test_match_cells_matched_agreement_high_confidence():
     # CSV cell at (128, 128) with high Keratin → marker type = "tumor"
     marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
     marker_cols["Keratin"] = [1000.0]
-    df = pd.DataFrame({"Xt": [128.0], "Yt": [128.0], **marker_cols,
-                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    df = pd.DataFrame(
+        {
+            "Xt": [128.0],
+            "Yt": [128.0],
+            **marker_cols,
+            "Ki67": [0.0],
+            "PCNA": [0.0],
+            "Vimentin": [0.0],
+            "Ecadherin": [500.0],
+        }
+    )
     tree = build_csv_index(df, "Xt", "Yt")
 
     # CellViT type 1 = Neoplastic → maps to "tumor" — should agree with marker type
@@ -827,8 +979,17 @@ def test_match_cells_matched_disagreement_markers_win():
     # CSV cell with high Keratin → marker type = "tumor"
     marker_cols = {m: [0.0] for group in TYPE_MARKERS.values() for m in group}
     marker_cols["Keratin"] = [1000.0]
-    df = pd.DataFrame({"Xt": [128.0], "Yt": [128.0], **marker_cols,
-                       "Ki67": [0.0], "PCNA": [0.0], "Vimentin": [0.0], "Ecadherin": [500.0]})
+    df = pd.DataFrame(
+        {
+            "Xt": [128.0],
+            "Yt": [128.0],
+            **marker_cols,
+            "Ki67": [0.0],
+            "PCNA": [0.0],
+            "Vimentin": [0.0],
+            "Ecadherin": [500.0],
+        }
+    )
     tree = build_csv_index(df, "Xt", "Yt")
 
     # CellViT type 2 = Inflammatory → maps to "immune" — disagrees with marker type "tumor"
@@ -849,10 +1010,20 @@ def test_cli_summary_contains_agreement_stats(tmp_path):
     # Cell 2: centroid at (192,192), CellViT type 1 (Neoplastic->tumor)
     cell_data = {
         "cells": [
-            {"centroid": [64, 64], "contour": _small_rect_contour(64, 64),
-             "bbox": [[54, 54], [74, 74]], "type_cellvit": 1, "type_prob": 0.9},
-            {"centroid": [192, 192], "contour": _small_rect_contour(192, 192),
-             "bbox": [[182, 182], [202, 202]], "type_cellvit": 1, "type_prob": 0.9},
+            {
+                "centroid": [64, 64],
+                "contour": _small_rect_contour(64, 64),
+                "bbox": [[54, 54], [74, 74]],
+                "type_cellvit": 1,
+                "type_prob": 0.9,
+            },
+            {
+                "centroid": [192, 192],
+                "contour": _small_rect_contour(192, 192),
+                "bbox": [[182, 182], [202, 202]],
+                "type_cellvit": 1,
+                "type_prob": 0.9,
+            },
         ]
     }
     (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
@@ -863,25 +1034,42 @@ def test_cli_summary_contains_agreement_stats(tmp_path):
     # Omitting all other type markers ensures they get threshold=inf and never trigger.
     features_path = tmp_path / "CRC02.csv"
     header = "Xt,Yt,Keratin,CD45,Ki67,PCNA,Vimentin,Ecadherin\n"
-    row1 = "64,64,5000,0,0,0,0,500\n"    # Keratin high → tumor
+    row1 = "64,64,5000,0,0,0,0,500\n"  # Keratin high → tumor
     row2 = "192,192,0,5000,0,0,0,500\n"  # CD45 high   → immune
     features_path.write_text(header + row1 + row2)
 
     index_data = {
         "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
-        "stride": 256, "patch_size": 256, "tissue_min": 0.0,
-        "img_w": 256, "img_h": 256, "channels": [],
+        "stride": 256,
+        "patch_size": 256,
+        "tissue_min": 0.0,
+        "img_w": 256,
+        "img_h": 256,
+        "channels": [],
     }
     (tmp_path / "index.json").write_text(json.dumps(index_data))
 
-    cmd = [sys.executable, "-m", "stages.assign_cells",
-           "--cellvit-dir", str(cellvit_dir),
-           "--features-csv", str(features_path),
-           "--index", str(tmp_path / "index.json"),
-           "--out", str(out_dir),
-           "--max-dist", "15.0"]
-    result = subprocess.run(cmd, capture_output=True, text=True,
-                            cwd=str(Path(__file__).resolve().parent.parent))
+    cmd = [
+        sys.executable,
+        "-m",
+        "stages.assign_cells",
+        "--cellvit-dir",
+        str(cellvit_dir),
+        "--features-csv",
+        str(features_path),
+        "--index",
+        str(tmp_path / "index.json"),
+        "--out",
+        str(out_dir),
+        "--max-dist",
+        "15.0",
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
     summary = json.loads((out_dir / "cell_summary.json").read_text())
@@ -895,9 +1083,9 @@ def test_cli_summary_contains_agreement_stats(tmp_path):
     assert summary["agreement"]["high"] >= 1, "Expected at least 1 high-confidence cell"
     # Cell 2: CD45 high (immune) + CellViT type 1 (tumor) -> disagree -> low confidence
     assert summary["agreement"]["low"] >= 1, "Expected at least 1 low-confidence cell"
-    assert "marker=immune,cellvit=tumor" in summary["conflict_pairs"], (
-        f"Expected 'marker=immune,cellvit=tumor' in conflict_pairs, got: {summary['conflict_pairs']}"
-    )
+    assert (
+        "marker=immune,cellvit=tumor" in summary["conflict_pairs"]
+    ), f"Expected 'marker=immune,cellvit=tumor' in conflict_pairs, got: {summary['conflict_pairs']}"
 
 
 def test_cli_custom_type_percentile(tmp_path):
@@ -905,10 +1093,17 @@ def test_cli_custom_type_percentile(tmp_path):
     cellvit_dir = tmp_path / "cellvit"
     cellvit_dir.mkdir()
 
-    cell_data = {"cells": [
-        {"centroid": [64, 64], "contour": _small_rect_contour(64, 64),
-         "bbox": [[54, 54], [74, 74]], "type_cellvit": 1, "type_prob": 0.9}
-    ]}
+    cell_data = {
+        "cells": [
+            {
+                "centroid": [64, 64],
+                "contour": _small_rect_contour(64, 64),
+                "bbox": [[54, 54], [74, 74]],
+                "type_cellvit": 1,
+                "type_prob": 0.9,
+            }
+        ]
+    }
     (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
 
     # Keratin values: [1, 100, 200] → p0=1.0
@@ -918,35 +1113,53 @@ def test_cli_custom_type_percentile(tmp_path):
     header = f"Xt,Yt,{all_markers}\n"
     features_path = tmp_path / "CRC02.csv"
     features_path.write_text(
-        header +
-        "64,64,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
-        "200,200,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
-        "300,300,200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+        header
+        + "64,64,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+        + "200,200,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+        + "300,300,200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
     )
     index_data = {
         "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
-        "stride": 256, "patch_size": 256, "tissue_min": 0.0,
-        "img_w": 256, "img_h": 256, "channels": [],
+        "stride": 256,
+        "patch_size": 256,
+        "tissue_min": 0.0,
+        "img_w": 256,
+        "img_h": 256,
+        "channels": [],
     }
     (tmp_path / "index.json").write_text(json.dumps(index_data))
 
     out_dir = tmp_path / "out"
-    cmd = [sys.executable, "-m", "stages.assign_cells",
-           "--cellvit-dir", str(cellvit_dir),
-           "--features-csv", str(features_path),
-           "--index", str(tmp_path / "index.json"),
-           "--out", str(out_dir),
-           "--max-dist", "15.0",
-           "--type-percentile", "0"]  # p0 → threshold = min value = 1.0
-    result = subprocess.run(cmd, capture_output=True, text=True,
-                            cwd=str(Path(__file__).resolve().parent.parent))
+    cmd = [
+        sys.executable,
+        "-m",
+        "stages.assign_cells",
+        "--cellvit-dir",
+        str(cellvit_dir),
+        "--features-csv",
+        str(features_path),
+        "--index",
+        str(tmp_path / "index.json"),
+        "--out",
+        str(out_dir),
+        "--max-dist",
+        "15.0",
+        "--type-percentile",
+        "0",
+    ]  # p0 → threshold = min value = 1.0
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
     summary = json.loads((out_dir / "cell_summary.json").read_text())
     # With p0 threshold, Keratin=1 >= 1.0 → cell should be tumor
-    assert summary["cell_types"].get("tumor", 0) >= 1, (
-        "With --type-percentile 0, even Keratin=1 should qualify as tumor"
-    )
+    assert (
+        summary["cell_types"].get("tumor", 0) >= 1
+    ), "With --type-percentile 0, even Keratin=1 should qualify as tumor"
 
 
 def test_cli_thresholds_config(tmp_path):
@@ -954,25 +1167,36 @@ def test_cli_thresholds_config(tmp_path):
     cellvit_dir = tmp_path / "cellvit"
     cellvit_dir.mkdir()
 
-    cell_data = {"cells": [
-        {"centroid": [64, 64], "contour": _small_rect_contour(64, 64),
-         "bbox": [[54, 54], [74, 74]], "type_cellvit": 1, "type_prob": 0.9}
-    ]}
+    cell_data = {
+        "cells": [
+            {
+                "centroid": [64, 64],
+                "contour": _small_rect_contour(64, 64),
+                "bbox": [[54, 54], [74, 74]],
+                "type_cellvit": 1,
+                "type_prob": 0.9,
+            }
+        ]
+    }
     (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
 
     all_markers = "Keratin,NaKATPase,CDX2,CD45,CD3,CD4,CD8a,CD20,CD45RO,CD68,CD163,FOXP3,PD1,aSMA,CD31,Desmin,Collagen,Ki67,PCNA,Vimentin,Ecadherin"
     header = f"Xt,Yt,{all_markers}\n"
     features_path = tmp_path / "CRC02.csv"
     features_path.write_text(
-        header +
-        "64,64,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
-        "200,200,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n" +
-        "300,300,200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+        header
+        + "64,64,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+        + "200,200,100,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
+        + "300,300,200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,500\n"
     )
     index_data = {
         "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
-        "stride": 256, "patch_size": 256, "tissue_min": 0.0,
-        "img_w": 256, "img_h": 256, "channels": [],
+        "stride": 256,
+        "patch_size": 256,
+        "tissue_min": 0.0,
+        "img_w": 256,
+        "img_h": 256,
+        "channels": [],
     }
     (tmp_path / "index.json").write_text(json.dumps(index_data))
 
@@ -981,18 +1205,32 @@ def test_cli_thresholds_config(tmp_path):
     config_path.write_text(json.dumps({"Keratin": 0}))
 
     out_dir = tmp_path / "out"
-    cmd = [sys.executable, "-m", "stages.assign_cells",
-           "--cellvit-dir", str(cellvit_dir),
-           "--features-csv", str(features_path),
-           "--index", str(tmp_path / "index.json"),
-           "--out", str(out_dir),
-           "--max-dist", "15.0",
-           "--thresholds-config", str(config_path)]
-    result = subprocess.run(cmd, capture_output=True, text=True,
-                            cwd=str(Path(__file__).resolve().parent.parent))
+    cmd = [
+        sys.executable,
+        "-m",
+        "stages.assign_cells",
+        "--cellvit-dir",
+        str(cellvit_dir),
+        "--features-csv",
+        str(features_path),
+        "--index",
+        str(tmp_path / "index.json"),
+        "--out",
+        str(out_dir),
+        "--max-dist",
+        "15.0",
+        "--thresholds-config",
+        str(config_path),
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
     assert result.returncode == 0, f"stderr: {result.stderr}"
 
     summary = json.loads((out_dir / "cell_summary.json").read_text())
-    assert summary["cell_types"].get("tumor", 0) >= 1, (
-        "With Keratin threshold overridden to p0, cell should be classified as tumor"
-    )
+    assert (
+        summary["cell_types"].get("tumor", 0) >= 1
+    ), "With Keratin threshold overridden to p0, cell should be classified as tumor"

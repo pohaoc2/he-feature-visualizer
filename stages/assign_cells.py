@@ -43,12 +43,12 @@ CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
 }
 
 CELLVIT_TYPE_MAP: dict[int, str] = {
-    0: "other",    # Unknown
-    1: "tumor",    # Neoplastic
-    2: "immune",   # Inflammatory
+    0: "other",  # Unknown
+    1: "tumor",  # Neoplastic
+    2: "immune",  # Inflammatory
     3: "stromal",  # Connective
-    4: "other",    # Dead — state assignment handles apoptotic
-    5: "tumor",    # Epithelial → tumor in CRC context
+    4: "other",  # Dead — state assignment handles apoptotic
+    5: "tumor",  # Epithelial → tumor in CRC context
 }
 
 # ---------------------------------------------------------------------------
@@ -56,9 +56,19 @@ CELLVIT_TYPE_MAP: dict[int, str] = {
 # ---------------------------------------------------------------------------
 
 TYPE_MARKERS: dict[str, list[str]] = {
-    "tumor":   ["Keratin", "NaKATPase", "CDX2"],
-    "immune":  ["CD45", "CD3", "CD4", "CD8a", "CD20",
-                "CD45RO", "CD68", "CD163", "FOXP3", "PD1"],
+    "tumor": ["Keratin", "NaKATPase", "CDX2"],
+    "immune": [
+        "CD45",
+        "CD3",
+        "CD4",
+        "CD8a",
+        "CD20",
+        "CD45RO",
+        "CD68",
+        "CD163",
+        "FOXP3",
+        "PD1",
+    ],
     "stromal": ["aSMA", "CD31", "Desmin", "Collagen"],
 }
 
@@ -211,7 +221,9 @@ def match_cells(
                 matched_row = df.iloc[idx]
                 marker_type = assign_type(matched_row, thresholds)
                 cell["cell_type"] = marker_type
-                cell["cell_type_confidence"] = "high" if marker_type == cellvit_type else "low"
+                cell["cell_type_confidence"] = (
+                    "high" if marker_type == cellvit_type else "low"
+                )
                 cell["cell_state"] = assign_state(matched_row, thresholds, type_cellvit)
             else:
                 cell["cell_type"] = cellvit_type
@@ -287,7 +299,9 @@ def compute_thresholds(
                     np.nanpercentile(df[marker].to_numpy(dtype=float), percentile)
                 )
         else:
-            logging.warning("Marker '%s' not found in CSV; threshold set to inf.", marker)
+            logging.warning(
+                "Marker '%s' not found in CSV; threshold set to inf.", marker
+            )
             thresholds[marker] = float("inf")
 
     # State markers — must not overlap with TYPE_MARKERS groups (would overwrite type threshold).
@@ -301,7 +315,9 @@ def compute_thresholds(
                     np.nanpercentile(df[marker].to_numpy(dtype=float), percentile)
                 )
         else:
-            logging.warning("Marker '%s' not found in CSV; threshold set to inf.", marker)
+            logging.warning(
+                "Marker '%s' not found in CSV; threshold set to inf.", marker
+            )
             thresholds[marker] = float("inf")
 
     # Ecadherin: 25th pct = low (EMT); 50th pct = high (intact junctions)
@@ -314,7 +330,9 @@ def compute_thresholds(
             thresholds["Ecadherin"] = float(np.nanpercentile(vals, ecad_low_pct))
             thresholds["Ecadherin_high"] = float(np.nanpercentile(vals, ecad_high_pct))
     else:
-        logging.warning("Marker 'Ecadherin' not found in CSV; thresholds set to extremes.")
+        logging.warning(
+            "Marker 'Ecadherin' not found in CSV; thresholds set to extremes."
+        )
         thresholds["Ecadherin"] = float("-inf")
         thresholds["Ecadherin_high"] = float("inf")
 
@@ -382,7 +400,7 @@ def main() -> None:
         type=float,
         default=95.0,
         help="Percentile for type marker thresholds (default: 95). "
-             "Per-marker overrides via --thresholds-config take precedence.",
+        "Per-marker overrides via --thresholds-config take precedence.",
     )
     parser.add_argument(
         "--state-percentile",
@@ -394,7 +412,7 @@ def main() -> None:
         "--thresholds-config",
         default=None,
         help="Path to JSON file with per-marker percentile overrides, "
-             'e.g. {"CD3": 85, "CDX2": 90}.',
+        'e.g. {"CD3": 85, "CDX2": 90}.',
     )
     args = parser.parse_args()
 
