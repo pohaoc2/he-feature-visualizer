@@ -48,304 +48,68 @@ import json
 import logging
 import pathlib
 
-import cv2
-import matplotlib
-import matplotlib.cm
 import numpy as np
-import scipy.ndimage
 from PIL import Image
 
+from stages.multiplex_layers_lib.channels import (
+    extract_channel,
+    get_channel_index,
+    get_first_matching_channel_index,
+    load_multiplex_patch,
+)
+from stages.multiplex_layers_lib.masks import (
+    _validate_odd_kernel_size,
+    apply_vessel_mask_quality_fallback,
+    binarize_otsu,
+    cleanup_vasculature_mask,
+    refine_vasculature_with_sma,
+)
+from stages.multiplex_layers_lib.pde import (
+    build_consumption_map,
+    build_vessel_source_map,
+    compute_metabolic_demand_map,
+    solve_steady_state_diffusion,
+)
+from stages.multiplex_layers_lib.render import (
+    apply_colormap,
+    make_glucose_map,
+    make_glucose_map_pde,
+    make_oxygen_map,
+    make_oxygen_map_pde,
+    make_vasculature_overlay,
+)
 from utils.channels import resolve_channel_indices
 from utils.normalize import percentile_norm
 
 # ---------------------------------------------------------------------------
-# Core functions
+# Re-exported helper functions
 # ---------------------------------------------------------------------------
 
-
-def load_multiplex_patch(npy_path: str) -> np.ndarray:
-    """Load and return (C, H, W) uint16 array from .npy file."""
-    return np.load(npy_path)
-
-
-def get_channel_index(channel_names: list[str], target: str) -> int:
-    """Return 0-based index of target in channel_names (case-insensitive).
-
-    Raises ValueError with a helpful message if not found.
-    """
-    target_lower = target.lower()
-    for idx, name in enumerate(channel_names):
-        if name.lower() == target_lower:
-            return idx
-    raise ValueError(
-        f"Channel '{target}' not found in channel list {channel_names}. "
-        f"Available (case-insensitive): {channel_names}"
-    )
-
-
-def get_first_matching_channel_index(
-    channel_names: list[str], candidates: list[str]
-) -> int | None:
-    """Return index of the first channel name found in *candidates*.
-
-    Matching is case-insensitive. Returns ``None`` if no candidate is present.
-    """
-    for name in candidates:
-        try:
-            return get_channel_index(channel_names, name)
-        except ValueError:
-            continue
-    return None
-
-
-def extract_channel(patch: np.ndarray, idx: int) -> np.ndarray:
-    """Return patch[idx] as (H, W) uint16 array."""
-    return patch[idx]
-
-
-def binarize_otsu(arr: np.ndarray) -> np.ndarray:
-    """Otsu threshold on (H, W) float32 [0,1] → bool mask.
-
-    Implementation:
-      scaled = (arr * 255).clip(0, 255).astype(np.uint8)
-      _, binary = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-      return binary.astype(bool)
-    """
-    scaled = (arr * 255).clip(0, 255).astype(np.uint8)
-    _, binary = cv2.threshold(scaled, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return binary.astype(bool)
-
-
-def apply_colormap(arr_01: np.ndarray, colormap: str) -> np.ndarray:
-    """Apply a matplotlib named colormap to (H, W) float32 [0,1].
-
-    Returns (H, W, 4) RGBA uint8.
-
-    Implementation:
-      cmap = matplotlib.cm.get_cmap(colormap)
-      rgba_float = cmap(arr_01)           # (H, W, 4) float64 in [0,1]
-      return (rgba_float * 255).clip(0, 255).astype(np.uint8)
-    """
-    try:
-        cmap = matplotlib.colormaps[colormap]
-    except (AttributeError, KeyError):
-        # Fallback for older matplotlib versions
-        cmap = matplotlib.cm.get_cmap(colormap)  # type: ignore[attr-defined]
-    rgba_float = cmap(arr_01)  # (H, W, 4) float64 in [0, 1]
-    return (rgba_float * 255).clip(0, 255).astype(np.uint8)
-
-
-def make_vasculature_overlay(
-    cd31_mask: np.ndarray, color: tuple = (255, 60, 0, 200)
-) -> np.ndarray:
-    """Binary bool mask → (H, W, 4) RGBA uint8.
-
-    True pixels → color tuple; False → (0, 0, 0, 0).
-    """
-    h, w = cd31_mask.shape
-    out = np.zeros((h, w, 4), dtype=np.uint8)
-    out[cd31_mask] = color
-    return out
-
-
-def refine_vasculature_with_sma(
-    cd31_mask: np.ndarray,
-    sma_mask: np.ndarray,
-    adjacency_px: int = 2,
-) -> np.ndarray:
-    """Refine a CD31 vessel mask with nearby SMA support.
-
-    SMA signal is only accepted if it lies within ``adjacency_px`` of CD31
-    pixels, which avoids global ``CD31 OR SMA`` overcalling in stroma.
-    """
-    if adjacency_px < 0:
-        raise ValueError("adjacency_px must be >= 0")
-
-    if not np.any(sma_mask):
-        return cd31_mask.copy()
-
-    k = 2 * adjacency_px + 1
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-    near_cd31 = cv2.dilate(cd31_mask.astype(np.uint8), kernel, iterations=1).astype(
-        bool
-    )
-    return cd31_mask | (sma_mask & near_cd31)
-
-
-def build_vessel_source_map(
-    vessel_mask: np.ndarray,
-    vessel_weight: np.ndarray | None = None,
-) -> np.ndarray:
-    """Build a normalized vessel source map in [0, 1] for PDE models."""
-    source = vessel_mask.astype(np.float32)
-    if vessel_weight is not None:
-        if vessel_weight.shape != vessel_mask.shape:
-            raise ValueError(
-                f"vessel_weight shape {vessel_weight.shape} must match "
-                f"vessel_mask shape {vessel_mask.shape}"
-            )
-        source = source * np.clip(vessel_weight.astype(np.float32), 0.0, 1.0)
-    return np.clip(source, 0.0, 1.0).astype(np.float32)
-
-
-def build_consumption_map(
-    demand_map: np.ndarray,
-    base_rate: float = 0.1,
-    demand_weight: float = 0.3,
-) -> np.ndarray:
-    """Build non-negative spatial consumption map k(x) from demand in [0,1]."""
-    if base_rate < 0:
-        raise ValueError("base_rate must be >= 0")
-    if demand_weight < 0:
-        raise ValueError("demand_weight must be >= 0")
-    demand_01 = np.clip(demand_map.astype(np.float32), 0.0, 1.0)
-    return (base_rate + demand_weight * demand_01).astype(np.float32)
-
-
-def solve_steady_state_diffusion(
-    source_map: np.ndarray,
-    consumption_map: np.ndarray,
-    diffusion: float = 1.0,
-    max_iters: int = 500,
-    tol: float = 1e-4,
-    relaxation: float = 1.0,
-) -> np.ndarray:
-    """Solve D*Laplacian(u) - k(x)u + s(x) = 0 on a 2D grid.
-
-    Uses Jacobi relaxation with edge padding (zero-flux/Neumann-style boundary).
-    Returns a bounded proxy field in [0, 1].
-    """
-    if diffusion <= 0:
-        raise ValueError("diffusion must be > 0")
-    if max_iters <= 0:
-        raise ValueError("max_iters must be > 0")
-    if tol <= 0:
-        raise ValueError("tol must be > 0")
-    if not (0.0 < relaxation <= 1.0):
-        raise ValueError("relaxation must be in (0, 1]")
-    if source_map.shape != consumption_map.shape:
-        raise ValueError(
-            f"source_map shape {source_map.shape} must match "
-            f"consumption_map shape {consumption_map.shape}"
-        )
-
-    source = np.clip(source_map.astype(np.float32), 0.0, 1.0)
-    consumption = np.clip(consumption_map.astype(np.float32), 0.0, None)
-    u = np.zeros_like(source, dtype=np.float32)
-    denom = (4.0 * diffusion + consumption).astype(np.float32)
-
-    for _ in range(max_iters):
-        padded = np.pad(u, 1, mode="edge")
-        neighbor_sum = (
-            padded[:-2, 1:-1] + padded[2:, 1:-1] + padded[1:-1, :-2] + padded[1:-1, 2:]
-        )
-
-        jacobi = (diffusion * neighbor_sum + source) / denom
-        jacobi = np.clip(jacobi, 0.0, 1.0)
-        if relaxation < 1.0:
-            u_next = ((1.0 - relaxation) * u + relaxation * jacobi).astype(np.float32)
-        else:
-            u_next = jacobi.astype(np.float32)
-
-        delta = float(np.max(np.abs(u_next - u)))
-        u = u_next
-        if delta < tol:
-            break
-
-    return u
-
-
-def compute_metabolic_demand_map(ki67: np.ndarray, pcna: np.ndarray) -> np.ndarray:
-    """Compute normalized proliferative demand map in [0, 1]."""
-    ki67_norm = percentile_norm(ki67.astype(np.float32))
-    pcna_norm = percentile_norm(pcna.astype(np.float32))
-    return np.maximum(ki67_norm, pcna_norm).astype(np.float32)
-
-
-def make_oxygen_map(cd31_mask: np.ndarray) -> np.ndarray:
-    """Oxygen proxy via distance transform.
-
-    Steps:
-      1. dist = scipy.ndimage.distance_transform_edt(~cd31_mask)   # 0 at vessel
-      2. norm = percentile_norm(dist.astype(np.float32))           # 0=vessel, 1=far
-      3. inverted = 1.0 - norm    # invert so 1=near vessel (oxygenated), 0=far (hypoxic)
-      4. apply_colormap(inverted, 'RdYlBu')
-         — RdYlBu: 0→red (hypoxic), 0.5→yellow, 1→blue (oxygenated)
-
-    Returns (H, W, 4) RGBA uint8.
-    """
-    dist = scipy.ndimage.distance_transform_edt(~cd31_mask)
-    norm = percentile_norm(dist.astype(np.float32))
-    inverted = (1.0 - norm).astype(np.float32)
-    return apply_colormap(inverted, "RdYlBu")
-
-
-def make_oxygen_map_pde(
-    vessel_mask: np.ndarray,
-    demand_map: np.ndarray,
-    diffusion: float = 1.0,
-    max_iters: int = 500,
-    tol: float = 1e-4,
-    base_consumption: float = 0.1,
-    demand_weight: float = 0.3,
-) -> np.ndarray:
-    """Oxygen proxy via steady-state diffusion-consumption PDE."""
-    source_map = build_vessel_source_map(vessel_mask)
-    consumption_map = build_consumption_map(
-        demand_map,
-        base_rate=base_consumption,
-        demand_weight=demand_weight,
-    )
-    oxygen_density = solve_steady_state_diffusion(
-        source_map=source_map,
-        consumption_map=consumption_map,
-        diffusion=diffusion,
-        max_iters=max_iters,
-        tol=tol,
-    )
-    return apply_colormap(oxygen_density, "RdYlBu")
-
-
-def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray) -> np.ndarray:
-    """Metabolic demand proxy.
-
-    Steps:
-      1. ki67_norm = percentile_norm(ki67.astype(np.float32))
-      2. pcna_norm = percentile_norm(pcna.astype(np.float32))
-      3. metabolic = np.maximum(ki67_norm, pcna_norm)
-      4. apply_colormap(metabolic, 'hot')
-         — hot: 0→black, 0.5→red, 1→yellow/white
-
-    Returns (H, W, 4) RGBA uint8.
-    """
-    metabolic = compute_metabolic_demand_map(ki67, pcna)
-    return apply_colormap(metabolic, "hot")
-
-
-def make_glucose_map_pde(
-    vessel_mask: np.ndarray,
-    demand_map: np.ndarray,
-    diffusion: float = 1.0,
-    max_iters: int = 500,
-    tol: float = 1e-4,
-    base_consumption: float = 0.1,
-    demand_weight: float = 0.3,
-) -> np.ndarray:
-    """Glucose proxy via steady-state diffusion-consumption PDE."""
-    source_map = build_vessel_source_map(vessel_mask)
-    consumption_map = build_consumption_map(
-        demand_map,
-        base_rate=base_consumption,
-        demand_weight=demand_weight,
-    )
-    glucose_density = solve_steady_state_diffusion(
-        source_map=source_map,
-        consumption_map=consumption_map,
-        diffusion=diffusion,
-        max_iters=max_iters,
-        tol=tol,
-    )
-    return apply_colormap(glucose_density, "hot")
+# Helper implementations now live in stages/multiplex_layers_lib/*.py.
+# They are imported above and remain available from this module for
+# backward compatibility with existing tests and scripts.
+__all__ = [
+    "load_multiplex_patch",
+    "get_channel_index",
+    "get_first_matching_channel_index",
+    "extract_channel",
+    "binarize_otsu",
+    "apply_colormap",
+    "make_vasculature_overlay",
+    "refine_vasculature_with_sma",
+    "_validate_odd_kernel_size",
+    "cleanup_vasculature_mask",
+    "apply_vessel_mask_quality_fallback",
+    "build_vessel_source_map",
+    "build_consumption_map",
+    "solve_steady_state_diffusion",
+    "compute_metabolic_demand_map",
+    "make_oxygen_map",
+    "make_oxygen_map_pde",
+    "make_glucose_map",
+    "make_glucose_map_pde",
+    "main",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -502,11 +266,64 @@ def main() -> None:
             "Used only with --vasc-sma-refine."
         ),
     )
+    parser.add_argument(
+        "--vasc-open-kernel-size",
+        type=int,
+        default=0,
+        help=(
+            "Optional odd kernel size for vessel-mask morphological opening "
+            "(0 disables)."
+        ),
+    )
+    parser.add_argument(
+        "--vasc-close-kernel-size",
+        type=int,
+        default=0,
+        help=(
+            "Optional odd kernel size for vessel-mask morphological closing "
+            "(0 disables)."
+        ),
+    )
+    parser.add_argument(
+        "--vasc-min-area",
+        type=int,
+        default=0,
+        help=(
+            "Optional minimum connected-component area for vessel masks "
+            "(0 disables filtering)."
+        ),
+    )
+    parser.add_argument(
+        "--vasc-noisy-max-fraction",
+        type=float,
+        default=0.98,
+        help=(
+            "If vessel-mask coverage is >= this fraction, treat as noisy and "
+            "fallback to CD31-only mask."
+        ),
+    )
     args = parser.parse_args()
+
+    # Validate vessel-mask cleanup options once at startup.
+    _validate_odd_kernel_size("vasc_open_kernel_size", args.vasc_open_kernel_size)
+    _validate_odd_kernel_size("vasc_close_kernel_size", args.vasc_close_kernel_size)
+    if args.vasc_min_area < 0:
+        parser.error("--vasc-min-area must be >= 0")
+    if not (0.0 < args.vasc_noisy_max_fraction <= 1.0):
+        parser.error("--vasc-noisy-max-fraction must be in (0, 1]")
 
     multiplex_dir = pathlib.Path(args.multiplex_dir)
     index_path = pathlib.Path(args.index)
     out_dir = pathlib.Path(args.out)
+
+    if args.oxygen_model == "pde":
+        log.info(
+            "Oxygen model: PDE (relative density proxy, not absolute concentration)."
+        )
+    if args.glucose_model == "pde":
+        log.info(
+            "Glucose model: PDE (relative density proxy, not absolute concentration)."
+        )
 
     # ------------------------------------------------------------------
     # 1. Validate channel names against metadata CSV
@@ -586,22 +403,54 @@ def main() -> None:
 
         # c. Vasculature overlay
         cd31_norm = percentile_norm(cd31_raw.astype(np.float32))
-        cd31_mask = binarize_otsu(cd31_norm)
+        cd31_base_mask = binarize_otsu(cd31_norm)
+        vessel_mask = cd31_base_mask.copy()
         if sma_raw is not None:
             sma_norm = percentile_norm(sma_raw.astype(np.float32))
             sma_mask = binarize_otsu(sma_norm)
-            cd31_mask = refine_vasculature_with_sma(
-                cd31_mask,
+            vessel_mask = refine_vasculature_with_sma(
+                vessel_mask,
                 sma_mask,
                 adjacency_px=args.sma_adjacency_px,
             )
-        vasc_rgba = make_vasculature_overlay(cd31_mask)
+        vessel_mask = cleanup_vasculature_mask(
+            vessel_mask,
+            open_kernel_size=args.vasc_open_kernel_size,
+            close_kernel_size=args.vasc_close_kernel_size,
+            min_area=args.vasc_min_area,
+        )
+        vessel_mask, vessel_status = apply_vessel_mask_quality_fallback(
+            candidate_mask=vessel_mask,
+            cd31_fallback_mask=cd31_base_mask,
+            noisy_max_fraction=args.vasc_noisy_max_fraction,
+        )
+        if vessel_status == "empty_fallback":
+            log.warning(
+                "Patch %s: empty vessel mask after refinement/cleanup; "
+                "falling back to CD31-only mask.",
+                patch_id,
+            )
+        elif vessel_status == "noisy_fallback":
+            log.warning(
+                "Patch %s: vessel mask coverage exceeded noisy threshold "
+                "(>= %.3f); falling back to CD31-only mask.",
+                patch_id,
+                args.vasc_noisy_max_fraction,
+            )
+        elif vessel_status == "empty":
+            log.warning(
+                "Patch %s: vessel mask is empty; proceeding with deterministic "
+                "empty mask.",
+                patch_id,
+            )
+
+        vasc_rgba = make_vasculature_overlay(vessel_mask)
         demand_map = compute_metabolic_demand_map(ki67_raw, pcna_raw)
 
         # d. Oxygen map
         if args.oxygen_model == "pde":
             oxygen_rgba = make_oxygen_map_pde(
-                vessel_mask=cd31_mask,
+                vessel_mask=vessel_mask,
                 demand_map=demand_map,
                 diffusion=args.pde_diffusion,
                 max_iters=args.pde_max_iters,
@@ -610,12 +459,12 @@ def main() -> None:
                 demand_weight=args.oxygen_consumption_demand_weight,
             )
         else:
-            oxygen_rgba = make_oxygen_map(cd31_mask)
+            oxygen_rgba = make_oxygen_map(vessel_mask)
 
         # e. Glucose / metabolic demand map
         if args.glucose_model == "pde":
             glucose_rgba = make_glucose_map_pde(
-                vessel_mask=cd31_mask,
+                vessel_mask=vessel_mask,
                 demand_map=demand_map,
                 diffusion=args.pde_diffusion,
                 max_iters=args.pde_max_iters,
@@ -630,7 +479,7 @@ def main() -> None:
         Image.fromarray(vasc_rgba, "RGBA").save(vasc_dir / f"{patch_id}.png")
         np.save(
             vasc_mask_dir / f"{patch_id}.npy",
-            cd31_mask.astype(bool),
+            vessel_mask.astype(bool),
             allow_pickle=False,
         )
         Image.fromarray(oxygen_rgba, "RGBA").save(oxygen_dir / f"{patch_id}.png")

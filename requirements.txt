@@ -1,6 +1,6 @@
 tifffile>=2024.5.22
-opencv-python-headless>=4.10
-zarr>=2.18,<3.0
+opencv-python-headless>=4.10  # provides cv2
+zarr>=3.0,<4.0
 fastapi>=0.104
 uvicorn[standard]>=0.24
 pandas>=2.0

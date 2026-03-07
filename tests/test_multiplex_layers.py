@@ -362,6 +362,56 @@ def test_refine_vasculature_with_sma_keeps_only_adjacent_sma():
     assert not refined[0, 0], "Far SMA-positive pixel should not be included"
 
 
+def test_cleanup_vasculature_mask_removes_small_components():
+    """Cleanup should remove components smaller than min_area."""
+    from stages.multiplex_layers import cleanup_vasculature_mask  # noqa: WPS433
+
+    mask = np.zeros((20, 20), dtype=bool)
+    mask[2:6, 2:6] = True  # area 16, should remain
+    mask[10, 10] = True  # area 1, should be removed
+    mask[15, 15] = True  # area 1, should be removed
+
+    cleaned = cleanup_vasculature_mask(
+        mask,
+        open_kernel_size=0,
+        close_kernel_size=0,
+        min_area=4,
+    )
+
+    assert cleaned.dtype == bool
+    assert cleaned[3, 3], "Large component should be retained"
+    assert not cleaned[10, 10], "Small speckle should be removed"
+    assert not cleaned[15, 15], "Small speckle should be removed"
+
+
+def test_apply_vessel_mask_quality_fallback_handles_empty_and_noisy():
+    """Quality fallback should handle empty and noisy masks deterministically."""
+    from stages.multiplex_layers import (
+        apply_vessel_mask_quality_fallback,
+    )  # noqa: WPS433
+
+    fallback = np.zeros((8, 8), dtype=bool)
+    fallback[3:5, 3:5] = True
+
+    empty = np.zeros((8, 8), dtype=bool)
+    empty_out, empty_status = apply_vessel_mask_quality_fallback(
+        candidate_mask=empty,
+        cd31_fallback_mask=fallback,
+        noisy_max_fraction=0.9,
+    )
+    assert empty_status == "empty_fallback"
+    assert np.array_equal(empty_out, fallback)
+
+    noisy = np.ones((8, 8), dtype=bool)
+    noisy_out, noisy_status = apply_vessel_mask_quality_fallback(
+        candidate_mask=noisy,
+        cd31_fallback_mask=fallback,
+        noisy_max_fraction=0.9,
+    )
+    assert noisy_status == "noisy_fallback"
+    assert np.array_equal(noisy_out, fallback)
+
+
 def test_build_vessel_source_map_applies_mask_and_weight():
     """Vessel source map should keep vessel pixels and apply optional weighting."""
     from stages.multiplex_layers import build_vessel_source_map  # noqa: WPS433
@@ -899,3 +949,207 @@ def test_cli_runs_pde_models_and_writes_outputs(tmp_path):
     ).exists(), "vasculature_mask/0_0.npy must be created in pde mode"
     assert (out_dir / "oxygen" / "0_0.png").exists(), "oxygen/0_0.png must be created"
     assert (out_dir / "glucose" / "0_0.png").exists(), "glucose/0_0.png must be created"
+
+
+def test_cli_no_vessel_pixels_produces_deterministic_empty_mask(tmp_path):
+    """No-vessel input should complete and write an all-false vessel mask."""
+    mux_dir = tmp_path / "multiplex"
+    mux_dir.mkdir(parents=True)
+
+    # CD31 is all zeros; Ki67 carries a small nonzero region for nontrivial demand map.
+    patch = np.zeros((3, 96, 96), dtype=np.uint16)
+    patch[1, 40:56, 40:56] = 6000
+    np.save(str(mux_dir / "0_0.npy"), patch)
+
+    meta_path = tmp_path / "metadata.csv"
+    _write_metadata_csv(
+        meta_path,
+        {"CD31": "Channel:0:0", "Ki67": "Channel:0:1", "PCNA": "Channel:0:2"},
+    )
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 96, "y1": 96}],
+        "patch_size": 96,
+        "stride": 96,
+        "channels": ["CD31", "Ki67", "PCNA"],
+    }
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps(index_data))
+
+    out_dir = tmp_path / "out"
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        str(mux_dir),
+        "--index",
+        str(index_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "CD31",
+        "Ki67",
+        "PCNA",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, (
+        f"stages.multiplex_layers exited with code {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+    vasc_mask = np.load(str(out_dir / "vasculature_mask" / "0_0.npy"))
+    assert vasc_mask.dtype == np.bool_
+    assert not np.any(vasc_mask), "No-vessel patch should produce an all-false mask"
+    assert "vessel mask is empty" in result.stderr
+
+
+def test_cli_uniform_channels_runs_and_writes_outputs(tmp_path):
+    """Uniform channels should not crash and should still write all artifacts."""
+    mux_dir = tmp_path / "multiplex"
+    mux_dir.mkdir(parents=True)
+
+    # Uniform values across all channels exercise percentile_norm degenerate path.
+    patch = np.full((3, 80, 80), 1234, dtype=np.uint16)
+    np.save(str(mux_dir / "0_0.npy"), patch)
+
+    meta_path = tmp_path / "metadata.csv"
+    _write_metadata_csv(
+        meta_path,
+        {"CD31": "Channel:0:0", "Ki67": "Channel:0:1", "PCNA": "Channel:0:2"},
+    )
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 80, "y1": 80}],
+        "patch_size": 80,
+        "stride": 80,
+        "channels": ["CD31", "Ki67", "PCNA"],
+    }
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps(index_data))
+
+    out_dir = tmp_path / "out"
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        str(mux_dir),
+        "--index",
+        str(index_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "CD31",
+        "Ki67",
+        "PCNA",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, (
+        f"stages.multiplex_layers exited with code {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+    assert (out_dir / "vasculature_mask" / "0_0.npy").exists()
+    assert (out_dir / "vasculature" / "0_0.png").exists()
+    assert (out_dir / "oxygen" / "0_0.png").exists()
+    assert (out_dir / "glucose" / "0_0.png").exists()
+
+
+def test_cli_missing_sma_channel_without_refinement_runs(tmp_path):
+    """Missing SMA channel should be irrelevant when SMA refinement is disabled."""
+    mux_dir = tmp_path / "multiplex"
+    mux_dir.mkdir(parents=True)
+
+    patch = np.zeros((3, 96, 96), dtype=np.uint16)
+    patch[0, 42:54, 42:54] = 5000
+    patch[1, 36:60, 36:60] = 7000
+    np.save(str(mux_dir / "0_0.npy"), patch)
+
+    meta_path = tmp_path / "metadata.csv"
+    _write_metadata_csv(
+        meta_path,
+        {"CD31": "Channel:0:0", "Ki67": "Channel:0:1", "PCNA": "Channel:0:2"},
+    )
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 96, "y1": 96}],
+        "patch_size": 96,
+        "stride": 96,
+        "channels": ["CD31", "Ki67", "PCNA"],
+    }
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps(index_data))
+
+    out_dir = tmp_path / "out"
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        str(mux_dir),
+        "--index",
+        str(index_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "CD31",
+        "Ki67",
+        "PCNA",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, (
+        f"stages.multiplex_layers exited with code {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "SMA refinement requested" not in result.stderr
+
+
+def test_cli_missing_sma_channel_with_refinement_warns_and_runs(tmp_path):
+    """Enabled SMA refinement should warn and continue when SMA channel is absent."""
+    mux_dir = tmp_path / "multiplex"
+    mux_dir.mkdir(parents=True)
+
+    patch = np.zeros((3, 96, 96), dtype=np.uint16)
+    patch[0, 42:54, 42:54] = 5000
+    patch[1, 36:60, 36:60] = 7000
+    np.save(str(mux_dir / "0_0.npy"), patch)
+
+    meta_path = tmp_path / "metadata.csv"
+    _write_metadata_csv(
+        meta_path,
+        {"CD31": "Channel:0:0", "Ki67": "Channel:0:1", "PCNA": "Channel:0:2"},
+    )
+
+    index_data = {
+        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 96, "y1": 96}],
+        "patch_size": 96,
+        "stride": 96,
+        "channels": ["CD31", "Ki67", "PCNA"],
+    }
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps(index_data))
+
+    out_dir = tmp_path / "out"
+    cmd = [
+        *_multiplex_layers_cmd(),
+        "--multiplex-dir",
+        str(mux_dir),
+        "--index",
+        str(index_path),
+        "--metadata-csv",
+        str(meta_path),
+        "--out",
+        str(out_dir),
+        "--channels",
+        "CD31",
+        "Ki67",
+        "PCNA",
+        "--vasc-sma-refine",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, (
+        f"stages.multiplex_layers exited with code {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "SMA refinement requested, but none of" in result.stderr

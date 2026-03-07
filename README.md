@@ -238,14 +238,70 @@ python -m stages.assign_cells \
 
 ## Stage 4 — Multiplex Layers
 
-Derive vasculature and oxygen/glucose layers from multiplex channels:
+Derive vasculature and oxygen/glucose layers from multiplex channels.
+
+Outputs per patch:
+- `processed/vasculature/{x0}_{y0}.png` (RGBA vessel overlay)
+- `processed/vasculature_mask/{x0}_{y0}.npy` (bool vessel mask)
+- `processed/oxygen/{x0}_{y0}.png` (oxygen proxy)
+- `processed/glucose/{x0}_{y0}.png` (glucose proxy)
+
+### Legacy-compatible run (default models)
 
 ```bash
 python -m stages.multiplex_layers \
   --multiplex-dir processed/multiplex/ \
+  --index processed/index.json \
   --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
-  --out processed/
+  --out processed/ \
+  --oxygen-model distance \
+  --glucose-model max
 ```
+
+### PDE proxy run (oxygen + glucose)
+
+```bash
+python -m stages.multiplex_layers \
+  --multiplex-dir processed/multiplex/ \
+  --index processed/index.json \
+  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
+  --out processed/ \
+  --oxygen-model pde \
+  --glucose-model pde \
+  --pde-max-iters 500 \
+  --pde-tol 1e-4 \
+  --pde-diffusion 1.0 \
+  --oxygen-consumption-base 0.1 \
+  --oxygen-consumption-demand-weight 0.3 \
+  --glucose-consumption-base 0.1 \
+  --glucose-consumption-demand-weight 0.3
+```
+
+### Optional vessel-mask refinement and cleanup
+
+```bash
+python -m stages.multiplex_layers \
+  --multiplex-dir processed/multiplex/ \
+  --index processed/index.json \
+  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
+  --out processed/ \
+  --vasc-sma-refine \
+  --sma-adjacency-px 2 \
+  --vasc-open-kernel-size 3 \
+  --vasc-close-kernel-size 3 \
+  --vasc-min-area 16 \
+  --vasc-noisy-max-fraction 0.98
+```
+
+### Suggested presets
+
+- Exploratory analysis: use PDE models and SMA-assisted vessel cleanup.
+- Strict reproducibility: set all model and cleanup flags explicitly in the command and keep them fixed across runs.
+
+### Interpretation caveats
+
+- Oxygen and glucose PDE maps are relative density proxies, not absolute physiological concentrations.
+- Output quality is sensitive to channel quality (especially CD31/aSMA/Ki67/PCNA) and upstream registration/segmentation quality.
 
 ---
 
