@@ -250,6 +250,33 @@ class TestRegisterHEMXAffine:
         assert abs(M[0, 0] - 1.0) < 0.2, f"M[0,0]={M[0,0]}: expected ~1.0"
         assert abs(M[1, 1] - 1.0) < 0.2, f"M[1,1]={M[1,1]}: expected ~1.0"
 
+    def test_recenters_residual_centroid_translation(self, monkeypatch):
+        """Residual centroid bias after ECC is corrected via translation recentering."""
+        he_mask = np.zeros((64, 64), dtype=bool)
+        he_mask[18:46, 18:46] = True
+        mx_mask = np.zeros((64, 64), dtype=bool)
+        # Shift MX tissue down by +5 px relative to H&E.
+        mx_mask[23:51, 18:46] = True
+
+        def _fake_ecc(*args, **kwargs):
+            return 1.0, np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+
+        monkeypatch.setattr(m._registration.cv2, "findTransformECC", _fake_ecc)
+
+        M = m.register_he_mx_affine(
+            he_mask,
+            mx_mask,
+            ds=1,
+            he_h=64,
+            he_w=64,
+            mx_h=64,
+            mx_w=64,
+        )
+
+        # Positive ty in a WARP_INVERSE_MAP matrix moves warped content upward.
+        # MX was low by ~5 px, so recentering should add roughly +5 px ty.
+        assert M[1, 2] == pytest.approx(5.0, abs=1.0)
+
     def test_no_register_branch_uses_scale_matrix(self, tmp_path):
         """--no-register CLI flag stores a pure scale matrix in index.json."""
         he_path = tmp_path / "he.ome.tif"

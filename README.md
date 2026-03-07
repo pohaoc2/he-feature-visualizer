@@ -36,7 +36,9 @@ tools/
 cellvit_backend.py       # CellViT model integration stub
 notebooks/               # Stage 2: GPU cell segmentation on Colab
 server.py                # FastAPI server — DZI tiles, heatmap/cell data (WSI viewer)
+server_minerva.py        # Minimal Minerva-style FastAPI server (H&E + group overlays)
 preprocess.py            # One-time preprocessing: CSV + TIFF → cache/ (WSI viewer)
+viewer_minerva.html      # Minimal Minerva-style frontend (OpenSeadragon + group buttons)
 tests/                   # pytest test suite
 ```
 
@@ -407,6 +409,32 @@ Thresholds are the **95th percentile** of each marker across all cells.
 | CD4         | CD4 > p95     | Yellow |
 | CD20        | CD20 > p95    | Cyan   |
 
+
+---
+
+## Simple Minerva-Style Viewer
+
+If you want a minimal interactive viewer (zoom/pan + group switching only), use the isolated Minerva-style entrypoint:
+
+```bash
+python server_minerva.py \
+  --image data/WD-76845-096.ome.tif \
+  --features data/WD-76845-097.csv \
+  --port 8010
+```
+
+Open **[http://127.0.0.1:8010](http://127.0.0.1:8010)**.
+
+### Included groups (default)
+
+- `H&E` (no overlay)
+- `Immune` (`CD45`, `CD3`, `CD4`, `CD8a`, `CD20`, `CD68`, `CD163`, `FOXP3`, `CD45RO`)
+- `Tissue/Stromal` (`aSMA`, `Vimentin`, `Collagen`, `Desmin`)
+- `Cancer` (`Keratin`, `CDX2`, `Ecadherin`)
+- `Proliferative` (`Ki67`, `Ki67_570`, `PCNA`)
+- `Vasculature` (`CD31`)
+
+Each marker uses a positivity cutoff at the selected percentile (default: `--marker-percentile 95`).
 
 ---
 

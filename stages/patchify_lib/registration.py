@@ -9,6 +9,14 @@ REG_MODE_AFFINE = "affine"
 REG_MODE_DEFORMABLE = "deformable"
 
 
+def _mask_centroid_or_none(mask: np.ndarray) -> tuple[float, float] | None:
+    """Return centroid (x, y) for nonzero mask pixels, or None when empty."""
+    ys, xs = np.nonzero(mask > 0)
+    if len(xs) == 0:
+        return None
+    return float(xs.mean()), float(ys.mean())
+
+
 def register_he_mx_affine(  # pylint: disable=unused-argument
     he_mask: np.ndarray,
     mx_mask: np.ndarray,
@@ -39,6 +47,30 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
         print(f"  WARNING: ECC registration failed ({e}). Falling back to mpp scale.")
         scale = he_w / mx_w
         return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
+
+    # ECC occasionally leaves a small global translation bias on sparse masks.
+    # Re-center warped MX tissue centroid to the H&E centroid (capped).
+    mx_warped = cv2.warpAffine(
+        mx_resized,
+        m_ov.astype(np.float32),
+        (he_ov_w, he_ov_h),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    he_ctr = _mask_centroid_or_none(he_f32 > 0.5)
+    mx_ctr = _mask_centroid_or_none(mx_warped > 0.5)
+    if he_ctr is not None and mx_ctr is not None:
+        dx = float(mx_ctr[0] - he_ctr[0])
+        dy = float(mx_ctr[1] - he_ctr[1])
+        max_recentre_px = 12.0
+        shift_mag = float(np.hypot(dx, dy))
+        if shift_mag > max_recentre_px and shift_mag > 1e-9:
+            scale = max_recentre_px / shift_mag
+            dx *= scale
+            dy *= scale
+        m_ov[0, 2] += dx
+        m_ov[1, 2] += dy
 
     rx = he_ov_w / mx_ov_w
     ry = he_ov_h / mx_ov_h
