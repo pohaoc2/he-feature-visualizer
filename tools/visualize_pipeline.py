@@ -531,13 +531,11 @@ def make_grid_figure(
         cell_types_png = processed_dir / "cell_types" / f"{patch_key}.png"
         cell_states_png = processed_dir / "cell_states" / f"{patch_key}.png"
 
-        # Original location only on first row; blank panel for subsequent rows
-        if row_idx == 0:
-            panel_loc = build_original_location(
-                he_image_path, x0, y0, patch_size, img_w, img_h
-            )
-        else:
-            panel_loc = np.zeros((256, 256, 3), dtype=np.uint8)
+        # Show the original-location panel for every row so each selected patch
+        # has its own red rectangle in the first column.
+        panel_loc = build_original_location(
+            he_image_path, x0, y0, patch_size, img_w, img_h
+        )
 
         panel_he = build_he_panel(he_png)
         panel_mx = build_multiplex_panel(
