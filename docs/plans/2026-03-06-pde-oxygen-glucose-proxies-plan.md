@@ -8,6 +8,11 @@
 
 Add an explicit binary vasculature mask product and optional PDE-based oxygen/glucose density proxies while keeping current behavior available for backward compatibility.
 
+## Summary
+
+1. For `u in {oxygen, glucose}`, solve `D * Laplacian(u)(x) - (k0 + k1 * m(x)) * u(x) + I_V(x) = 0`, where `I_V(x) = 1` on vessels and `0` elsewhere.
+2. Approximate gradients by `grad u(x, y) ~= ((u(x+dx, y) - u(x-dx, y)) / (2*dx), (u(x, y+dy) - u(x, y-dy)) / (2*dy))`.
+
 ## Why This Plan
 
 1. Current oxygen map is distance-based from CD31 and ignores consumption heterogeneity.
@@ -125,4 +130,3 @@ Add an explicit binary vasculature mask product and optional PDE-based oxygen/gl
   - **Mitigation:** require CD31 adjacency gate for SMA-assisted pixels.
 3. **Risk:** Users interpret maps as absolute physiology.
   - **Mitigation:** explicit “relative proxy” labeling in CLI logs and README.
-

@@ -35,7 +35,6 @@ tools/
   debug_match_he_mul.py  # Interactive/headless H&E↔multiplex alignment viewer (QC)
   visualize_pipeline.py  # 6-panel pipeline summary figure
   view_groups_web.py     # Local FastAPI web viewer (H&E + multiplex groups)
-  view_groups_matplotlib.py  # Desktop interactive viewer (Matplotlib)
 cellvit_backend.py       # CellViT model integration stub
 notebooks/               # Stage 2: GPU cell segmentation on Colab
 tests/                   # pytest test suite
@@ -47,16 +46,16 @@ tests/                   # pytest test suite
 Local machine                          Google Colab (GPU)
 ─────────────────────────────          ──────────────────────────────────
 Stage 1: python -m stages.patchify
-  → processed/he/*.png
-  → processed/multiplex/*.npy
-  → processed/masks/*.npy   (optional, if --mask-image given)
-  → processed/index.json
+  → processed_wd/he/*.png
+  → processed_wd/multiplex/*.npy
+  → processed_wd/masks/*.npy   (optional, if --mask-image given)
+  → processed_wd/index.json
          │
          │ upload patches (aws s3 sync)
          ▼
       [AWS S3]                    ──►   cellvit_colab_stage2.ipynb
                                           ↓
-                                   processed/cellvit/*.json
+                                   processed_wd/cellvit/*.json
          ◄─────────────────────────────────
          │ download results
          ▼
@@ -79,9 +78,10 @@ pip install -r requirements.txt
 ```
 lin-2021-crc-atlas/
 └── data/
-    ├── CRC02-HE.ome.tif
-    ├── CRC02.ome.tif
-    └── CRC202105 HTAN channel metadata.csv
+    ├── WD-76845-096.ome.tif
+    ├── WD-76845-097.ome.tif
+    ├── WD-76845-097-metadata.csv
+    └── WD-76845-097.csv
 ```
 
 ---
@@ -99,7 +99,7 @@ python3 -m stages.patchify \
   --channels DNA \
   # --register
   # add --no-register to skip ECC and use mpp-ratio scaling only
-  # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed/masks/
+  # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed_wd/masks/
 ```
 
 ### Registration
@@ -115,15 +115,15 @@ The resulting 2×3 `warp_matrix` (H&E full-res → MX full-res) is stored in `in
 
 | Output                      | Contents                                                                        | Used in         |
 | --------------------------- | ------------------------------------------------------------------------------- | --------------- |
-| `processed/he/`             | RGB PNG patches                                                                 | Stage 2 (Colab) |
-| `processed/multiplex/`      | Per-channel `.npy` arrays (uint16)                                              | Stage 4         |
-| `processed/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given | Downstream      |
-| `processed/index.json`      | Patch coordinate index + `warp_matrix` + `registration_mode` + flags per patch  | All stages      |
-| `processed/registration/`   | `affine.json`, `qc_metrics.json`, `final_transform.json`, optional `deform_field.npz` | QC / debug |
-| `processed/vis_patches.jpg` | H&E + multiplex overview with patch grid                                        | QC              |
+| `processed_wd/he/`             | RGB PNG patches                                                                 | Stage 2 (Colab) |
+| `processed_wd/multiplex/`      | Per-channel `.npy` arrays (uint16)                                              | Stage 4         |
+| `processed_wd/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given | Downstream      |
+| `processed_wd/index.json`      | Patch coordinate index + `warp_matrix` + `registration_mode` + flags per patch  | All stages      |
+| `processed_wd/registration/`   | `affine.json`, `qc_metrics.json`, `final_transform.json`, optional `deform_field.npz` | QC / debug |
+| `processed_wd/vis_patches.jpg` | H&E + multiplex overview with patch grid                                        | QC              |
 
 
-Only `processed/he/` needs to be uploaded to Colab for Stage 2.
+Only `processed_wd/he/` needs to be uploaded to Colab for Stage 2.
 
 ---
 
@@ -142,7 +142,7 @@ Colab provides free T4 GPU access — sufficient for up to ~2000 patches.
 ### Upload patches
 
 ```bash
-aws s3 sync processed/he/ s3://YOUR-BUCKET/he-feature-visualizer/processed/he/ --storage-class STANDARD_IA
+aws s3 sync processed_wd/he/ s3://YOUR-BUCKET/he-feature-visualizer/processed_wd/he/ --storage-class STANDARD_IA
 ```
 
 Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negligible on STANDARD_IA storage class.
@@ -159,7 +159,7 @@ Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negl
 | ----------------- | ------------------------------------ | -------------------------------------- |
 | `STORAGE_BACKEND` | Storage backend                      | `'s3'`                                 |
 | `S3_BUCKET`       | S3 bucket name                       | `'my-bucket'`                          |
-| `S3_HE_PREFIX`    | S3 key prefix for patches            | `'he-feature-visualizer/processed/he'` |
+| `S3_HE_PREFIX`    | S3 key prefix for patches            | `'he-feature-visualizer/processed_wd/he'` |
 | `MODEL_VARIANT`   | `'CellViT-256'` or `'CellViT-SAM-H'` | `'CellViT-256'`                        |
 | `BATCH_SIZE`      | Patches per GPU batch                | `32` (reduce to 8 if OOM)              |
 | `MAGNIFICATION`   | Scan magnification                   | `40` (use `20` if 20x slide)           |
@@ -182,7 +182,7 @@ Expected timeline on a T4 GPU:
 ### Download results
 
 ```bash
-aws s3 sync s3://YOUR-BUCKET/he-feature-visualizer/processed/cellvit/ processed/cellvit/
+aws s3 sync s3://YOUR-BUCKET/he-feature-visualizer/processed_wd/cellvit/ processed_wd/cellvit/
 ```
 
 ### Resuming interrupted runs
@@ -229,10 +229,10 @@ Assign cell types and states using CellViT detections combined with multiplex ma
 
 ```bash
 python -m stages.assign_cells \
-  --cellvit-dir processed/cellvit/ \
-  --features-csv data/CRC02.csv \
-  --out processed/ \
-  --index processed/index.json \
+  --cellvit-dir processed_wd/cellvit/ \
+  --features-csv data/WD-76845-097.csv \
+  --out processed_wd/ \
+  --index processed_wd/index.json \
   --coord-scale 0.5
 ```
 
@@ -243,19 +243,19 @@ python -m stages.assign_cells \
 Derive vasculature and oxygen/glucose layers from multiplex channels.
 
 Outputs per patch:
-- `processed/vasculature/{x0}_{y0}.png` (RGBA vessel overlay)
-- `processed/vasculature_mask/{x0}_{y0}.npy` (bool vessel mask)
-- `processed/oxygen/{x0}_{y0}.png` (oxygen proxy)
-- `processed/glucose/{x0}_{y0}.png` (glucose proxy)
+- `processed_wd/vasculature/{x0}_{y0}.png` (RGBA vessel overlay)
+- `processed_wd/vasculature_mask/{x0}_{y0}.npy` (bool vessel mask)
+- `processed_wd/oxygen/{x0}_{y0}.png` (oxygen proxy)
+- `processed_wd/glucose/{x0}_{y0}.png` (glucose proxy)
 
 ### Legacy-compatible run (default models)
 
 ```bash
 python -m stages.multiplex_layers \
-  --multiplex-dir processed/multiplex/ \
-  --index processed/index.json \
-  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
-  --out processed/ \
+  --multiplex-dir processed_wd/multiplex/ \
+  --index processed_wd/index.json \
+  --metadata-csv data/WD-76845-097-metadata.csv \
+  --out processed_wd/ \
   --oxygen-model distance \
   --glucose-model max
 ```
@@ -264,10 +264,10 @@ python -m stages.multiplex_layers \
 
 ```bash
 python -m stages.multiplex_layers \
-  --multiplex-dir processed/multiplex/ \
-  --index processed/index.json \
-  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
-  --out processed/ \
+  --multiplex-dir processed_wd/multiplex/ \
+  --index processed_wd/index.json \
+  --metadata-csv data/WD-76845-097-metadata.csv \
+  --out processed_wd/ \
   --oxygen-model pde \
   --glucose-model pde \
   --pde-max-iters 500 \
@@ -283,10 +283,10 @@ python -m stages.multiplex_layers \
 
 ```bash
 python -m stages.multiplex_layers \
-  --multiplex-dir processed/multiplex/ \
-  --index processed/index.json \
-  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
-  --out processed/ \
+  --multiplex-dir processed_wd/multiplex/ \
+  --index processed_wd/index.json \
+  --metadata-csv data/WD-76845-097-metadata.csv \
+  --out processed_wd/ \
   --vasc-sma-refine \
   --sma-adjacency-px 2 \
   --vasc-open-kernel-size 3 \
@@ -314,11 +314,11 @@ Use `tools.debug_match_he_mul` to visually verify H&E↔multiplex registration. 
 ```bash
 # Interactive viewer (requires display)
 python -m tools.debug_match_he_mul \
-  --he-image data/CRC02-HE.ome.tif \
-  --multiplex-image data/CRC02.ome.tif \
-  --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \
+  --he-image data/WD-76845-096.ome.tif \
+  --multiplex-image data/WD-76845-097.ome.tif \
+  --metadata-csv data/WD-76845-097-metadata.csv \
   --downsample 64 \
-  --index-json processed/index.json
+  --index-json processed_wd/index.json
 
 # Headless — save static 3-panel PNG (no display needed)
 python -m tools.debug_match_he_mul \
@@ -340,16 +340,16 @@ Generate a 6-panel summary figure for a single patch or a grid of random patches
 ```bash
 # Single patch (patch key is x0_y0 in pixel coordinates)
 python -m tools.visualize_pipeline \
-  --processed processed/ \
+  --processed processed_wd/ \
   --patch 58624_4096 \
-  --he-image data/CRC02-HE.ome.tif
+  --he-image data/WD-76845-096.ome.tif
 
 # Random grid of N patches
 python -m tools.visualize_pipeline \
-  --processed processed/ \
+  --processed processed_wd/ \
   --random 6 \
   --seed 42 \
-  --he-image data/CRC02-HE.ome.tif \
+  --he-image data/WD-76845-096.ome.tif \
   --mx-channel 0
 ```
 
@@ -385,7 +385,7 @@ Thresholds are the **95th percentile** of each marker across all cells.
 
 ---
 
-## Group Viewer (Web + Desktop)
+## Group Viewer (Web)
 
 Use these tools for interactive H&E + multiplex group inspection after registration.
 
@@ -427,31 +427,6 @@ Rendering behavior:
 Notes:
 - If `--index-json` is omitted, the viewer tries `processed_wd/index.json` then `proceeded_wd/index.json`.
 - Use `--no-preload-multiplex` if memory is limited.
-
-### Desktop viewer (`tools.view_groups_matplotlib`)
-
-```bash
-python -m tools.view_groups_matplotlib \
-  --he-image data/WD-76845-096.ome.tif \
-  --multiplex-image data/WD-76845-097.ome.tif \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --index-json processed_wd/index.json \
-  --min-level 1 \
-  --auto-max-dim 1200 \
-  --alpha 1.0 \
-  --group immune
-```
-
-Optional static export:
-
-```bash
-python -m tools.view_groups_matplotlib \
-  --he-image data/WD-76845-096.ome.tif \
-  --multiplex-image data/WD-76845-097.ome.tif \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --index-json processed_wd/index.json \
-  --save-png processed_wd/group_viewer.png
-```
 
 ---
 
