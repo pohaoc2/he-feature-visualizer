@@ -63,9 +63,18 @@ def _clip_and_read(
     store, axes: str, img_w: int, img_h: int, y0: int, x0: int, size_y: int, size_x: int
 ):
     """Read a clipped region from the store and return (arr, dy, dx, rh, rw)."""
-    if not isinstance(store, zarr.Array):
+    # Newer zarr releases may expose array types that are not zarr.Array
+    # instances. Prefer array capability checks before attempting zarr.open().
+    if not (
+        hasattr(store, "__getitem__")
+        and hasattr(store, "shape")
+        and hasattr(store, "ndim")
+    ):
         raw = zarr.open(store, mode="r")
-        store = raw if isinstance(raw, zarr.Array) else raw["0"]
+        if hasattr(raw, "__getitem__") and hasattr(raw, "shape"):
+            store = raw
+        else:
+            store = raw["0"]
 
     y0i = int(y0)
     x0i = int(x0)

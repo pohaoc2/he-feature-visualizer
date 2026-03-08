@@ -27,18 +27,17 @@ utils/
   normalize.py           # percentile_norm, percentile_to_uint8
   channels.py            # load_channel_metadata, resolve_channel_indices
   ome.py                 # get_ome_mpp, open_zarr_store, read_overview_chw, get_image_dims
+  group_visualizer.py    # Shared H&E + multiplex group rendering helpers
 tools/
   build_pyramid.py       # Convert mask TIF to pyramidal OME-TIFF
   viz_mask.py            # Visualize mask + OME side-by-side (overview / crop)
   check_shape.py         # Inspect OME-TIFF dimensions (local or S3)
   debug_match_he_mul.py  # Interactive/headless H&E↔multiplex alignment viewer (QC)
   visualize_pipeline.py  # 6-panel pipeline summary figure
+  view_groups_web.py     # Local FastAPI web viewer (H&E + multiplex groups)
+  view_groups_matplotlib.py  # Desktop interactive viewer (Matplotlib)
 cellvit_backend.py       # CellViT model integration stub
 notebooks/               # Stage 2: GPU cell segmentation on Colab
-server.py                # FastAPI server — DZI tiles, heatmap/cell data (WSI viewer)
-server_minerva.py        # Minimal Minerva-style FastAPI server (H&E + group overlays)
-preprocess.py            # One-time preprocessing: CSV + TIFF → cache/ (WSI viewer)
-viewer_minerva.html      # Minimal Minerva-style frontend (OpenSeadragon + group buttons)
 tests/                   # pytest test suite
 ```
 
@@ -358,32 +357,6 @@ Panels shown per patch: original location · H&E · multiplex channel · cell se
 
 ---
 
-## Whole-Slide Viewer
-
-For machines that can handle the full WSI, preprocess and serve the slide directly.
-
-### Step 1 — Preprocess (run once, ~5–15 min)
-
-```bash
-python preprocess.py \
-    --features data/crc02-features.csv \
-    --image    data/CRC02-HE.ome.tif \
-    --out      cache/
-```
-
-Outputs: `cache/features.parquet`, `cache/meta.json`, `cache/tiles/heatmap/…`
-
-### Step 2 — Start the viewer
-
-```bash
-python server.py \
-    --image data/CRC02-HE.ome.tif \
-    --cache cache/ \
-    --port  8000
-```
-
-Open **[http://127.0.0.1:8000](http://127.0.0.1:8000)**.
-
 ### Overlay modes
 
 - **All Cells** — colored by inferred type (tumor / immune / stromal / other)
@@ -412,70 +385,73 @@ Thresholds are the **95th percentile** of each marker across all cells.
 
 ---
 
-## Simple Minerva-Style Viewer
+## Group Viewer (Web + Desktop)
 
-If you want a minimal interactive viewer (zoom/pan + group switching only), use the isolated Minerva-style entrypoint:
+Use these tools for interactive H&E + multiplex group inspection after registration.
 
-### Local machine
+### Web viewer (`tools.view_groups_web`)
 
 ```bash
-# optional, if not already installed
-pip install -r requirements.txt
-
-python server_minerva.py \
-  --image data/WD-76845-096.ome.tif \
-  --features data/WD-76845-097.csv \
+python -m tools.view_groups_web \
+  --he-image data/WD-76845-096.ome.tif \
+  --multiplex-image data/WD-76845-097.ome.tif \
+  --metadata-csv data/WD-76845-097-metadata.csv \
   --index-json processed_wd/index.json \
-  --min-render-level 1 \
-  --max-render-dim 7000 \
+  --min-level 1 \
+  --auto-max-dim 1200 \
+  --host 127.0.0.1 \
   --port 8010
 ```
 
 Open **[http://127.0.0.1:8010](http://127.0.0.1:8010)**.
 
-### Remote machine (EC2)
-
-On the EC2 instance:
-
-```bash
-# from the repo root on EC2
-pip install -r requirements.txt
-
-python server_minerva.py \
-  --image data/WD-76845-096.ome.tif \
-  --features data/WD-76845-097.csv \
-  --index-json processed_wd/index.json \
-  --min-render-level 1 \
-  --max-render-dim 7000 \
-  --host 127.0.0.1 \
-  --port 8010
-```
-
-From your local machine, create an SSH tunnel:
+Remote (EC2) usage is the same, then tunnel:
 
 ```bash
 ssh -i /path/to/key.pem -L 8010:127.0.0.1:8010 ec2-user@<EC2_PUBLIC_DNS_OR_IP>
 ```
 
-Then open **[http://127.0.0.1:8010](http://127.0.0.1:8010)** in your local browser.
+Viewer controls:
+- Group buttons: `H&E`, `Immune`, `Vasculature`, `Cancer Cells`, `Proliferative Cells`
+- Transparency slider for multiplex overlay
+- Pan: two-finger touchpad scroll or click-drag
+- Zoom: pinch or `Ctrl/Alt + wheel`
+- Left and right panes are synchronized during pan/zoom
+- Color legend is drawn on the figure (right panel)
+
+Rendering behavior:
+- Uses registration matrix (`warp_matrix`) from `index.json` to transform multiplex into H&E space.
+- Defaults to `min-level >= 1` to avoid full-resolution level 0 loading.
+- Multi-marker groups use per-channel min-max normalization (no percentile), then multicolor max projection.
 
 Notes:
-- `--index-json processed_wd/index.json` applies the HE↔multiplex affine from patchify (`warp_matrix`), fixing overlay offset.
-- `--min-render-level 1` skips TIFF full-resolution level 0 for faster startup and lower RAM use.
-- `--max-render-dim` controls preloaded pyramid resolution for smooth interaction on huge WSIs.
-  You can set `--render-level` directly if you want an exact level (it will be clamped to `--min-render-level`).
+- If `--index-json` is omitted, the viewer tries `processed_wd/index.json` then `proceeded_wd/index.json`.
+- Use `--no-preload-multiplex` if memory is limited.
 
-### Included groups (default)
+### Desktop viewer (`tools.view_groups_matplotlib`)
 
-- `H&E` (no overlay)
-- `Immune` composite (`CD45`, `CD3`, `CD4`, `CD8a`, `CD20`, `CD68`, `CD163`, `FOXP3`, `CD45RO`) with marker-specific colors
-- `Tissue/Stromal` composite (`DNA1` + `PanCk` + `aSMA`) with marker-specific colors
-- `Cancer` composite (`Keratin`, `CDX2`, `Ecadherin`) with marker-specific colors
-- `Proliferative` composite (`Ki67`, `Ki67_570`, `PCNA`) with marker-specific colors
-- `Vasculature` (`CD31`)
+```bash
+python -m tools.view_groups_matplotlib \
+  --he-image data/WD-76845-096.ome.tif \
+  --multiplex-image data/WD-76845-097.ome.tif \
+  --metadata-csv data/WD-76845-097-metadata.csv \
+  --index-json processed_wd/index.json \
+  --min-level 1 \
+  --auto-max-dim 1200 \
+  --alpha 1.0 \
+  --group immune
+```
 
-Each marker uses a positivity cutoff at the selected percentile (default: `--marker-percentile 95`).
-Marker aliases are supported for common naming differences (for example `DNA1 -> Hoechst0`, `PanCk -> Keratin` when the preferred column is unavailable).
+Optional static export:
+
+```bash
+python -m tools.view_groups_matplotlib \
+  --he-image data/WD-76845-096.ome.tif \
+  --multiplex-image data/WD-76845-097.ome.tif \
+  --metadata-csv data/WD-76845-097-metadata.csv \
+  --index-json processed_wd/index.json \
+  --save-png processed_wd/group_viewer.png
+```
 
 ---
 

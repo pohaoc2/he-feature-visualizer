@@ -811,10 +811,19 @@ def _clip_and_read(
     dy, dx: offsets within the output patch where valid data begins (for zero-padding).
     rh, rw: height and width of the clipped read region.
     """
-    # Resolve a raw ZarrTiffStore (from tif.aszarr()) to a subscriptable zarr Array.
-    if not isinstance(store, zarr.Array):
+    # Resolve a raw ZarrTiffStore (from tif.aszarr()) to a subscriptable array.
+    # Newer zarr releases may expose array classes that are not exactly zarr.Array,
+    # so prefer capability checks before attempting zarr.open().
+    if not (
+        hasattr(store, "__getitem__")
+        and hasattr(store, "shape")
+        and hasattr(store, "ndim")
+    ):
         raw = zarr.open(store, mode="r")
-        store = raw if isinstance(raw, zarr.Array) else raw["0"]
+        if hasattr(raw, "__getitem__") and hasattr(raw, "shape"):
+            store = raw
+        else:
+            store = raw["0"]
 
     y0i = int(y0)
     x0i = int(x0)

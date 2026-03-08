@@ -33,7 +33,17 @@ GROUP_SPECS: dict[str, GroupSpec] = {
     "immune": GroupSpec(
         label="Immune",
         color=(68, 170, 255, 210),
-        markers=("CD45", "CD3", "CD4", "CD8a", "CD20", "CD68", "CD163", "FOXP3", "CD45RO"),
+        markers=(
+            "CD45",
+            "CD3",
+            "CD4",
+            "CD8a",
+            "CD20",
+            "CD68",
+            "CD163",
+            "FOXP3",
+            "CD45RO",
+        ),
         components=(
             MarkerComponent("cd45", "CD45", (74, 234, 255, 220), ("CD45",)),
             MarkerComponent("cd3", "CD3", (63, 149, 255, 220), ("CD3",)),
@@ -51,8 +61,12 @@ GROUP_SPECS: dict[str, GroupSpec] = {
         color=(255, 188, 74, 210),
         markers=("Hoechst1", "DNA1", "Hoechst0", "PanCk", "PanCK", "Keratin", "aSMA"),
         components=(
-            MarkerComponent("dna1", "DNA1", (87, 140, 255, 220), ("Hoechst1", "DNA1", "Hoechst0")),
-            MarkerComponent("panck", "PanCk", (255, 191, 74, 220), ("PanCk", "PanCK", "Keratin")),
+            MarkerComponent(
+                "dna1", "DNA1", (87, 140, 255, 220), ("Hoechst1", "DNA1", "Hoechst0")
+            ),
+            MarkerComponent(
+                "panck", "PanCk", (255, 191, 74, 220), ("PanCk", "PanCK", "Keratin")
+            ),
             MarkerComponent("asma", "aSMA", (87, 224, 149, 220), ("aSMA",)),
         ),
     ),
@@ -63,7 +77,9 @@ GROUP_SPECS: dict[str, GroupSpec] = {
         components=(
             MarkerComponent("keratin", "Keratin", (255, 95, 109, 220), ("Keratin",)),
             MarkerComponent("cdx2", "CDX2", (255, 208, 92, 220), ("CDX2",)),
-            MarkerComponent("ecadherin", "Ecadherin", (106, 221, 255, 220), ("Ecadherin",)),
+            MarkerComponent(
+                "ecadherin", "Ecadherin", (106, 221, 255, 220), ("Ecadherin",)
+            ),
         ),
     ),
     "proliferative": GroupSpec(
@@ -80,9 +96,7 @@ GROUP_SPECS: dict[str, GroupSpec] = {
         label="Vasculature",
         color=(229, 75, 75, 210),
         markers=("CD31",),
-        components=(
-            MarkerComponent("cd31", "CD31", (229, 75, 75, 220), ("CD31",)),
-        ),
+        components=(MarkerComponent("cd31", "CD31", (229, 75, 75, 220), ("CD31",)),),
     ),
 }
 
@@ -185,7 +199,9 @@ def resolve_component_sources(
     for group_id, spec in groups.items():
         group_map: dict[str, str | None] = {}
         for component in spec.components:
-            source = next((marker for marker in component.markers if marker in available), None)
+            source = next(
+                (marker for marker in component.markers if marker in available), None
+            )
             group_map[component.id] = source
         out[group_id] = group_map
     return out

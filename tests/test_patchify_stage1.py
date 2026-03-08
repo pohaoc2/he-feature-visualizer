@@ -203,7 +203,7 @@ def test_read_he_patch_cyx_axes(tmp_path):
     - output.shape == (256, 256, 3)
     - output.dtype == uint8
     """
-    from stages.patchify import read_he_patch  # noqa: WPS433
+    from stages.patchify import open_zarr_store, read_he_patch  # noqa: WPS433
 
     img_h, img_w = 512, 512
     arr = np.zeros((3, img_h, img_w), dtype=np.uint8)
@@ -215,7 +215,7 @@ def test_read_he_patch_cyx_axes(tmp_path):
     _write_ome_tiff(he_path, arr, axes="CYX")
 
     with tifffile.TiffFile(str(he_path)) as tif:
-        zarr_store = tif.aszarr()
+        zarr_store = open_zarr_store(tif)
 
     patch = read_he_patch(
         zarr_store=zarr_store,
@@ -245,7 +245,7 @@ def test_read_multiplex_patch_selects_channels(tmp_path):
 
     Verifies shape (3, 256, 256), dtype uint16, and per-channel mean values.
     """
-    from stages.patchify import read_multiplex_patch  # noqa: WPS433
+    from stages.patchify import open_zarr_store, read_multiplex_patch  # noqa: WPS433
 
     img_h, img_w = 512, 512
     arr = np.zeros((10, img_h, img_w), dtype=np.uint16)
@@ -256,7 +256,7 @@ def test_read_multiplex_patch_selects_channels(tmp_path):
     _write_ome_tiff(mux_path, arr, axes="CYX")
 
     with tifffile.TiffFile(str(mux_path)) as tif:
-        zarr_store = tif.aszarr()
+        zarr_store = open_zarr_store(tif)
 
     patch = read_multiplex_patch(
         zarr_store=zarr_store,
