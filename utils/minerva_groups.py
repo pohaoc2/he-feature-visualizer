@@ -49,9 +49,9 @@ GROUP_SPECS: dict[str, GroupSpec] = {
     "tissue": GroupSpec(
         label="Tissue/Stromal",
         color=(255, 188, 74, 210),
-        markers=("DNA1", "Hoechst0", "PanCk", "PanCK", "Keratin", "aSMA"),
+        markers=("Hoechst1", "DNA1", "Hoechst0", "PanCk", "PanCK", "Keratin", "aSMA"),
         components=(
-            MarkerComponent("dna1", "DNA1", (87, 140, 255, 220), ("DNA1", "Hoechst0")),
+            MarkerComponent("dna1", "DNA1", (87, 140, 255, 220), ("Hoechst1", "DNA1", "Hoechst0")),
             MarkerComponent("panck", "PanCk", (255, 191, 74, 220), ("PanCk", "PanCK", "Keratin")),
             MarkerComponent("asma", "aSMA", (87, 224, 149, 220), ("aSMA",)),
         ),
