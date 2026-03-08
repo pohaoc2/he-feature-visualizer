@@ -3,12 +3,29 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+import warnings
 
 import numpy as np
 import tifffile
 import zarr
 
 OME_NS = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
+
+
+class _NumpyStore:
+    """Array-like fallback used when tifffile.aszarr is unavailable.
+
+    This keeps the same slicing contract expected by patch readers
+    (``shape``, ``ndim``, ``__getitem__``), but stores data in-memory.
+    """
+
+    def __init__(self, arr: np.ndarray):
+        self._arr = np.asarray(arr)
+        self.shape = self._arr.shape
+        self.ndim = self._arr.ndim
+
+    def __getitem__(self, item):
+        return self._arr[item]
 
 
 def _safe_float(x: str | None) -> float | None:
@@ -39,12 +56,30 @@ def get_ome_mpp(tif: tifffile.TiffFile) -> tuple[float | None, float | None]:
     )
 
 
-def open_zarr_store(tif: tifffile.TiffFile) -> zarr.Array:
-    """Return a read-only zarr ``Array`` from an open ``TiffFile``."""
-    raw = zarr.open(tif.series[0].aszarr(), mode="r")
-    if isinstance(raw, zarr.Array):
-        return raw
-    return raw["0"]
+def open_zarr_store(tif: tifffile.TiffFile) -> zarr.Array | _NumpyStore:
+    """Return a read-only array-like store from an open ``TiffFile``.
+
+    Preferred path uses ``tif.series[0].aszarr()``. Some version combinations
+    of ``tifffile`` and ``zarr`` raise a ``TypeError`` while constructing the
+    zarr store; in that case we fall back to an in-memory NumPy store.
+    """
+
+    try:
+        raw = zarr.open(tif.series[0].aszarr(), mode="r")
+        if isinstance(raw, zarr.Array):
+            return raw
+        return raw["0"]
+    except TypeError as exc:
+        msg = str(exc)
+        if "ZarrTiffStore" not in msg:
+            raise
+        warnings.warn(
+            "tifffile.aszarr is unavailable with current zarr/tifffile versions; "
+            "falling back to in-memory array store.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _NumpyStore(np.asarray(tif.series[0].asarray()))
 
 
 def get_image_dims(tif: tifffile.TiffFile) -> tuple[int, int, str]:
@@ -56,7 +91,7 @@ def get_image_dims(tif: tifffile.TiffFile) -> tuple[int, int, str]:
 
 
 def read_overview_chw(
-    store: zarr.Array,
+    store: zarr.Array | _NumpyStore,
     axes: str,
     img_h: int,
     img_w: int,
