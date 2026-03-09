@@ -1581,6 +1581,39 @@ class TestRegistrationDecisionGate:
         assert decision == "PASS_AFFINE"
 
 
+class TestCentroidInitMOv:
+    """Tests for _centroid_init_m_ov helper."""
+
+    def test_centroid_init_m_ov_translates_to_he_centroid(self):
+        """_centroid_init_m_ov should produce translation that maps MX centroid onto HE centroid."""
+        import numpy as np
+        from stages.patchify_lib.registration import _centroid_init_m_ov
+
+        he_f32 = np.zeros((128, 128), dtype=np.float32)
+        he_f32[40:80, 50:90] = 1.0  # centroid at (70, 60)
+
+        mx_resized = np.zeros((128, 128), dtype=np.float32)
+        mx_resized[20:60, 30:70] = 1.0  # centroid at (50, 40)
+
+        m = _centroid_init_m_ov(he_f32, mx_resized)
+        assert m.shape == (2, 3)
+        assert m.dtype == np.float32
+        # Translation should be he_centroid - mx_centroid = (70-50, 60-40) = (20, 20)
+        assert abs(m[0, 2] - 20.0) < 1.0  # x-translation
+        assert abs(m[1, 2] - 20.0) < 1.0  # y-translation
+        # Linear part unchanged (identity)
+        np.testing.assert_allclose(m[:, :2], np.eye(2, dtype=np.float32), atol=1e-6)
+
+    def test_centroid_init_m_ov_falls_back_to_identity_on_empty_mask(self):
+        """_centroid_init_m_ov should return identity when masks are empty."""
+        import numpy as np
+        from stages.patchify_lib.registration import _centroid_init_m_ov
+
+        blank = np.zeros((64, 64), dtype=np.float32)
+        m = _centroid_init_m_ov(blank, blank)
+        np.testing.assert_allclose(m, np.eye(2, 3, dtype=np.float32), atol=1e-6)
+
+
 class TestRegistrationArtifacts:
     """Integration checks for registration artifacts written by patchify."""
 

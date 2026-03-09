@@ -17,6 +17,21 @@ def _mask_centroid_or_none(mask: np.ndarray) -> tuple[float, float] | None:
     return float(xs.mean()), float(ys.mean())
 
 
+def _centroid_init_m_ov(he_f32: np.ndarray, mx_resized: np.ndarray) -> np.ndarray:
+    """Return 2x3 identity+translation init for ECC based on tissue centroids.
+
+    Both arrays must be in the same (HE overview) pixel space.
+    Falls back to identity if either mask is empty.
+    """
+    he_ctr = _mask_centroid_or_none(he_f32 > 0.5)
+    mx_ctr = _mask_centroid_or_none(mx_resized > 0.5)
+    m = np.eye(2, 3, dtype=np.float32)
+    if he_ctr is not None and mx_ctr is not None:
+        m[0, 2] = float(he_ctr[0] - mx_ctr[0])
+        m[1, 2] = float(he_ctr[1] - mx_ctr[1])
+    return m
+
+
 def register_he_mx_affine(  # pylint: disable=unused-argument
     he_mask: np.ndarray,
     mx_mask: np.ndarray,
@@ -37,7 +52,7 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
     he_f32 = cv2.GaussianBlur(he_f32, (5, 5), 0)
     mx_resized = cv2.GaussianBlur(mx_resized, (5, 5), 0)
 
-    m_ov = np.eye(2, 3, dtype=np.float32)
+    m_ov = _centroid_init_m_ov(he_f32, mx_resized)
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 500, 1e-6)
     try:
         _, m_ov = cv2.findTransformECC(
