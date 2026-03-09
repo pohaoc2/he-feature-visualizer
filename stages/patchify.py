@@ -193,21 +193,17 @@ def _read_he_gray_overview(
     store, axes: str, img_h: int, img_w: int, ds: int
 ) -> np.ndarray:
     """Read H&E at overview resolution and return normalized float32 grayscale (H, W)."""
-    axes_up = axes.upper()
-    h_t = (img_h // ds) * ds
-    w_t = (img_w // ds) * ds
-
-    c_first = "C" in axes_up and axes_up.index("C") < axes_up.index("Y")
-    if c_first:
-        raw = np.array(store[:, :h_t:ds, :w_t:ds])
-        overview = np.moveaxis(raw[:3], 0, -1)  # (H, W, 3)
+    chw = read_overview_chw(store, axes, img_h, img_w, ds)  # (C, H, W) uint8 or original dtype
+    if chw.shape[0] == 1:
+        # Single-channel (e.g. SYX) — already grayscale
+        gray = chw[0]
+        if gray.dtype != np.uint8:
+            gray = percentile_to_uint8(gray)
     else:
-        overview = np.array(store[:h_t:ds, :w_t:ds, :3])  # (H, W, 3)
-
-    if overview.dtype != np.uint8:
-        overview = percentile_to_uint8(overview)
-
-    gray = cv2.cvtColor(overview.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+        rgb = np.moveaxis(chw[:3], 0, -1)  # (H, W, 3)
+        if rgb.dtype != np.uint8:
+            rgb = percentile_to_uint8(rgb)
+        gray = cv2.cvtColor(rgb.astype(np.uint8), cv2.COLOR_RGB2GRAY)
     return gray.astype(np.float32) / 255.0
 
 

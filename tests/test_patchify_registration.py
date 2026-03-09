@@ -1726,3 +1726,61 @@ def test_register_he_mx_affine_intensity_fallback_on_blank():
     expected_scale = 384 / 512
     assert abs(m[0, 0] - expected_scale) < 0.05
     assert abs(m[1, 1] - expected_scale) < 0.05
+
+
+# ---------------------------------------------------------------------------
+# _read_he_gray_overview axis handling
+# ---------------------------------------------------------------------------
+
+
+def test_read_he_gray_overview_cyx_returns_float32_hw(tmp_path):
+    """_read_he_gray_overview returns float32 (H,W) for CYX input."""
+    import numpy as np
+    import tifffile, zarr
+    import stages.patchify as pm
+
+    arr = np.zeros((3, 64, 64), dtype=np.uint8)
+    arr[0, 20:44, 20:44] = 180
+    arr[1, 20:44, 20:44] = 90
+    arr[2, 20:44, 20:44] = 45
+
+    p = tmp_path / "he.tif"
+    tifffile.imwrite(str(p), arr, metadata={"axes": "CYX"})
+
+    with tifffile.TiffFile(str(p)) as f:
+        store = zarr.open(f.aszarr(), mode="r")
+        if hasattr(store, "keys") and "0" in store:
+            store = store["0"]
+        result = pm._read_he_gray_overview(store, "CYX", 64, 64, ds=4)
+
+    assert result.ndim == 2
+    assert result.dtype == np.float32
+    assert result.min() >= 0.0
+    assert result.max() <= 1.0
+    assert result.shape == (64 // 4, 64 // 4)
+
+
+def test_read_he_gray_overview_syx_returns_float32_hw(tmp_path):
+    """_read_he_gray_overview returns float32 (H,W) for SYX (single-series, no C axis) input."""
+    import numpy as np
+    import tifffile, zarr
+    import stages.patchify as pm
+
+    # SYX: single-series grayscale — shape (1, H, W) or read as (H, W, 3) via read_overview_chw
+    # Simulate by writing a single-channel image (1, H, W) — closest to SYX
+    arr = np.zeros((1, 64, 64), dtype=np.uint8)
+    arr[0, 15:50, 15:50] = 200
+
+    p = tmp_path / "he_syx.tif"
+    tifffile.imwrite(str(p), arr, metadata={"axes": "SYX"})
+
+    with tifffile.TiffFile(str(p)) as f:
+        store = zarr.open(f.aszarr(), mode="r")
+        if hasattr(store, "keys") and "0" in store:
+            store = store["0"]
+        axes = f.series[0].axes
+        result = pm._read_he_gray_overview(store, axes, 64, 64, ds=4)
+
+    assert result.ndim == 2
+    assert result.dtype == np.float32
+    assert result.shape == (64 // 4, 64 // 4)
