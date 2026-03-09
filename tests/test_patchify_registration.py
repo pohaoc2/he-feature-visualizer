@@ -1784,3 +1784,40 @@ def test_read_he_gray_overview_syx_returns_float32_hw(tmp_path):
     assert result.ndim == 2
     assert result.dtype == np.float32
     assert result.shape == (64 // 4, 64 // 4)
+
+
+# ---------------------------------------------------------------------------
+# register_he_mx_orb (ORB + RANSAC fallback)
+# ---------------------------------------------------------------------------
+
+
+def test_register_he_mx_orb_returns_none_on_blank_images():
+    """ORB should return None when images have no detectable features."""
+    import numpy as np
+    from stages.patchify_lib.registration import register_he_mx_orb
+
+    blank = np.zeros((128, 128), dtype=np.uint8)
+    result = register_he_mx_orb(blank, blank, ds=8, he_h=1024, he_w=1024, mx_h=768, mx_w=768)
+    assert result is None
+
+
+def test_register_he_mx_orb_returns_none_or_matrix_on_textured_images():
+    """ORB on textured inputs returns None (too few features) or a valid 2x3 matrix."""
+    import numpy as np
+    from stages.patchify_lib.registration import register_he_mx_orb
+
+    rng = np.random.default_rng(42)
+    # Checkerboard gives ORB keypoints
+    base = np.zeros((256, 256), dtype=np.uint8)
+    base[::16, :] = 200
+    base[:, ::16] = 200
+    he_img = base.copy()
+    mx_img = np.roll(base, 8, axis=0).astype(np.uint8)
+
+    result = register_he_mx_orb(
+        he_img, mx_img, ds=8, he_h=2048, he_w=2048, mx_h=1536, mx_w=1536
+    )
+    # Result is either None (not enough matches) or a valid 2x3 matrix
+    if result is not None:
+        assert result.shape == (2, 3)
+        assert result.dtype == np.float32

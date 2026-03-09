@@ -197,6 +197,88 @@ def register_he_mx_affine_intensity(
     )
 
 
+def register_he_mx_orb(
+    he_gray_u8: np.ndarray,
+    mx_dna_u8: np.ndarray,
+    ds: int,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+    n_features: int = 2000,
+    ratio_thresh: float = 0.75,
+    min_inliers: int = 8,
+) -> np.ndarray | None:
+    """Affine registration via ORB keypoints + RANSAC.
+
+    Parameters
+    ----------
+    he_gray_u8 : uint8 (he_ov_h, he_ov_w) H&E grayscale at overview resolution.
+    mx_dna_u8  : uint8 (he_ov_h, he_ov_w) MX DNA channel resized to HE overview grid.
+    ds         : overview downsample factor.
+    he_h/w, mx_h/w : full-resolution dimensions.
+    n_features : ORB feature budget.
+    ratio_thresh : Lowe ratio test threshold.
+    min_inliers : minimum RANSAC inliers to accept the result.
+
+    Returns
+    -------
+    m_full : float32 (2, 3) mapping H&E full-res -> MX full-res, or None if failed.
+    """
+    he_ov_h, he_ov_w = he_gray_u8.shape
+    mx_ov_h = int(round(he_ov_h * mx_h / he_h))
+    mx_ov_w = int(round(he_ov_w * mx_w / he_w))
+
+    orb = cv2.ORB_create(nfeatures=n_features)
+    kp1, des1 = orb.detectAndCompute(he_gray_u8, None)
+    kp2, des2 = orb.detectAndCompute(mx_dna_u8, None)
+
+    if des1 is None or des2 is None or len(kp1) < 4 or len(kp2) < 4:
+        print("  WARNING: ORB found too few keypoints.")
+        return None
+
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+    try:
+        raw_matches = bf.knnMatch(des1, des2, k=2)
+    except cv2.error:  # pylint: disable=catching-non-exception
+        return None
+
+    good = [
+        m for m, n in raw_matches
+        if len([m, n]) == 2 and m.distance < ratio_thresh * n.distance
+    ]
+    if len(good) < min_inliers:
+        print(f"  WARNING: ORB ratio test left only {len(good)} matches (need {min_inliers}).")
+        return None
+
+    pts_he = np.float32([kp1[m.queryIdx].pt for m in good])
+    pts_mx = np.float32([kp2[m.trainIdx].pt for m in good])
+
+    # estimateAffine2D: find M s.t. M * pts_mx ≈ pts_he (HE-overview space)
+    m_ov, inliers = cv2.estimateAffine2D(
+        pts_mx, pts_he, method=cv2.RANSAC, ransacReprojThreshold=3.0
+    )
+    n_inliers = int(inliers.sum()) if inliers is not None else 0
+    if m_ov is None or n_inliers < min_inliers:
+        print(f"  WARNING: ORB RANSAC failed or too few inliers ({n_inliers}).")
+        return None
+
+    m_ov = m_ov.astype(np.float32)
+
+    # Convert HE-overview-space affine (maps MX-resized -> HE) to full-res H&E -> MX
+    rx = he_ov_w / mx_ov_w
+    ry = he_ov_h / mx_ov_h
+    tx_ov = (float(m_ov[0, 2]) + 0.5) / rx - 0.5
+    ty_ov = (float(m_ov[1, 2]) + 0.5) / ry - 0.5
+    return np.array(
+        [
+            [m_ov[0, 0] / rx, m_ov[0, 1] / rx, tx_ov * ds],
+            [m_ov[1, 0] / ry, m_ov[1, 1] / ry, ty_ov * ds],
+        ],
+        dtype=np.float32,
+    )
+
+
 def _apply_inverse_flow(
     image: np.ndarray, flow_dx: np.ndarray, flow_dy: np.ndarray
 ) -> np.ndarray:
