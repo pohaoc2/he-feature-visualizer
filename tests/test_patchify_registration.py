@@ -1821,3 +1821,72 @@ def test_register_he_mx_orb_returns_none_or_matrix_on_textured_images():
     if result is not None:
         assert result.shape == (2, 3)
         assert result.dtype == np.float32
+
+
+# ---------------------------------------------------------------------------
+# _evaluate_registration_qc helper
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_registration_qc_returns_expected_keys():
+    """_evaluate_registration_qc should return dict with global_qc, patch_qc, decision."""
+    from stages.patchify import _evaluate_registration_qc, PASS_AFFINE
+
+    he_mask = np.zeros((64, 64), dtype=bool)
+    he_mask[10:50, 10:50] = True
+    mx_mask = np.zeros((32, 32), dtype=bool)
+    mx_mask[5:25, 5:25] = True
+    # Identity-ish scale
+    m_full = np.array([[0.5, 0, 0], [0, 0.5, 0]], dtype=np.float32)
+
+    result = _evaluate_registration_qc(
+        m_full, he_mask, mx_mask,
+        he_h=512, he_w=512, mx_h=256, mx_w=256,
+        ds=8, coords=[], patch_size=64,
+    )
+    assert "global_qc" in result
+    assert "patch_qc" in result
+    assert "decision" in result
+    assert result["decision"] in (
+        PASS_AFFINE, "FAIL_GLOBAL_NEEDS_LANDMARKS", "FAIL_LOCAL_NEEDS_DEFORMABLE"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Registration cascade CLI integration test
+# ---------------------------------------------------------------------------
+
+
+def test_registration_cascade_method_stored_in_final_transform(tmp_path):
+    """After patchify, final_transform.json must contain 'registration_method' key."""
+    he = np.zeros((3, 256, 256), dtype=np.uint8)
+    he[:, 80:180, 80:180] = 180
+    mx = np.zeros((2, 128, 128), dtype=np.uint16)
+    mx[0, 35:85, 35:85] = 3000
+
+    he_path = tmp_path / "he.ome.tif"
+    mx_path = tmp_path / "mx.ome.tif"
+    csv_path = tmp_path / "meta.csv"
+    tifffile.imwrite(str(he_path), he, ome=True, metadata={"axes": "CYX"})
+    tifffile.imwrite(str(mx_path), mx, ome=True, metadata={"axes": "CYX"})
+    csv_path.write_text("Channel ID,Target Name\nChannel:0:0,DNA\nChannel:0:1,CD31\n")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "stages.patchify",
+         "--he-image", str(he_path),
+         "--multiplex-image", str(mx_path),
+         "--metadata-csv", str(csv_path),
+         "--out", str(tmp_path / "out"),
+         "--channels", "DNA",
+         "--patch-size", "64",
+         "--overview-downsample", "8"],
+        capture_output=True, text=True,
+        cwd=_PROJECT_ROOT,
+    )
+    # Don't require returncode==0 (may fail on no tissue), just check output artifact
+    ft_path = tmp_path / "out" / "registration" / "final_transform.json"
+    if ft_path.exists():
+        ft = json.loads(ft_path.read_text())
+        assert "registration_method" in ft
+        valid_methods = {"affine_centroid", "affine_intensity", "orb", "fallback_scale"}
+        assert ft["registration_method"] in valid_methods

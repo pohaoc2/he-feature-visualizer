@@ -1257,6 +1257,8 @@ decide_registration_path = _qc.decide_registration_path
 REG_MODE_AFFINE = _registration.REG_MODE_AFFINE
 REG_MODE_DEFORMABLE = _registration.REG_MODE_DEFORMABLE
 register_he_mx_affine = _registration.register_he_mx_affine
+register_he_mx_affine_intensity = _registration.register_he_mx_affine_intensity
+register_he_mx_orb = _registration.register_he_mx_orb
 _apply_inverse_flow = _registration._apply_inverse_flow
 estimate_deformable_field = _registration.estimate_deformable_field
 compute_deformable_patch_qc_metrics = _registration.compute_deformable_patch_qc_metrics
@@ -1278,6 +1280,45 @@ multiplex_patch_overlap_fraction_affine = (
 multiplex_patch_overlap_fraction_deform = (
     _readers.multiplex_patch_overlap_fraction_deform
 )
+
+
+def _evaluate_registration_qc(
+    m_full: np.ndarray,
+    he_mask: np.ndarray,
+    mx_mask: np.ndarray,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+    ds: int,
+    coords: list,
+    patch_size: int,
+) -> dict:
+    """Evaluate global + patch-level QC for a given warp matrix.
+
+    Returns a dict with keys: 'global_qc', 'patch_qc', 'decision'.
+    """
+    global_qc = compute_global_qc_metrics(
+        he_mask, mx_mask, m_full, he_h, he_w, mx_h, mx_w
+    )
+    patch_qc = compute_patch_qc_metrics(
+        he_mask,
+        mx_mask,
+        m_full,
+        he_h,
+        he_w,
+        mx_h,
+        mx_w,
+        sample_count=50,
+        patch_size_ov=max(8, patch_size // max(1, ds)),
+        seed=0,
+    )
+    decision = decide_registration_path(global_qc, patch_qc)
+    return {
+        "global_qc": global_qc,
+        "patch_qc": patch_qc,
+        "decision": decision,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1405,14 +1446,8 @@ def main():
         print(f"  Tissue fraction: {mask.mean():.2%}")
         mx_mask = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds)
 
-        if args.register:
-            print("Computing affine registration via ECC on tissue masks ...")
-            m_full = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
-            print(f"  Warp matrix:\n{m_full}")
-        else:
-            m_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
-
-        print("Computing registration QC metrics ...")
+        # --- Channel drift QC (MX internal, run once) ---
+        print("Computing channel drift QC ...")
         drift_channel_indices = sorted(set([0, *channel_indices]))
         drift_stack = np.stack(
             [
@@ -1431,75 +1466,122 @@ def main():
             row["channel"] = int(drift_channel_indices[int(row["channel"])])
         drift_metrics["evaluated_channel_indices"] = drift_channel_indices
         drift_pass = channel_drift_passes(drift_metrics)
-        global_qc = compute_global_qc_metrics(
-            mask, mx_mask, m_full, he_h, he_w, mx_h, mx_w
-        )
-        patch_qc = compute_patch_qc_metrics(
-            mask,
-            mx_mask,
-            m_full,
-            he_h,
-            he_w,
-            mx_h,
-            mx_w,
-            sample_count=50,
-            patch_size_ov=max(8, patch_size // max(1, ds)),
-            seed=0,
-        )
-        decision = decide_registration_path(global_qc, patch_qc)
+
+        # --- Registration cascade A -> B -> C ---
+        registration_method = "fallback_scale"
         registration_mode = REG_MODE_AFFINE
         deform_state = None
         deform_patch_qc = None
+        # coords not yet computed; pass empty list (QC samples from mask edges)
+        cascade_coords: list = []
+
+        if not args.register:
+            m_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
+            registration_method = "fallback_scale"
+            final_qc = _evaluate_registration_qc(
+                m_full, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
+                cascade_coords, patch_size,
+            )
+            decision = final_qc["decision"]
+            global_qc = final_qc["global_qc"]
+            patch_qc = final_qc["patch_qc"]
+        else:
+            scale_fallback = he_w / mx_w
+            m_full = np.array(
+                [[1 / scale_fallback, 0, 0], [0, 1 / scale_fallback, 0]],
+                dtype=np.float32,
+            )
+
+            # Approach A: centroid-init ECC on tissue masks
+            print("  [A] Centroid-initialized ECC on tissue masks ...")
+            m_A = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
+            qc_A = _evaluate_registration_qc(
+                m_A, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
+                cascade_coords, patch_size,
+            )
+            if qc_A["decision"] == PASS_AFFINE:
+                print(f"  [A] PASS (iou={qc_A['global_qc']['mask_iou']:.3f})")
+                m_full = m_A
+                registration_method = "affine_centroid"
+            else:
+                print(f"  [A] FAIL ({qc_A['decision']}) -> trying B ...")
+
+                # Approach B: intensity-based ECC (HE gray vs DNA channel)
+                he_gray_ov = _read_he_gray_overview(he_store, he_axes, he_h, he_w, ds)
+                mx_dna_ov_f32 = _read_channel_overview(
+                    mx_store, mx_axes, mx_h, mx_w, ds, channel_index=0
+                ).astype(np.float32)
+                mx_dna_max = float(mx_dna_ov_f32.max())
+                if mx_dna_max > 0:
+                    mx_dna_ov_f32 /= mx_dna_max
+
+                print("  [B] Intensity-based ECC (HE gray vs DNA channel) ...")
+                m_B = register_he_mx_affine_intensity(
+                    he_gray_ov, mx_dna_ov_f32,
+                    mask, mx_mask,
+                    ds, he_h, he_w, mx_h, mx_w,
+                )
+                qc_B = _evaluate_registration_qc(
+                    m_B, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
+                    cascade_coords, patch_size,
+                )
+                if qc_B["decision"] == PASS_AFFINE:
+                    print(f"  [B] PASS (iou={qc_B['global_qc']['mask_iou']:.3f})")
+                    m_full = m_B
+                    registration_method = "affine_intensity"
+                else:
+                    print(f"  [B] FAIL ({qc_B['decision']}) -> trying C ...")
+
+                    # Approach C: ORB keypoints + RANSAC
+                    he_ov_h, he_ov_w = mask.shape
+                    # Reuse he_gray_ov from approach B
+                    he_gray_u8 = (he_gray_ov * 255).astype(np.uint8)
+                    mx_dna_u8 = cv2.resize(
+                        (np.clip(mx_dna_ov_f32, 0, 1) * 255).astype(np.uint8),
+                        (he_ov_w, he_ov_h),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
+                    print("  [C] ORB feature matching + RANSAC ...")
+                    m_C = register_he_mx_orb(
+                        he_gray_u8, mx_dna_u8, ds, he_h, he_w, mx_h, mx_w,
+                    )
+                    if m_C is not None:
+                        qc_C = _evaluate_registration_qc(
+                            m_C, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
+                            cascade_coords, patch_size,
+                        )
+                        print(
+                            f"  [C] iou={qc_C['global_qc']['mask_iou']:.3f} "
+                            f"decision={qc_C['decision']}"
+                        )
+                        m_full = m_C
+                        registration_method = "orb"
+                    else:
+                        print("  [C] ORB returned no valid transform -> using best of A/B by IoU")
+                        iou_A = qc_A["global_qc"]["mask_iou"]
+                        iou_B = qc_B["global_qc"]["mask_iou"]
+                        if iou_A >= iou_B:
+                            m_full = m_A
+                            registration_method = "affine_centroid"
+                        else:
+                            m_full = m_B
+                            registration_method = "affine_intensity"
+
+            # Final QC using selected m_full
+            final_qc = _evaluate_registration_qc(
+                m_full, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
+                cascade_coords, patch_size,
+            )
+            decision = final_qc["decision"]
+            global_qc = final_qc["global_qc"]
+            patch_qc = final_qc["patch_qc"]
+
         print(
-            "  QC: "
-            f"drift_pass={drift_pass} "
-            f"global_iou={global_qc['mask_iou']:.4f} "
-            f"patch_gain_med={patch_qc['median_gain']:.4f} "
+            f"  Registration: method={registration_method} "
+            f"iou={global_qc['mask_iou']:.4f} "
             f"decision={decision}"
         )
-        if decision == FAIL_LOCAL_NEEDS_DEFORMABLE:
-            print("  Running deformable refinement on overview masks ...")
-            deform_state = estimate_deformable_field(
-                mask, mx_mask, m_full, he_h, he_w, mx_h, mx_w
-            )
-            deform_patch_qc = compute_deformable_patch_qc_metrics(
-                mask,
-                mx_mask,
-                m_full,
-                deform_state["flow_dx_ov"],
-                deform_state["flow_dy_ov"],
-                he_h,
-                he_w,
-                mx_h,
-                mx_w,
-                sample_count=50,
-                patch_size_ov=max(8, patch_size // max(1, ds)),
-                seed=0,
-            )
-            use_deform = (
-                deform_state["iou_deformable"] > deform_state["iou_affine"] + 0.001
-                or deform_patch_qc["median_gain"] > 0.001
-                or deform_patch_qc["improved_fraction"] > 0.55
-            )
-            if args.force_deformable:
-                use_deform = True
-            print(
-                "  Deformable QC: "
-                f"iou_affine={deform_state['iou_affine']:.4f} "
-                f"iou_deformable={deform_state['iou_deformable']:.4f} "
-                f"patch_gain_med={deform_patch_qc['median_gain']:.4f} "
-                f"apply={use_deform}"
-            )
-            if use_deform:
-                registration_mode = REG_MODE_DEFORMABLE
-            else:
-                print("  Deformable refinement did not improve QC; keeping affine.")
-        elif decision == FAIL_GLOBAL_NEEDS_LANDMARKS:
-            print(
-                "  NOTE: QC requires landmark fallback for global failure, "
-                "but manual landmark routing is not implemented yet. "
-                "Continuing with affine transform."
-            )
+        print(f"  Warp matrix:\n{m_full}")
 
         he_chw = read_overview_chw(he_store, he_axes, he_h, he_w, ds)  # (C, H, W)
         he_chw = (
@@ -1672,6 +1754,7 @@ def main():
                     },
                     "decision": decision,
                     "registration_mode": registration_mode,
+                    "registration_method": registration_method,
                 },
                 f,
                 indent=2,
@@ -1690,6 +1773,7 @@ def main():
                         )
                         else None
                     ),
+                    "registration_method": registration_method,
                 },
                 f,
                 indent=2,
