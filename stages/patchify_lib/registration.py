@@ -32,6 +32,34 @@ def _centroid_init_m_ov(he_f32: np.ndarray, mx_resized: np.ndarray) -> np.ndarra
     return m
 
 
+def _phase_corr_init_m_ov(
+    he_f32: np.ndarray,
+    mx_resized: np.ndarray,
+    min_response: float = 0.02,
+) -> np.ndarray:
+    """Return 2x3 ECC init using phase correlation for pixel-accurate translation.
+
+    Phase correlation finds the translational shift via cross-power spectrum in
+    O(N log N) and is far more precise than centroid differencing for the
+    forward-map convention used by findTransformECC (warpMatrix maps mx → he).
+
+    Falls back to centroid init when the phase-correlation response is too low
+    (e.g., nearly empty masks or near-uniform images).
+    """
+    try:
+        (dx, dy), response = cv2.phaseCorrelate(he_f32, mx_resized)
+    except cv2.error:  # pylint: disable=catching-non-exception
+        return _centroid_init_m_ov(he_f32, mx_resized)
+
+    if float(response) < min_response:
+        return _centroid_init_m_ov(he_f32, mx_resized)
+
+    m = np.eye(2, 3, dtype=np.float32)
+    m[0, 2] = float(dx)
+    m[1, 2] = float(dy)
+    return m
+
+
 def register_he_mx_affine(  # pylint: disable=unused-argument
     he_mask: np.ndarray,
     mx_mask: np.ndarray,
@@ -52,7 +80,7 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
     he_f32 = cv2.GaussianBlur(he_f32, (5, 5), 0)
     mx_resized = cv2.GaussianBlur(mx_resized, (5, 5), 0)
 
-    m_ov = _centroid_init_m_ov(he_f32, mx_resized)
+    m_ov = _phase_corr_init_m_ov(he_f32, mx_resized)
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 500, 1e-6)
     try:
         _, m_ov = cv2.findTransformECC(
@@ -108,6 +136,89 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
     return m_full
 
 
+def refine_affine_fine_scale(
+    he_mask_fine: np.ndarray,
+    mx_mask_fine: np.ndarray,
+    m_full_coarse: np.ndarray,
+    ds_fine: int,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+) -> np.ndarray:
+    """Refine a coarse affine by running ECC at a finer overview downsample.
+
+    The coarse m_full (from ds=64) captures rotation and scale well but
+    cannot resolve sub-pixel translation errors due to the coarse grid.
+    Running ECC at ds_fine (e.g. 8) with the coarse result as initialiser
+    gives 8x more precision per overview pixel and resolves translation to
+    within ~ds_fine HE pixels.
+
+    Parameters
+    ----------
+    he_mask_fine : bool (he_h//ds_fine, he_w//ds_fine) tissue mask.
+    mx_mask_fine : bool (mx_h//ds_fine, mx_w//ds_fine) tissue mask.
+    m_full_coarse : float32 (2, 3) coarse H&E full-res -> MX full-res affine.
+    ds_fine : int  downsample factor used to build the fine masks.
+    he_h/w, mx_h/w : full-resolution image dimensions.
+
+    Returns
+    -------
+    m_full_fine : float32 (2, 3) refined H&E full-res -> MX full-res affine,
+                  or m_full_coarse unchanged if ECC fails.
+    """
+    he_ov_h, he_ov_w = he_mask_fine.shape
+    mx_ov_h, mx_ov_w = mx_mask_fine.shape
+
+    mx_resized = cv2.resize(
+        mx_mask_fine.astype(np.float32), (he_ov_w, he_ov_h),
+        interpolation=cv2.INTER_LINEAR,
+    )
+    he_f32 = cv2.GaussianBlur(he_mask_fine.astype(np.float32), (5, 5), 0)
+    mx_f32 = cv2.GaussianBlur(mx_resized, (5, 5), 0)
+
+    # ECC runs on mx_resized (MX mask resized to HE overview dimensions).
+    # The warp matrix must map HE_ov coords -> mx_resized coords.
+    # m_full maps H&E full-res -> MX full-res; the linear part carries through
+    # unchanged in overview space (ds cancels), but the output axis must be
+    # scaled by rx,ry to land in the resized-MX (= HE-sized) pixel grid.
+    # Concretely:
+    #   x_mx_ov  ≈  a * x_he_ov + b * y_he_ov + tx / ds_fine
+    #   x_resized = (x_mx_ov + 0.5) * rx - 0.5
+    #             ≈  a*rx * x_he_ov + b*rx * y_he_ov + tx*rx/ds_fine
+    rx = he_ov_w / mx_ov_w
+    ry = he_ov_h / mx_ov_h
+    a, b, tx = float(m_full_coarse[0, 0]), float(m_full_coarse[0, 1]), float(m_full_coarse[0, 2])
+    c, d, ty = float(m_full_coarse[1, 0]), float(m_full_coarse[1, 1]), float(m_full_coarse[1, 2])
+    m_ov_init = np.array(
+        [
+            [a * rx, b * rx, tx * rx / ds_fine],
+            [c * ry, d * ry, ty * ry / ds_fine],
+        ],
+        dtype=np.float32,
+    )
+
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 200, 1e-5)
+    try:
+        _, m_ov_fine = cv2.findTransformECC(
+            he_f32, mx_f32, m_ov_init.astype(np.float32),
+            cv2.MOTION_AFFINE, criteria,
+        )
+    except cv2.error as e:  # pylint: disable=catching-non-exception
+        print(f"  WARNING: fine-scale ECC failed ({e}). Keeping coarse result.")
+        return m_full_coarse
+
+    tx_ov = (float(m_ov_fine[0, 2]) + 0.5) / rx - 0.5
+    ty_ov = (float(m_ov_fine[1, 2]) + 0.5) / ry - 0.5
+    return np.array(
+        [
+            [m_ov_fine[0, 0] / rx, m_ov_fine[0, 1] / rx, tx_ov * ds_fine],
+            [m_ov_fine[1, 0] / ry, m_ov_fine[1, 1] / ry, ty_ov * ds_fine],
+        ],
+        dtype=np.float32,
+    )
+
+
 def register_he_mx_affine_intensity(
     he_gray_ov: np.ndarray,
     mx_dna_ov: np.ndarray,
@@ -118,6 +229,7 @@ def register_he_mx_affine_intensity(
     he_w: int,
     mx_h: int,
     mx_w: int,
+    fallback_m_full: np.ndarray | None = None,
 ) -> np.ndarray:
     """Affine registration using actual image intensities instead of binary masks.
 
@@ -150,8 +262,8 @@ def register_he_mx_affine_intensity(
     he_f = cv2.GaussianBlur(he_gray_ov.astype(np.float32), (3, 3), 0)
     mx_f = cv2.GaussianBlur(mx_resized.astype(np.float32), (3, 3), 0)
 
-    # Centroid init from tissue masks
-    m_ov = _centroid_init_m_ov(
+    # Phase-corr init from tissue masks (more precise than centroid for translation)
+    m_ov = _phase_corr_init_m_ov(
         he_mask.astype(np.float32), mx_mask_resized.astype(np.float32)
     )
 
@@ -159,7 +271,9 @@ def register_he_mx_affine_intensity(
     try:
         _, m_ov = cv2.findTransformECC(he_f, mx_f, m_ov, cv2.MOTION_AFFINE, criteria)
     except cv2.error as e:  # pylint: disable=catching-non-exception
-        print(f"  WARNING: intensity ECC failed ({e}). Returning centroid-init scale-only.")
+        print(f"  WARNING: intensity ECC failed ({e}). Returning fallback transform.")
+        if fallback_m_full is not None:
+            return fallback_m_full
         scale = he_w / mx_w
         return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
 
@@ -312,7 +426,7 @@ def estimate_deformable_field(
 ) -> dict[str, object]:
     """Estimate an overview-space dense field that refines affine registration."""
     m_ov = _full_affine_to_overview(m_full, he_mask, mx_mask, he_h, he_w, mx_h, mx_w)
-    he_f = cv2.GaussianBlur((he_mask > 0).astype(np.float32), (0, 0), sigmaX=1.5)
+    he_f32 = cv2.GaussianBlur((he_mask > 0).astype(np.float32), (0, 0), sigmaX=1.5)
     mx_aff = cv2.warpAffine(
         (mx_mask > 0).astype(np.float32),
         m_ov.astype(np.float32),
@@ -321,11 +435,15 @@ def estimate_deformable_field(
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=0,
     )
-    mx_f = cv2.GaussianBlur(mx_aff.astype(np.float32), (0, 0), sigmaX=1.5)
+    mx_f32 = cv2.GaussianBlur(mx_aff.astype(np.float32), (0, 0), sigmaX=1.5)
 
+    # NOTE: calcOpticalFlowFarneback in OpenCV 4.13 is broken with float32 input
+    # (returns exactly zero). Convert to uint8 as a workaround.
+    he_u8 = np.clip(he_f32 * 255, 0, 255).astype(np.uint8)
+    mx_u8 = np.clip(mx_f32 * 255, 0, 255).astype(np.uint8)
     flow = cv2.calcOpticalFlowFarneback(
-        mx_f,
-        he_f,
+        mx_u8,
+        he_u8,
         None,
         pyr_scale=0.5,
         levels=3,
@@ -336,6 +454,8 @@ def estimate_deformable_field(
         flags=0,
     )
     flow = cv2.GaussianBlur(flow, (0, 0), sigmaX=1.0)
+    he_f = he_f32
+    mx_f = mx_f32
 
     max_disp = 0.08 * float(min(he_mask.shape))
     mag = np.hypot(flow[..., 0], flow[..., 1])
@@ -358,6 +478,116 @@ def estimate_deformable_field(
         "iou_deformable": float(iou_def),
         "mean_disp_ov": float(np.mean(np.hypot(flow[..., 0], flow[..., 1]))),
         "max_disp_ov": float(np.max(np.hypot(flow[..., 0], flow[..., 1]))),
+    }
+
+
+def estimate_deformable_field_intensity(
+    he_gray_ov: np.ndarray,
+    mx_dna_ov: np.ndarray,
+    he_mask_fine: np.ndarray,
+    mx_mask_fine: np.ndarray,
+    m_full: np.ndarray,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+) -> dict[str, object]:
+    """Estimate dense flow using fine-scale tissue masks (he_mask_fine / mx_mask_fine).
+
+    Runs Farneback on binary tissue masks at a fine downsample (e.g. ds=8)
+    rather than ds=64, providing 8× more spatial resolution for the flow.
+    At ds=8 tissue boundaries (glands, vessels) are much sharper than at ds=64,
+    giving Farneback better gradient signal to detect local deformation.
+
+    Parameters
+    ----------
+    he_gray_ov : unused (reserved for future intensity-based flow).
+    mx_dna_ov  : unused (reserved for future intensity-based flow).
+    he_mask_fine : bool (he_ov_h, he_ov_w)  H&E tissue mask at fine scale.
+    mx_mask_fine : bool (mx_ov_h, mx_ov_w)  MX tissue mask at fine scale.
+    m_full     : float32 (2, 3)  H&E full-res -> MX full-res affine.
+    he_h/w, mx_h/w : full-resolution dimensions.
+
+    Returns
+    -------
+    dict with keys: flow_dx_ov, flow_dy_ov, iou_affine, iou_deformable,
+                    mean_disp_ov, max_disp_ov.
+                    Flow is stored in fine-scale overview-pixel units and is
+                    automatically rescaled when applied via
+                    read_multiplex_patch_affine_deform (uses he_full_w / w_ov).
+    """
+    he_ov_h, he_ov_w = he_mask_fine.shape
+    mx_ov_h, mx_ov_w = mx_mask_fine.shape
+
+    # Build m_ov: maps HE fine-overview coords -> MX fine-overview coords.
+    he_sx = he_w / max(1, he_ov_w)
+    he_sy = he_h / max(1, he_ov_h)
+    mx_inv_sx = mx_ov_w / max(1, mx_w)
+    mx_inv_sy = mx_ov_h / max(1, mx_h)
+    a, b, tx = map(float, m_full[0])
+    c, d, ty = map(float, m_full[1])
+    m_ov = np.array(
+        [
+            [a * he_sx * mx_inv_sx, b * he_sy * mx_inv_sx, tx * mx_inv_sx],
+            [c * he_sx * mx_inv_sy, d * he_sy * mx_inv_sy, ty * mx_inv_sy],
+        ],
+        dtype=np.float32,
+    )
+
+    # Warp MX binary mask to H&E fine overview space.
+    he_f = cv2.GaussianBlur((he_mask_fine > 0).astype(np.float32), (0, 0), sigmaX=1.5)
+    mx_aff = cv2.warpAffine(
+        (mx_mask_fine > 0).astype(np.float32),
+        m_ov,
+        (he_ov_w, he_ov_h),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+    mx_f32 = cv2.GaussianBlur(mx_aff.astype(np.float32), (0, 0), sigmaX=1.5)
+    mx_f = mx_f32
+
+    # NOTE: calcOpticalFlowFarneback in OpenCV 4.13 is broken with float32 input.
+    he_u8 = np.clip(he_f * 255, 0, 255).astype(np.uint8)
+    mx_u8 = np.clip(mx_f32 * 255, 0, 255).astype(np.uint8)
+
+    # Farneback at fine scale: sharper tissue boundaries → more gradient signal.
+    flow = cv2.calcOpticalFlowFarneback(
+        mx_u8,
+        he_u8,
+        None,
+        pyr_scale=0.5,
+        levels=4,
+        winsize=41,
+        iterations=6,
+        poly_n=7,
+        poly_sigma=1.5,
+        flags=0,
+    )
+    flow = cv2.GaussianBlur(flow, (0, 0), sigmaX=1.5)
+
+    max_disp = 0.08 * float(min(he_ov_h, he_ov_w))
+    mag = np.hypot(flow[..., 0], flow[..., 1])
+    scale_arr = np.ones_like(mag, dtype=np.float32)
+    valid = mag > (max_disp + 1e-6)
+    scale_arr[valid] = max_disp / mag[valid]
+    flow[..., 0] *= scale_arr
+    flow[..., 1] *= scale_arr
+
+    mx_aff_bin = mx_aff > 0.5
+    mx_def = _apply_inverse_flow(mx_aff.astype(np.float32), flow[..., 0], flow[..., 1])
+    mx_def_bin = mx_def > 0.5
+    iou_aff = _iou(he_mask_fine > 0, mx_aff_bin)
+    iou_def = _iou(he_mask_fine > 0, mx_def_bin)
+
+    mag_final = np.hypot(flow[..., 0], flow[..., 1])
+    return {
+        "flow_dx_ov": flow[..., 0].astype(np.float32),
+        "flow_dy_ov": flow[..., 1].astype(np.float32),
+        "iou_affine": float(iou_aff),
+        "iou_deformable": float(iou_def),
+        "mean_disp_ov": float(np.mean(mag_final)),
+        "max_disp_ov": float(np.max(mag_final)),
     }
 
 

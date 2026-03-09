@@ -2,13 +2,14 @@
 """
 visualize_pipeline.py -- Summary figure for the histopathology patch pipeline.
 
-Shows six panels for a single selected patch:
+Shows seven panels for a single selected patch:
   1. Original location  -- thumbnail of full H&E with red rectangle
   2. H&E patch          -- 256x256 RGB PNG
   3. Multiplex (CD31)   -- channel 0 of .npy with 'hot' colormap
   4. Cell segmentation  -- H&E with CellViT contours overlaid
-  5. Cell type          -- cell_types RGBA composited on black
-  6. Cell state         -- cell_states RGBA composited on black
+  5. Cell mask          -- colorized label IDs from masks/*.npy
+  6. Cell type          -- cell_types RGBA composited on black
+  7. Cell state         -- cell_states RGBA composited on black
 
 CLI:
   python visualize_pipeline.py --processed processed/ [--patch 58624_4096]
@@ -280,6 +281,59 @@ def build_overlay_panel(png_path: Path, label: str) -> np.ndarray:
     return _gray_placeholder(f"no {label}")
 
 
+def _extract_2d_mask(arr: np.ndarray) -> np.ndarray | None:
+    """Best-effort conversion of a loaded mask array to 2-D."""
+    if arr.ndim == 2:
+        return arr
+    if arr.ndim == 3:
+        if arr.shape[0] == 1:
+            return arr[0]
+        if arr.shape[-1] == 1:
+            return arr[:, :, 0]
+        if arr.shape[0] <= 4:
+            return arr[0]
+        if arr.shape[-1] <= 4:
+            return arr[:, :, 0]
+    return None
+
+
+def _colorize_label_mask(mask: np.ndarray, seed: int = 42) -> np.ndarray:
+    """Map integer label IDs to deterministic RGB colors (0 -> black)."""
+    label_ids, inverse = np.unique(mask, return_inverse=True)
+    colors = np.zeros((label_ids.shape[0], 3), dtype=np.uint8)
+    non_bg = label_ids != 0
+    if np.any(non_bg):
+        rng = np.random.default_rng(seed)
+        colors[non_bg] = rng.integers(
+            30, 256, size=(int(non_bg.sum()), 3), dtype=np.uint8
+        )
+    return colors[inverse].reshape(mask.shape + (3,))
+
+
+def build_cell_mask_panel(mask_npy_path: Path) -> tuple[np.ndarray, bool]:
+    """Return (colorized cell mask RGB, had_mask_file)."""
+    if not mask_npy_path.exists():
+        return _gray_placeholder("no cell mask"), False
+
+    try:
+        arr = np.load(mask_npy_path)
+    except Exception as exc:
+        print(f"  Warning: could not load cell mask .npy: {exc}")
+        return _gray_placeholder("bad cell mask"), False
+
+    mask = _extract_2d_mask(arr)
+    if mask is None:
+        print(f"  Warning: unsupported cell mask shape {arr.shape} in {mask_npy_path}")
+        return _gray_placeholder("bad cell mask"), False
+
+    if np.issubdtype(mask.dtype, np.floating):
+        mask_u32 = np.round(mask).astype(np.uint32)
+    else:
+        mask_u32 = mask.astype(np.uint32, copy=False)
+
+    return _colorize_label_mask(mask_u32), True
+
+
 # ---------------------------------------------------------------------------
 # Main figure
 # ---------------------------------------------------------------------------
@@ -333,7 +387,7 @@ def make_summary_figure(
     mx_channel: int = 0,
     mx_max_proj: bool = False,
 ) -> Path:
-    """Build and save the 6-panel summary figure for the given patch.
+    """Build and save the 7-panel summary figure for the given patch.
 
     Returns the path to the saved PNG.
     """
@@ -377,6 +431,7 @@ def make_summary_figure(
     he_png = processed_dir / "he" / f"{patch_key}.png"
     mx_npy = processed_dir / "multiplex" / f"{patch_key}.npy"
     cellvit_json = processed_dir / "cellvit" / f"{patch_key}.json"
+    mask_npy = processed_dir / "masks" / f"{patch_key}.npy"
     cell_types_png = processed_dir / "cell_types" / f"{patch_key}.png"
     cell_states_png = processed_dir / "cell_states" / f"{patch_key}.png"
     summary_json = processed_dir / "cell_summary.json"
@@ -412,11 +467,12 @@ def make_summary_figure(
         mx_npy, channel_idx=mx_channel, use_max_proj=mx_max_proj
     )
     panel_seg, had_seg = build_cellseg_panel(he_png, cellvit_json)
+    panel_cell_mask, had_mask = build_cell_mask_panel(mask_npy)
     panel_cell_types = build_overlay_panel(cell_types_png, "cell type")
     panel_cell_states = build_overlay_panel(cell_states_png, "cell state")
 
     # Assemble figure
-    fig, axes = plt.subplots(1, 6, figsize=(18, 4))
+    fig, axes = plt.subplots(1, 7, figsize=(21, 4))
     fig.patch.set_facecolor("black")
 
     titles = [
@@ -424,6 +480,7 @@ def make_summary_figure(
         "H&E patch",
         f"Multiplex ({mx_ch_name})",
         "Cell segmentation" if had_seg else "Cell segmentation\n(no data)",
+        "Cell mask" if had_mask else "Cell mask\n(no data)",
         "Cell type",
         "Cell state",
     ]
@@ -432,11 +489,12 @@ def make_summary_figure(
         panel_he,
         panel_mx,
         panel_seg,
+        panel_cell_mask,
         panel_cell_types,
         panel_cell_states,
     ]
 
-    legends = [None, None, None, None, TYPE_LEGEND, STATE_LEGEND]
+    legends = [None, None, None, None, None, TYPE_LEGEND, STATE_LEGEND]
     for ax, img, title, leg in zip(axes, panels, titles, legends):
         _show_panel(ax, img, title, legend=leg)
 
@@ -472,13 +530,13 @@ def make_grid_figure(
     mx_channel: int = 0,
     mx_max_proj: bool = False,
 ) -> Path:
-    """Build a (N_patches × 6) grid figure and save it.
+    """Build a (N_patches × 7) grid figure and save it.
 
-    Each row is one patch with the same 6 panels as make_summary_figure.
+    Each row is one patch with the same 7 panels as make_summary_figure.
     Returns the path to the saved PNG.
     """
     n = len(patch_keys)
-    fig, axes_grid = plt.subplots(n, 6, figsize=(14, 2 * n))
+    fig, axes_grid = plt.subplots(n, 7, figsize=(16, 2 * n))
     fig.patch.set_facecolor("black")
     if n == 1:
         axes_grid = [axes_grid]  # make iterable
@@ -509,10 +567,11 @@ def make_grid_figure(
         "H&E patch",
         f"Multiplex ({mx_ch_name})",
         "Cell segmentation",
+        "Cell mask",
         "Cell type",
         "Cell state",
     ]
-    legends = [None, None, None, None, TYPE_LEGEND, STATE_LEGEND]
+    legends = [None, None, None, None, None, TYPE_LEGEND, STATE_LEGEND]
 
     for row_idx, patch_key in enumerate(patch_keys):
         ax_row = axes_grid[row_idx]
@@ -528,6 +587,7 @@ def make_grid_figure(
         he_png = processed_dir / "he" / f"{patch_key}.png"
         mx_npy = processed_dir / "multiplex" / f"{patch_key}.npy"
         cellvit_json = processed_dir / "cellvit" / f"{patch_key}.json"
+        mask_npy = processed_dir / "masks" / f"{patch_key}.npy"
         cell_types_png = processed_dir / "cell_types" / f"{patch_key}.png"
         cell_states_png = processed_dir / "cell_states" / f"{patch_key}.png"
 
@@ -542,6 +602,7 @@ def make_grid_figure(
             mx_npy, channel_idx=mx_channel, use_max_proj=mx_max_proj
         )
         panel_seg, had_seg = build_cellseg_panel(he_png, cellvit_json)
+        panel_cell_mask, had_mask = build_cell_mask_panel(mask_npy)
         panel_cell_types = build_overlay_panel(cell_types_png, "cell type")
         panel_cell_states = build_overlay_panel(cell_states_png, "cell state")
         panels = [
@@ -549,12 +610,13 @@ def make_grid_figure(
             panel_he,
             panel_mx,
             panel_seg,
+            panel_cell_mask,
             panel_cell_types,
             panel_cell_states,
         ]
 
         # Legends and titles only on first row
-        row_legends = legends if row_idx == 0 else [None] * 6
+        row_legends = legends if row_idx == 0 else [None] * 7
 
         # Per-patch cell summary as row label
         ps = summary_per_patch.get(patch_key, {})
@@ -569,6 +631,8 @@ def make_grid_figure(
             title = col_titles[col_idx] if row_idx == 0 else ""
             if col_idx == 3 and not had_seg:
                 title = "Cell segmentation\n(no data)" if row_idx == 0 else ""
+            if col_idx == 4 and not had_mask:
+                title = "Cell mask\n(no data)" if row_idx == 0 else ""
             _show_panel(ax, img, title, legend=leg)
 
         # Row label on the leftmost axis y-label

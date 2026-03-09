@@ -1257,10 +1257,12 @@ decide_registration_path = _qc.decide_registration_path
 REG_MODE_AFFINE = _registration.REG_MODE_AFFINE
 REG_MODE_DEFORMABLE = _registration.REG_MODE_DEFORMABLE
 register_he_mx_affine = _registration.register_he_mx_affine
+refine_affine_fine_scale = _registration.refine_affine_fine_scale
 register_he_mx_affine_intensity = _registration.register_he_mx_affine_intensity
 register_he_mx_orb = _registration.register_he_mx_orb
 _apply_inverse_flow = _registration._apply_inverse_flow
 estimate_deformable_field = _registration.estimate_deformable_field
+estimate_deformable_field_intensity = _registration.estimate_deformable_field_intensity
 compute_deformable_patch_qc_metrics = _registration.compute_deformable_patch_qc_metrics
 transform_he_to_mx_point = _registration.transform_he_to_mx_point
 _transform_points_affine = _registration._transform_points_affine
@@ -1492,9 +1494,18 @@ def main():
                 dtype=np.float32,
             )
 
-            # Approach A: centroid-init ECC on tissue masks
-            print("  [A] Centroid-initialized ECC on tissue masks ...")
-            m_A = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
+            # Approach A: phase-corr-initialized ECC on tissue masks, then
+            # fine-scale (ds=8) refinement to resolve sub-pixel translation.
+            ds_fine = 8
+            print("  [A] Phase-corr ECC on tissue masks (coarse) ...")
+            m_A_coarse = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
+            print(f"  [A] Fine-scale refinement at ds={ds_fine} ...")
+            he_mask_fine = build_tissue_mask(he_store, he_axes, he_w, he_h, ds_fine)
+            mx_mask_fine = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds_fine)
+            m_A = refine_affine_fine_scale(
+                he_mask_fine, mx_mask_fine, m_A_coarse,
+                ds_fine, he_h, he_w, mx_h, mx_w,
+            )
             qc_A = _evaluate_registration_qc(
                 m_A, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
                 cascade_coords, patch_size,
@@ -1520,6 +1531,7 @@ def main():
                     he_gray_ov, mx_dna_ov_f32,
                     mask, mx_mask,
                     ds, he_h, he_w, mx_h, mx_w,
+                    fallback_m_full=m_A,
                 )
                 qc_B = _evaluate_registration_qc(
                     m_B, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
@@ -1575,6 +1587,73 @@ def main():
             decision = final_qc["decision"]
             global_qc = final_qc["global_qc"]
             patch_qc = final_qc["patch_qc"]
+
+        # --- Deformable refinement when affine patch QC fails ---
+        # Uses fine-scale (ds_fine) binary mask Farneback rather than ds=64,
+        # giving 8× sharper tissue boundary signal to detect local deformation.
+        deform_attempted = False
+        if decision == FAIL_LOCAL_NEEDS_DEFORMABLE and args.register:
+            print(f"  [D] Affine patch QC failed -> fine-scale deformable (ds={ds_fine}) ...")
+            deform_attempted = True
+
+            # he_mask_fine / mx_mask_fine were computed above for approach A.
+            deform_state = estimate_deformable_field_intensity(
+                None, None,  # intensity images reserved for future use
+                he_mask_fine, mx_mask_fine,
+                m_full, he_h, he_w, mx_h, mx_w,
+            )
+            print(
+                f"  [D] iou_affine={deform_state['iou_affine']:.4f} "
+                f"iou_deformable={deform_state['iou_deformable']:.4f} "
+                f"mean_disp={deform_state['mean_disp_ov']:.3f}px"
+            )
+
+            # compute_deformable_patch_qc_metrics uses masks at ds=64; the flow
+            # is at ds=ds_fine so we need to rescale to ds=64 overview units.
+            # Flow is in overview-pixel units: 1 ds=8 ov px = ds_fine full-res px.
+            # After resizing to ds=64 grid, divide by (ds/ds_fine) so that
+            # `dx_ov * he_sx` still gives the correct full-res displacement.
+            h_ov64, w_ov64 = mask.shape
+            scale_ratio = float(ds) / float(ds_fine)  # e.g. 64/8 = 8
+            flow_dx_64 = cv2.resize(
+                deform_state["flow_dx_ov"], (w_ov64, h_ov64),
+                interpolation=cv2.INTER_LINEAR,
+            ) / scale_ratio
+            flow_dy_64 = cv2.resize(
+                deform_state["flow_dy_ov"], (w_ov64, h_ov64),
+                interpolation=cv2.INTER_LINEAR,
+            ) / scale_ratio
+            deform_patch_qc = compute_deformable_patch_qc_metrics(
+                mask, mx_mask, m_full,
+                flow_dx_64, flow_dy_64,
+                he_h, he_w, mx_h, mx_w,
+            )
+            # Accept deformable if either the patch QC improves significantly OR
+            # the overview IoU improves by ≥1% (the coarse patch_qc can miss the
+            # full-res improvement when the rescaled flow is < 1 overview pixel).
+            iou_gain = deform_state["iou_deformable"] - deform_state["iou_affine"]
+            patch_ok = float(deform_patch_qc.get("improved_fraction", 0)) >= 0.5
+            iou_ok = iou_gain >= 0.01
+            if patch_ok or iou_ok:
+                # Store the rescaled flow so patch extraction uses ds=64 units
+                # (read_multiplex_patch_affine_deform auto-scales by w_ov).
+                deform_state = dict(deform_state)
+                deform_state["flow_dx_ov"] = flow_dx_64
+                deform_state["flow_dy_ov"] = flow_dy_64
+                registration_mode = REG_MODE_DEFORMABLE
+                decision = PASS_AFFINE  # deformable is good enough
+                print(
+                    f"  [D] Deformable PASS "
+                    f"(improved_fraction={deform_patch_qc['improved_fraction']:.2f}, "
+                    f"iou_gain={iou_gain:+.4f})"
+                )
+            else:
+                deform_state = None  # don't apply deformable if not helpful
+                print(
+                    f"  [D] Deformable not beneficial "
+                    f"(improved_fraction={deform_patch_qc.get('improved_fraction', 0):.2f}, "
+                    f"iou_gain={iou_gain:+.4f}), keeping affine"
+                )
 
         print(
             f"  Registration: method={registration_method} "
@@ -1739,7 +1818,7 @@ def main():
                         },
                     },
                     "deformable": {
-                        "attempted": deform_state is not None,
+                        "attempted": deform_attempted,
                         "used": registration_mode == REG_MODE_DEFORMABLE,
                         "metrics": (
                             None

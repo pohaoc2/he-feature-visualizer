@@ -61,6 +61,23 @@ def _mpp_from_xml(xml_bytes: bytes) -> tuple[float | None, float | None, str | N
     )
 
 
+def _channel_count_from_axes_shape(
+    axes: str | None, shape: tuple[int, ...] | None
+) -> int | None:
+    """Infer channel count from axes/shape for local TIFF series metadata."""
+    if not axes or not shape:
+        return None
+    axes_up = axes.upper()
+
+    if "C" in axes_up:
+        return int(shape[axes_up.index("C")])
+    if "S" in axes_up:
+        return int(shape[axes_up.index("S")])
+    if "Y" in axes_up and "X" in axes_up:
+        return 1
+    return None
+
+
 # ---------------------------------------------------------------------------
 # S3 range-read helpers
 # ---------------------------------------------------------------------------
@@ -111,6 +128,7 @@ def inspect_tiff_local(path: str) -> dict:
         info.update(axes=axes, shape=shape, dtype=str(series.dtype))
         info["img_h"] = shape[axes.index("Y")] if "Y" in axes else None
         info["img_w"] = shape[axes.index("X")] if "X" in axes else None
+        info["n_channels"] = _channel_count_from_axes_shape(axes, shape)
 
         ome_xml = getattr(tif, "ome_metadata", None)
         if not ome_xml and tif.pages:
@@ -169,10 +187,12 @@ def inspect_tiff_s3(bucket: str, key: str) -> dict:
     # TIFF tags: 256=ImageWidth, 257=ImageLength, 270=ImageDescription
     width = tags.get(256, (None, None, None))[2]
     height = tags.get(257, (None, None, None))[2]
+    samples_per_pixel = tags.get(277, (None, None, None))[2]
     info["img_w"] = width
     info["img_h"] = height
     info["shape"] = (height, width)
-    info["axes"] = "YX"
+    info["n_channels"] = int(samples_per_pixel) if samples_per_pixel else 1
+    info["axes"] = "YXS" if info["n_channels"] > 1 else "YX"
     info["dtype"] = "unknown"
 
     mpp_x = mpp_y = unit = None
@@ -218,6 +238,15 @@ def print_info(label: str, info: dict) -> None:
     print(f"  Path      : {info['path']}")
     print(f"{size_str}", end="")
     print(f"  Dimensions: {info['img_w']} x {info['img_h']} px  (W x H)")
+    n_channels = info.get("n_channels")
+    if n_channels is None:
+        n_channels = _channel_count_from_axes_shape(
+            info.get("axes"), info.get("shape")
+        )
+    if n_channels is not None:
+        print(f"  Channels  : {n_channels}")
+    else:
+        print("  Channels  : unknown")
     if info.get("mpp_x") is not None:
         u = info["mpp_unit"]
         phys_w = info["img_w"] * info["mpp_x"]
