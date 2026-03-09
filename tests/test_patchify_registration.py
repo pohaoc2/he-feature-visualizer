@@ -1677,3 +1677,52 @@ class TestRegistrationArtifacts:
 
         data = json.loads((out_dir / "index.json").read_text())
         assert data["registration_mode"] in {"affine", "deformable"}
+
+
+# ---------------------------------------------------------------------------
+# register_he_mx_affine_intensity
+# ---------------------------------------------------------------------------
+
+
+def test_register_he_mx_affine_intensity_returns_valid_matrix():
+    """register_he_mx_affine_intensity should return a 2x3 float32 matrix."""
+    import numpy as np
+    from stages.patchify_lib.registration import register_he_mx_affine_intensity
+
+    rng = np.random.default_rng(1)
+    he_gray = np.zeros((128, 128), dtype=np.float32)
+    he_gray[40:90, 40:90] = rng.uniform(0.3, 1.0, (50, 50)).astype(np.float32)
+    mx_dna = np.zeros((96, 96), dtype=np.float32)
+    mx_dna[20:60, 20:60] = rng.uniform(0.2, 0.9, (40, 40)).astype(np.float32)
+
+    he_mask = he_gray > 0.2
+    mx_mask = mx_dna > 0.2
+
+    m = register_he_mx_affine_intensity(
+        he_gray, mx_dna, he_mask.astype(bool), mx_mask.astype(bool),
+        ds=8, he_h=1024, he_w=1024, mx_h=768, mx_w=768
+    )
+    assert m.shape == (2, 3)
+    assert m.dtype == np.float32
+
+
+def test_register_he_mx_affine_intensity_fallback_on_blank():
+    """Should return a scale-only matrix when intensity images are blank (ECC fails)."""
+    import numpy as np
+    from stages.patchify_lib.registration import register_he_mx_affine_intensity
+
+    blank_he = np.zeros((64, 64), dtype=np.float32)
+    blank_mx = np.zeros((48, 48), dtype=np.float32)
+    blank_mask = np.zeros((64, 64), dtype=bool)
+    blank_mx_mask = np.zeros((48, 48), dtype=bool)
+
+    m = register_he_mx_affine_intensity(
+        blank_he, blank_mx, blank_mask, blank_mx_mask,
+        ds=8, he_h=512, he_w=512, mx_h=384, mx_w=384
+    )
+    assert m.shape == (2, 3)
+    assert m.dtype == np.float32
+    # Should be scale-only fallback: 512/384 ≈ 1.333, so 1/scale ≈ 0.75
+    expected_scale = 384 / 512
+    assert abs(m[0, 0] - expected_scale) < 0.05
+    assert abs(m[1, 1] - expected_scale) < 0.05

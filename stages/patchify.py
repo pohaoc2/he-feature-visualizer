@@ -189,6 +189,28 @@ def build_mx_tissue_mask(
     return binary.astype(bool)
 
 
+def _read_he_gray_overview(
+    store, axes: str, img_h: int, img_w: int, ds: int
+) -> np.ndarray:
+    """Read H&E at overview resolution and return normalized float32 grayscale (H, W)."""
+    axes_up = axes.upper()
+    h_t = (img_h // ds) * ds
+    w_t = (img_w // ds) * ds
+
+    c_first = "C" in axes_up and axes_up.index("C") < axes_up.index("Y")
+    if c_first:
+        raw = np.array(store[:, :h_t:ds, :w_t:ds])
+        overview = np.moveaxis(raw[:3], 0, -1)  # (H, W, 3)
+    else:
+        overview = np.array(store[:h_t:ds, :w_t:ds, :3])  # (H, W, 3)
+
+    if overview.dtype != np.uint8:
+        overview = percentile_to_uint8(overview)
+
+    gray = cv2.cvtColor(overview.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+    return gray.astype(np.float32) / 255.0
+
+
 def register_he_mx_affine(  # pylint: disable=unused-argument
     he_mask: np.ndarray,
     mx_mask: np.ndarray,

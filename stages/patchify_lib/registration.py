@@ -108,6 +108,95 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
     return m_full
 
 
+def register_he_mx_affine_intensity(
+    he_gray_ov: np.ndarray,
+    mx_dna_ov: np.ndarray,
+    he_mask: np.ndarray,
+    mx_mask: np.ndarray,
+    ds: int,
+    he_h: int,
+    he_w: int,
+    mx_h: int,
+    mx_w: int,
+) -> np.ndarray:
+    """Affine registration using actual image intensities instead of binary masks.
+
+    Parameters
+    ----------
+    he_gray_ov : float32 (he_ov_h, he_ov_w) normalized HE grayscale at overview res.
+    mx_dna_ov  : float32 (mx_ov_h, mx_ov_w) normalized MX DNA channel at overview res.
+    he_mask    : bool (he_ov_h, he_ov_w) tissue mask for centroid init.
+    mx_mask    : bool (mx_ov_h, mx_ov_w) tissue mask for centroid init.
+    ds         : overview downsample factor.
+    he_h/w, mx_h/w : full-resolution image dimensions.
+
+    Returns
+    -------
+    m_full : float32 (2, 3) affine mapping H&E full-res -> MX full-res.
+    """
+    he_ov_h, he_ov_w = he_gray_ov.shape
+    mx_ov_h, mx_ov_w = mx_dna_ov.shape
+
+    # Resize MX DNA to HE overview grid (same as mask-based ECC)
+    mx_resized = cv2.resize(
+        mx_dna_ov, (he_ov_w, he_ov_h), interpolation=cv2.INTER_LINEAR
+    )
+    # Resize MX mask for centroid init
+    mx_mask_resized = cv2.resize(
+        mx_mask.astype(np.float32), (he_ov_w, he_ov_h), interpolation=cv2.INTER_LINEAR
+    ) > 0.5
+
+    # Mild blur to smooth noise without removing texture
+    he_f = cv2.GaussianBlur(he_gray_ov.astype(np.float32), (3, 3), 0)
+    mx_f = cv2.GaussianBlur(mx_resized.astype(np.float32), (3, 3), 0)
+
+    # Centroid init from tissue masks
+    m_ov = _centroid_init_m_ov(
+        he_mask.astype(np.float32), mx_mask_resized.astype(np.float32)
+    )
+
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 500, 1e-6)
+    try:
+        _, m_ov = cv2.findTransformECC(he_f, mx_f, m_ov, cv2.MOTION_AFFINE, criteria)
+    except cv2.error as e:  # pylint: disable=catching-non-exception
+        print(f"  WARNING: intensity ECC failed ({e}). Returning centroid-init scale-only.")
+        scale = he_w / mx_w
+        return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
+
+    # Re-centre cap (same logic as register_he_mx_affine)
+    mx_warped = cv2.warpAffine(
+        mx_f, m_ov.astype(np.float32), (he_ov_w, he_ov_h),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+    )
+    he_ctr = _mask_centroid_or_none(he_mask > 0)
+    mx_ctr = _mask_centroid_or_none(mx_warped > mx_warped.mean() + 1e-6)
+    if he_ctr is not None and mx_ctr is not None:
+        dx = float(mx_ctr[0] - he_ctr[0])
+        dy = float(mx_ctr[1] - he_ctr[1])
+        shift_mag = float(np.hypot(dx, dy))
+        max_recentre_px = 12.0
+        if shift_mag > max_recentre_px and shift_mag > 1e-9:
+            scale = max_recentre_px / shift_mag
+            dx *= scale
+            dy *= scale
+        m_ov[0, 2] += dx
+        m_ov[1, 2] += dy
+
+    # Convert overview → full-res (same pixel-center formula as register_he_mx_affine)
+    rx = he_ov_w / mx_ov_w
+    ry = he_ov_h / mx_ov_h
+    tx_ov = (float(m_ov[0, 2]) + 0.5) / rx - 0.5
+    ty_ov = (float(m_ov[1, 2]) + 0.5) / ry - 0.5
+    return np.array(
+        [
+            [m_ov[0, 0] / rx, m_ov[0, 1] / rx, tx_ov * ds],
+            [m_ov[1, 0] / ry, m_ov[1, 1] / ry, ty_ov * ds],
+        ],
+        dtype=np.float32,
+    )
+
+
 def _apply_inverse_flow(
     image: np.ndarray, flow_dx: np.ndarray, flow_dy: np.ndarray
 ) -> np.ndarray:
