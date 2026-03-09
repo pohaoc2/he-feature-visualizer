@@ -1,0 +1,337 @@
+"""
+Tests for stages/refine_registration.py — Stage 2.5.
+
+All tests use synthetic data — no real TIFF or CSV files are required.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+
+import numpy as np
+import pandas as pd
+import pytest
+import scipy.spatial
+import scipy.interpolate
+
+from stages.refine_registration import (
+    apply_affine,
+    compute_tps_residual,
+    fit_tps,
+    load_he_centroids,
+    load_mx_centroids,
+    match_centroids,
+    ransac_filter,
+    subsample_uniform,
+    update_index,
+    _make_patch_pixel_grid,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _identity_m_full() -> np.ndarray:
+    return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float64)
+
+
+def _scale_m_full(sx: float, sy: float) -> np.ndarray:
+    return np.array([[sx, 0.0, 0.0], [0.0, sy, 0.0]], dtype=np.float64)
+
+
+# ---------------------------------------------------------------------------
+# apply_affine
+# ---------------------------------------------------------------------------
+
+
+def test_apply_affine_identity():
+    m = _identity_m_full()
+    pts = np.array([[10.0, 20.0], [30.0, 40.0]])
+    out = apply_affine(m, pts)
+    np.testing.assert_allclose(out, pts)
+
+
+def test_apply_affine_scale():
+    m = _scale_m_full(0.5, 0.5)
+    pts = np.array([[100.0, 200.0]])
+    out = apply_affine(m, pts)
+    np.testing.assert_allclose(out, [[50.0, 100.0]])
+
+
+def test_apply_affine_translation():
+    m = np.array([[1.0, 0.0, 5.0], [0.0, 1.0, -3.0]])
+    pts = np.array([[10.0, 10.0]])
+    out = apply_affine(m, pts)
+    np.testing.assert_allclose(out, [[15.0, 7.0]])
+
+
+# ---------------------------------------------------------------------------
+# load_he_centroids
+# ---------------------------------------------------------------------------
+
+
+def test_load_he_centroids_basic(tmp_path):
+    """CellViT JSON → H&E centroids in HE and MX space."""
+    patches = [{"x0": 0, "y0": 0}, {"x0": 256, "y0": 0}]
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+
+    # Patch (0,0): two cells
+    (cellvit_dir / "0_0.json").write_text(
+        json.dumps({"cells": [{"centroid": [10.0, 20.0]}, {"centroid": [30.0, 40.0]}]})
+    )
+    # Patch (256,0): one cell
+    (cellvit_dir / "256_0.json").write_text(
+        json.dumps({"cells": [{"centroid": [5.0, 15.0]}]})
+    )
+
+    he_pts_he, he_pts_mx = load_he_centroids(cellvit_dir, patches, coord_scale=0.5)
+
+    assert he_pts_he.shape == (3, 2)
+    assert he_pts_mx.shape == (3, 2)
+    # First cell: global HE = (0+10, 0+20) = (10, 20); MX = (5, 10)
+    np.testing.assert_allclose(he_pts_he[0], [10.0, 20.0])
+    np.testing.assert_allclose(he_pts_mx[0], [5.0, 10.0])
+    # Third cell: global HE = (256+5, 0+15) = (261, 15); MX = (130.5, 7.5)
+    np.testing.assert_allclose(he_pts_he[2], [261.0, 15.0])
+    np.testing.assert_allclose(he_pts_mx[2], [130.5, 7.5])
+
+
+def test_load_he_centroids_missing_json(tmp_path):
+    """Missing CellViT JSON files are silently skipped."""
+    patches = [{"x0": 0, "y0": 0}]
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+    # No JSON files created
+
+    he_pts_he, he_pts_mx = load_he_centroids(cellvit_dir, patches, coord_scale=0.5)
+    assert he_pts_he.shape == (0, 2)
+    assert he_pts_mx.shape == (0, 2)
+
+
+def test_load_he_centroids_empty_cells(tmp_path):
+    """JSON with empty cells list returns empty arrays."""
+    patches = [{"x0": 0, "y0": 0}]
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+    (cellvit_dir / "0_0.json").write_text(json.dumps({"cells": []}))
+
+    he_pts_he, he_pts_mx = load_he_centroids(cellvit_dir, patches, coord_scale=0.5)
+    assert len(he_pts_he) == 0
+
+
+# ---------------------------------------------------------------------------
+# load_mx_centroids
+# ---------------------------------------------------------------------------
+
+
+def test_load_mx_centroids_basic(tmp_path):
+    csv_path = tmp_path / "cells.csv"
+    df = pd.DataFrame({"Xt": [10.0, 20.0, 30.0], "Yt": [5.0, 15.0, 25.0]})
+    df.to_csv(csv_path, index=False)
+
+    mx_pts, kdtree = load_mx_centroids(csv_path)
+    assert mx_pts.shape == (3, 2)
+    assert isinstance(kdtree, scipy.spatial.KDTree)
+    np.testing.assert_allclose(mx_pts[0], [10.0, 5.0])
+
+
+def test_load_mx_centroids_missing_columns(tmp_path):
+    csv_path = tmp_path / "cells.csv"
+    pd.DataFrame({"X": [1], "Y": [2]}).to_csv(csv_path, index=False)
+    with pytest.raises(ValueError, match="Xt"):
+        load_mx_centroids(csv_path)
+
+
+# ---------------------------------------------------------------------------
+# match_centroids
+# ---------------------------------------------------------------------------
+
+
+def _make_grid_points(n: int, scale: float = 1.0) -> np.ndarray:
+    """Create a regular grid of n*n points."""
+    side = int(np.ceil(np.sqrt(n)))
+    pts = []
+    for i in range(side):
+        for j in range(side):
+            pts.append([i * scale, j * scale])
+            if len(pts) >= n:
+                return np.array(pts[:n], dtype=np.float64)
+    return np.array(pts[:n], dtype=np.float64)
+
+
+def test_match_centroids_identity():
+    """With identity m_full and perfect correspondence, all points should match."""
+    n = 20
+    he_pts_he = _make_grid_points(n, scale=10.0)
+    mx_pts = he_pts_he.copy()  # identity mapping
+    kdtree = scipy.spatial.KDTree(mx_pts)
+    m_full = _identity_m_full()
+
+    src_he, dst_mx = match_centroids(he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0)
+    assert len(src_he) == n
+    np.testing.assert_allclose(src_he, dst_mx)
+
+
+def test_match_centroids_scale_half():
+    """With scale=0.5 m_full, scaled H&E pts should match MX pts at half resolution."""
+    n = 20
+    he_pts_he = _make_grid_points(n, scale=10.0)
+    mx_pts = he_pts_he * 0.5  # ground truth MX
+    kdtree = scipy.spatial.KDTree(mx_pts)
+    m_full = _scale_m_full(0.5, 0.5)
+
+    src_he, dst_mx = match_centroids(he_pts_he, mx_pts, kdtree, m_full, distance_gate=0.5)
+    assert len(src_he) == n
+
+
+def test_match_centroids_too_far():
+    """Points outside distance gate should not be matched."""
+    he_pts_he = np.array([[0.0, 0.0], [100.0, 100.0]])
+    mx_pts = np.array([[50.0, 50.0], [200.0, 200.0]])  # all far away
+    kdtree = scipy.spatial.KDTree(mx_pts)
+    m_full = _identity_m_full()
+
+    src_he, dst_mx = match_centroids(he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0)
+    assert len(src_he) == 0
+
+
+# ---------------------------------------------------------------------------
+# ransac_filter
+# ---------------------------------------------------------------------------
+
+
+def test_ransac_filter_keeps_inliers():
+    """Pure affine point set should have high inlier count."""
+    rng = np.random.default_rng(0)
+    n = 50
+    src = rng.uniform(0, 1000, (n, 2))
+    # Ground truth: scale 0.5 + translation (100, 200)
+    m_true = np.array([[0.5, 0.0, 100.0], [0.0, 0.5, 200.0]])
+    dst = apply_affine(m_true, src) + rng.normal(0, 0.5, (n, 2))
+
+    # Add 5 outliers
+    dst[-5:] = rng.uniform(0, 5000, (5, 2))
+
+    src_in, dst_in = ransac_filter(src, dst, ransac_thresh=5.0)
+    assert len(src_in) >= n - 5  # most original inliers kept
+
+
+def test_ransac_filter_too_few_points():
+    """With < 4 points, no filtering is applied."""
+    src = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+    dst = src + 0.1
+    src_out, dst_out = ransac_filter(src, dst)
+    assert len(src_out) == len(src)
+
+
+# ---------------------------------------------------------------------------
+# subsample_uniform
+# ---------------------------------------------------------------------------
+
+
+def test_subsample_uniform_no_op():
+    """When n <= max_pts, returns all points unchanged."""
+    src = np.arange(20).reshape(10, 2).astype(float)
+    dst = src * 2
+    s, d = subsample_uniform(src, dst, max_pts=20)
+    assert len(s) == 10
+
+
+def test_subsample_uniform_reduces():
+    """Returns at most max_pts points."""
+    rng = np.random.default_rng(1)
+    src = rng.uniform(0, 1000, (500, 2))
+    dst = src + 1
+    s, d = subsample_uniform(src, dst, max_pts=100)
+    assert len(s) <= 100
+    assert len(s) == len(d)
+
+
+# ---------------------------------------------------------------------------
+# fit_tps + compute_tps_residual
+# ---------------------------------------------------------------------------
+
+
+def test_fit_tps_identity():
+    """TPS fitted on identity mapping should have near-zero residual."""
+    rng = np.random.default_rng(42)
+    n = 50
+    src = rng.uniform(0, 500, (n, 2))
+    dst = src.copy()  # identity
+
+    tps_x, tps_y = fit_tps(src, dst, max_tps_points=n)
+    residual = compute_tps_residual(tps_x, tps_y, src, dst)
+    assert residual < 1.0, f"Expected near-zero residual, got {residual:.4f}"
+
+
+def test_fit_tps_affine():
+    """TPS should fit a pure affine transform exactly."""
+    rng = np.random.default_rng(7)
+    n = 80
+    src = rng.uniform(0, 1000, (n, 2))
+    m = np.array([[0.5, 0.0, 50.0], [0.0, 0.5, 100.0]])
+    dst = apply_affine(m, src)
+
+    tps_x, tps_y = fit_tps(src, dst, max_tps_points=n)
+    residual = compute_tps_residual(tps_x, tps_y, src, dst)
+    assert residual < 1.0, f"TPS affine residual too high: {residual:.4f}"
+
+
+# ---------------------------------------------------------------------------
+# _make_patch_pixel_grid
+# ---------------------------------------------------------------------------
+
+
+def test_make_patch_pixel_grid_shape():
+    grid = _make_patch_pixel_grid(x0=10, y0=20, patch_size=4)
+    assert grid.shape == (16, 2)
+
+
+def test_make_patch_pixel_grid_values():
+    grid = _make_patch_pixel_grid(x0=0, y0=0, patch_size=2)
+    # (col, row) order; x = col + x0, y = row + y0
+    # row=0: x=0,y=0 and x=1,y=0; row=1: x=0,y=1 and x=1,y=1
+    expected_x = [0.0, 1.0, 0.0, 1.0]
+    expected_y = [0.0, 0.0, 1.0, 1.0]
+    np.testing.assert_allclose(grid[:, 0], expected_x)
+    np.testing.assert_allclose(grid[:, 1], expected_y)
+
+
+# ---------------------------------------------------------------------------
+# update_index
+# ---------------------------------------------------------------------------
+
+
+def test_update_index(tmp_path):
+    index_path = tmp_path / "index.json"
+    initial = {
+        "warp_matrix": [[0.5, 0.0, -100.0], [0.0, 0.5, 200.0]],
+        "registration_mode": "deformable",
+        "patches": [{"x0": 0, "y0": 0, "patch_size": 256}],
+    }
+    index_path.write_text(json.dumps(initial))
+
+    ctrl_he = np.array([[0.0, 0.0], [100.0, 0.0], [0.0, 100.0]])
+    ctrl_mx = ctrl_he * 0.5
+
+    update_index(
+        processed_dir=tmp_path,
+        tps_control_he=ctrl_he,
+        tps_control_mx=ctrl_mx,
+        n_matches=42,
+        inlier_fraction=0.85,
+    )
+
+    result = json.loads(index_path.read_text())
+    assert result["registration_mode"] == "tps"
+    assert result["tps_n_matches"] == 42
+    assert abs(result["tps_inlier_fraction"] - 0.85) < 1e-6
+    assert len(result["tps_control_he"]) == 3
+    assert len(result["tps_control_mx"]) == 3
+    # Original fields preserved
+    assert "warp_matrix" in result
+    assert "patches" in result
