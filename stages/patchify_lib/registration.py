@@ -244,8 +244,10 @@ def register_he_mx_orb(
         return None
 
     good = [
-        m for m, n in raw_matches
-        if len([m, n]) == 2 and m.distance < ratio_thresh * n.distance
+        match_pair[0]
+        for match_pair in raw_matches
+        if len(match_pair) == 2
+        and match_pair[0].distance < ratio_thresh * match_pair[1].distance
     ]
     if len(good) < min_inliers:
         print(f"  WARNING: ORB ratio test left only {len(good)} matches (need {min_inliers}).")
