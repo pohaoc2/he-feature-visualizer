@@ -392,8 +392,14 @@ def main() -> None:
         type=float,
         default=1.0,
         help="Scale factor applied to H&E global coordinates before KDTree query. "
-        "Set to he_mpp/csv_mpp when H&E and CSV use different pixel spacings "
-        "(e.g. 0.5 when H&E is 0.325 µm/px and CSV is in 20x/0.650 µm/px space).",
+        "Set to he_mpp/mx_mpp (e.g. 0.5 when H&E is 0.325 µm/px and MX is 0.65 µm/px).",
+    )
+    parser.add_argument(
+        "--csv-mpp",
+        type=float,
+        default=0.65,
+        help="µm/px of the CSV coordinate space. Divides Xt/Yt by this value to "
+        "convert from µm to MX px (default: 0.65 for WD-76845-097).",
     )
     parser.add_argument(
         "--type-percentile",
@@ -460,6 +466,12 @@ def main() -> None:
     )
     for marker, val in thresholds.items():
         log.info("  %-12s → %.4f", marker, val)
+
+    if args.csv_mpp != 1.0:
+        log.info("  Converting CSV coords from µm to px (÷ %.4f) …", args.csv_mpp)
+        df = df.copy()
+        df[x_col] = df[x_col] / args.csv_mpp
+        df[y_col] = df[y_col] / args.csv_mpp
 
     log.info("Building KDTree …")
     kdtree = build_csv_index(df, x_col, y_col)

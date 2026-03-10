@@ -567,6 +567,8 @@ def test_cli_creates_output_dirs(tmp_path):
         str(out_dir),
         "--max-dist",
         "15.0",
+        "--csv-mpp",
+        "1.0",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -660,6 +662,8 @@ def test_cli_skips_patch_with_no_cellvit_json(tmp_path):
         str(out_dir),
         "--max-dist",
         "15.0",
+        "--csv-mpp",
+        "1.0",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
@@ -1063,6 +1067,8 @@ def test_cli_summary_contains_agreement_stats(tmp_path):
         str(out_dir),
         "--max-dist",
         "15.0",
+        "--csv-mpp",
+        "1.0",
     ]
     result = subprocess.run(
         cmd,
@@ -1139,6 +1145,8 @@ def test_cli_summary_no_match_low_without_conflict_pairs(tmp_path):
         str(out_dir),
         "--max-dist",
         "5.0",
+        "--csv-mpp",
+        "1.0",
     ]
     result = subprocess.run(
         cmd,
@@ -1210,6 +1218,8 @@ def test_cli_custom_type_percentile(tmp_path):
         str(out_dir),
         "--max-dist",
         "15.0",
+        "--csv-mpp",
+        "1.0",
         "--type-percentile",
         "0",
     ]  # p0 → threshold = min value = 1.0
@@ -1285,6 +1295,8 @@ def test_cli_thresholds_config(tmp_path):
         str(out_dir),
         "--max-dist",
         "15.0",
+        "--csv-mpp",
+        "1.0",
         "--thresholds-config",
         str(config_path),
     ]

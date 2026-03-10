@@ -1,9 +1,9 @@
 # H&E + Multiplex Feature Generator
 
-[![Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml/badge.svg)](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer/graph/badge.svg)](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/release/python-3130/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[Tests](https://github.com/pohaoc2/he-feature-visualizer/actions/workflows/test.yml)
+[codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer)
+[Python 3.13](https://www.python.org/downloads/release/python-3130/)
+[Code style: black](https://github.com/psf/black)
 
 A pipeline for generating spatially-resolved, multi-channel feature maps from co-registered H&E and multiplex immunofluorescence (mIF) whole-slide images.
 
@@ -113,14 +113,14 @@ The resulting 2×3 `warp_matrix` (H&E full-res → MX full-res) is stored in `in
 ### Outputs
 
 
-| Output                      | Contents                                                                        | Used in         |
-| --------------------------- | ------------------------------------------------------------------------------- | --------------- |
-| `processed_wd/he/`             | RGB PNG patches                                                                 | Stage 2 (Colab) |
-| `processed_wd/multiplex/`      | Per-channel `.npy` arrays (uint16)                                              | Stage 4         |
-| `processed_wd/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given | Downstream      |
-| `processed_wd/index.json`      | Patch coordinate index + `warp_matrix` + `registration_mode` + flags per patch  | All stages      |
-| `processed_wd/registration/`   | `affine.json`, `qc_metrics.json`, `final_transform.json`, optional `deform_field.npz` | QC / debug |
-| `processed_wd/vis_patches.jpg` | H&E + multiplex overview with patch grid                                        | QC              |
+| Output                         | Contents                                                                              | Used in         |
+| ------------------------------ | ------------------------------------------------------------------------------------- | --------------- |
+| `processed_wd/he/`             | RGB PNG patches                                                                       | Stage 2 (Colab) |
+| `processed_wd/multiplex/`      | Per-channel `.npy` arrays (uint16)                                                    | Stage 4         |
+| `processed_wd/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given       | Downstream      |
+| `processed_wd/index.json`      | Patch coordinate index + `warp_matrix` + `registration_mode` + flags per patch        | All stages      |
+| `processed_wd/registration/`   | `affine.json`, `qc_metrics.json`, `final_transform.json`, optional `deform_field.npz` | QC / debug      |
+| `processed_wd/vis_patches.jpg` | H&E + multiplex overview with patch grid                                              | QC              |
 
 
 Only `processed_wd/he/` needs to be uploaded to Colab for Stage 2.
@@ -155,14 +155,14 @@ Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negl
 4. Edit the **Configuration cell** (Cell 1) at the top:
 
 
-| Variable          | Description                          | Example                                |
-| ----------------- | ------------------------------------ | -------------------------------------- |
-| `STORAGE_BACKEND` | Storage backend                      | `'s3'`                                 |
-| `S3_BUCKET`       | S3 bucket name                       | `'my-bucket'`                          |
+| Variable          | Description                          | Example                                   |
+| ----------------- | ------------------------------------ | ----------------------------------------- |
+| `STORAGE_BACKEND` | Storage backend                      | `'s3'`                                    |
+| `S3_BUCKET`       | S3 bucket name                       | `'my-bucket'`                             |
 | `S3_HE_PREFIX`    | S3 key prefix for patches            | `'he-feature-visualizer/processed_wd/he'` |
-| `MODEL_VARIANT`   | `'CellViT-256'` or `'CellViT-SAM-H'` | `'CellViT-256'`                        |
-| `BATCH_SIZE`      | Patches per GPU batch                | `32` (reduce to 8 if OOM)              |
-| `MAGNIFICATION`   | Scan magnification                   | `40` (use `20` if 20x slide)           |
+| `MODEL_VARIANT`   | `'CellViT-256'` or `'CellViT-SAM-H'` | `'CellViT-256'`                           |
+| `BATCH_SIZE`      | Patches per GPU batch                | `32` (reduce to 8 if OOM)                 |
+| `MAGNIFICATION`   | Scan magnification                   | `40` (use `20` if 20x slide)              |
 
 
 1. **Runtime → Run all**
@@ -243,6 +243,7 @@ python -m stages.assign_cells \
 Derive vasculature and oxygen/glucose layers from multiplex channels.
 
 Outputs per patch:
+
 - `processed_wd/vasculature/{x0}_{y0}.png` (RGBA vessel overlay)
 - `processed_wd/vasculature_mask/{x0}_{y0}.npy` (bool vessel mask)
 - `processed_wd/oxygen/{x0}_{y0}.png` (oxygen proxy)
@@ -412,6 +413,7 @@ ssh -i /path/to/key.pem -L 8010:127.0.0.1:8010 ec2-user@<EC2_PUBLIC_DNS_OR_IP>
 ```
 
 Viewer controls:
+
 - Group buttons: `H&E`, `Immune`, `Vasculature`, `Cancer Cells`, `Proliferative Cells`
 - Transparency slider for multiplex overlay
 - Pan: two-finger touchpad scroll or click-drag
@@ -420,11 +422,13 @@ Viewer controls:
 - Color legend is drawn on the figure (right panel)
 
 Rendering behavior:
+
 - Uses registration matrix (`warp_matrix`) from `index.json` to transform multiplex into H&E space.
 - Defaults to `min-level >= 1` to avoid full-resolution level 0 loading.
 - Multi-marker groups use per-channel min-max normalization (no percentile), then multicolor max projection.
 
 Notes:
+
 - If `--index-json` is omitted, the viewer tries `processed_wd/index.json` then `proceeded_wd/index.json`.
 - Use `--no-preload-multiplex` if memory is limited.
 

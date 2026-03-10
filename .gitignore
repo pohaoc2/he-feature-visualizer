@@ -6,6 +6,8 @@ docs/*
 processed*/
 *.png
 .DS_Store
+*.npy
+*.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

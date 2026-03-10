@@ -103,12 +103,25 @@ def load_he_centroids(
 # ---------------------------------------------------------------------------
 
 
-def load_mx_centroids(csv_path: pathlib.Path) -> tuple[np.ndarray, scipy.spatial.KDTree]:
-    """Load (Xt, Yt) MX centroids from CSV and build KDTree."""
+def load_mx_centroids(
+    csv_path: pathlib.Path,
+    csv_mpp: float = 1.0,
+    crop_origin: tuple[float, float] | None = None,
+) -> tuple[np.ndarray, scipy.spatial.KDTree]:
+    """Load (Xt, Yt) MX centroids from CSV and build KDTree.
+
+    If csv_mpp != 1.0, coordinates are divided by csv_mpp to convert from µm to MX px.
+    If crop_origin (ox, oy) is given, it is subtracted after mpp conversion to shift
+    full-slide MX px coords into crop-image MX px space.
+    """
     df = pd.read_csv(csv_path)
     if "Xt" not in df.columns or "Yt" not in df.columns:
         raise ValueError(f"CSV must have 'Xt' and 'Yt' columns; found: {list(df.columns)[:10]}")
     mx_pts = df[["Xt", "Yt"]].to_numpy(dtype=np.float64)
+    if csv_mpp != 1.0:
+        mx_pts = mx_pts / csv_mpp
+    if crop_origin is not None:
+        mx_pts = mx_pts - np.array(crop_origin, dtype=np.float64)
     kdtree = scipy.spatial.KDTree(mx_pts)
     return mx_pts, kdtree
 
@@ -394,6 +407,7 @@ def reextract_multiplex_patches(
     channel_indices: list[int],
     tps_x: scipy.interpolate.RBFInterpolator,
     tps_y: scipy.interpolate.RBFInterpolator,
+    patch_size_default: int = 256,
 ) -> None:
     """Re-extract all multiplex patches using TPS and overwrite .npy files."""
     mx_dir = processed_dir / "multiplex"
@@ -407,7 +421,7 @@ def reextract_multiplex_patches(
     for i, patch_meta in enumerate(patches):
         x0 = int(patch_meta["x0"])
         y0 = int(patch_meta["y0"])
-        patch_size = int(patch_meta.get("patch_size", 256))
+        patch_size = int(patch_meta.get("patch_size", patch_size_default))
         patch_id = f"{x0}_{y0}"
 
         arr, _inside = read_multiplex_patch_tps(
@@ -508,7 +522,19 @@ def main(args: argparse.Namespace) -> None:
     m_full = np.array(m_full_list, dtype=np.float64)
     log.info("  m_full = %s", m_full.tolist())
 
-    channel_indices = index.get("channel_indices", list(range(4)))
+    # Resolve channel indices: prefer stored list, else resolve from names via metadata CSV
+    channel_indices = index.get("channel_indices")
+    if channel_indices is None:
+        channel_names = index.get("channels", [])
+        if channel_names and args.metadata_csv:
+            from utils.channels import resolve_channel_indices
+            channel_indices, _ = resolve_channel_indices(args.metadata_csv, channel_names)
+            log.info("  Resolved %d channel indices from metadata CSV.", len(channel_indices))
+        else:
+            raise ValueError(
+                "index.json has no 'channel_indices' and no --metadata-csv provided "
+                "to resolve channel names. Pass --metadata-csv."
+            )
 
     # Step 1: Build H&E centroid cloud
     log.info("Step 1: Loading H&E centroids from CellViT JSONs ...")
@@ -527,7 +553,12 @@ def main(args: argparse.Namespace) -> None:
 
     # Step 2: Load MX centroid cloud
     log.info("Step 2: Loading MX centroids from %s ...", args.csv)
-    mx_pts, mx_kdtree = load_mx_centroids(pathlib.Path(args.csv))
+    crop_origin = tuple(args.mx_crop_origin) if args.mx_crop_origin else None
+    if crop_origin:
+        log.info("  Applying crop origin offset: (%.1f, %.1f) MX px", *crop_origin)
+    mx_pts, mx_kdtree = load_mx_centroids(
+        pathlib.Path(args.csv), csv_mpp=args.csv_mpp, crop_origin=crop_origin
+    )
     log.info("  %d MX centroids loaded.", len(mx_pts))
 
     # Step 3: Match with m_full
@@ -580,6 +611,7 @@ def main(args: argparse.Namespace) -> None:
             channel_indices=channel_indices,
             tps_x=tps_x,
             tps_y=tps_y,
+            patch_size_default=index.get("patch_size", 256),
         )
     else:
         log.info("Step 6: Skipped (--skip-reextract).")
@@ -612,6 +644,31 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--he-image", required=True, help="H&E OME-TIFF path.")
     p.add_argument("--multiplex-image", required=True, help="Multiplex OME-TIFF path.")
     p.add_argument("--csv", required=True, help="MX cell CSV with Xt,Yt columns.")
+    p.add_argument(
+        "--metadata-csv",
+        default=None,
+        help="Multiplex channel metadata CSV (same as Stage 1 --metadata-csv). "
+        "Required to resolve channel names from index.json when channel_indices "
+        "is not stored.",
+    )
+    p.add_argument(
+        "--csv-mpp",
+        type=float,
+        default=0.65,
+        help="µm/px of CSV coordinate space. Divides Xt/Yt by this value to "
+        "convert from µm to MX px (default: 0.65 for WD-76845-097).",
+    )
+    p.add_argument(
+        "--mx-crop-origin",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("OX", "OY"),
+        help="Top-left corner of the crop image in full-slide MX px (x y). "
+        "Required when --multiplex-image is a crop of the full slide and "
+        "--csv contains full-slide coordinates. Subtracted from CSV coords "
+        "after mpp conversion to bring them into crop MX px space.",
+    )
     p.add_argument(
         "--coord-scale",
         type=float,
