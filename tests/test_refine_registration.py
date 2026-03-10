@@ -16,12 +16,15 @@ import scipy.spatial
 import scipy.interpolate
 
 from stages.refine_registration import (
+    affine_icp,
     apply_affine,
     compute_tps_residual,
+    csv_to_he_coords,
     fit_tps,
     load_he_centroids,
     load_mx_centroids,
     match_centroids,
+    match_centroids_he,
     ransac_filter,
     subsample_uniform,
     update_index,
@@ -327,7 +330,7 @@ def test_update_index(tmp_path):
     )
 
     result = json.loads(index_path.read_text())
-    assert result["registration_mode"] == "tps"
+    assert result["registration_mode"] == "icp_tps"
     assert result["tps_n_matches"] == 42
     assert abs(result["tps_inlier_fraction"] - 0.85) < 1e-6
     assert len(result["tps_control_he"]) == 3
@@ -335,3 +338,188 @@ def test_update_index(tmp_path):
     # Original fields preserved
     assert "warp_matrix" in result
     assert "patches" in result
+
+
+# ---------------------------------------------------------------------------
+# csv_to_he_coords
+# ---------------------------------------------------------------------------
+
+
+def test_csv_to_he_coords_identity(tmp_path):
+    """With identity m_full and csv_mpp=1, MX px == CSV µm and HE px == MX px."""
+    csv_path = tmp_path / "cells.csv"
+    pd.DataFrame({"Xt": [100.0, 200.0], "Yt": [50.0, 150.0]}).to_csv(csv_path, index=False)
+
+    m_full = _identity_m_full()
+    mx_pts, he_pts = csv_to_he_coords(csv_path, m_full, csv_mpp=1.0)
+
+    np.testing.assert_allclose(mx_pts, [[100.0, 50.0], [200.0, 150.0]])
+    # inv(identity) is identity → he == mx
+    np.testing.assert_allclose(he_pts, mx_pts, atol=1e-9)
+
+
+def test_csv_to_he_coords_scale_mpp(tmp_path):
+    """csv_mpp divides Xt/Yt before inverse transform."""
+    csv_path = tmp_path / "cells.csv"
+    pd.DataFrame({"Xt": [1.3, 2.6], "Yt": [0.65, 1.3]}).to_csv(csv_path, index=False)
+
+    m_full = _identity_m_full()
+    mx_pts, he_pts = csv_to_he_coords(csv_path, m_full, csv_mpp=0.65)
+
+    # 1.3 / 0.65 = 2.0, 2.6 / 0.65 = 4.0 ...
+    np.testing.assert_allclose(mx_pts[:, 0], [2.0, 4.0], atol=1e-9)
+    np.testing.assert_allclose(he_pts, mx_pts, atol=1e-9)
+
+
+def test_csv_to_he_coords_inverse_scale(tmp_path):
+    """inv(scale(0.5)) should double the MX px to get HE px."""
+    csv_path = tmp_path / "cells.csv"
+    pd.DataFrame({"Xt": [100.0], "Yt": [200.0]}).to_csv(csv_path, index=False)
+
+    m_full = _scale_m_full(0.5, 0.5)
+    mx_pts, he_pts = csv_to_he_coords(csv_path, m_full, csv_mpp=1.0)
+
+    # mx = [100, 200]; inv(scale 0.5) = scale 2 → he = [200, 400]
+    np.testing.assert_allclose(mx_pts, [[100.0, 200.0]], atol=1e-9)
+    np.testing.assert_allclose(he_pts, [[200.0, 400.0]], atol=1e-9)
+
+
+def test_csv_to_he_coords_crop_origin(tmp_path):
+    """crop_origin is subtracted from MX px before inverse transform."""
+    csv_path = tmp_path / "cells.csv"
+    pd.DataFrame({"Xt": [500.0], "Yt": [300.0]}).to_csv(csv_path, index=False)
+
+    m_full = _identity_m_full()
+    mx_pts, he_pts = csv_to_he_coords(
+        csv_path, m_full, csv_mpp=1.0, crop_origin=(200.0, 100.0)
+    )
+
+    # After origin subtraction: mx = [300, 200]
+    np.testing.assert_allclose(mx_pts, [[300.0, 200.0]], atol=1e-9)
+    np.testing.assert_allclose(he_pts, [[300.0, 200.0]], atol=1e-9)
+
+
+def test_csv_to_he_coords_missing_columns(tmp_path):
+    csv_path = tmp_path / "bad.csv"
+    pd.DataFrame({"X": [1.0], "Y": [2.0]}).to_csv(csv_path, index=False)
+
+    with pytest.raises(ValueError, match="Xt"):
+        csv_to_he_coords(csv_path, _identity_m_full())
+
+
+# ---------------------------------------------------------------------------
+# affine_icp
+# ---------------------------------------------------------------------------
+
+
+def test_affine_icp_identity():
+    """When src == dst, ICP should converge immediately with identity transform."""
+    rng = np.random.default_rng(1)
+    pts = rng.uniform(0, 1000, (200, 2))
+    M_icp, n_matches, n_iters = affine_icp(pts, pts, max_iter=50, tol=1e-4)
+    # Transform should be close to identity
+    np.testing.assert_allclose(M_icp[:, :2], np.eye(2), atol=0.05)
+    np.testing.assert_allclose(M_icp[:, 2], [0.0, 0.0], atol=5.0)
+
+
+def test_affine_icp_pure_translation():
+    """ICP should recover a known translation."""
+    rng = np.random.default_rng(2)
+    src = rng.uniform(100, 900, (300, 2))
+    tx, ty = 30.0, -20.0
+    dst = src + np.array([tx, ty])  # dst = src + translation
+
+    M_icp, n_matches, n_iters = affine_icp(src, dst, max_iter=50, tol=1e-4)
+    src_warped = apply_affine(M_icp, src)
+
+    # After ICP, src_warped should be close to dst
+    np.testing.assert_allclose(src_warped, dst, atol=1.0)
+
+
+def test_affine_icp_distance_gate_too_small():
+    """If distance gate excludes all points, ICP should stop early without error."""
+    src = np.array([[0.0, 0.0], [100.0, 100.0], [200.0, 0.0], [300.0, 200.0]])
+    dst = src + 1000.0  # very far away
+
+    M_icp, n_matches, n_iters = affine_icp(src, dst, max_iter=10, tol=1e-4, distance_gate=1.0)
+    # Should return without raising; n_matches may be 0
+    assert M_icp.shape == (2, 3)
+
+
+def test_affine_icp_output_shape():
+    rng = np.random.default_rng(3)
+    src = rng.uniform(0, 500, (50, 2))
+    dst = rng.uniform(0, 500, (80, 2))
+    M_icp, n_matches, n_iters = affine_icp(src, dst, max_iter=5)
+    assert M_icp.shape == (2, 3)
+    assert isinstance(n_matches, int)
+    assert isinstance(n_iters, int)
+
+
+# ---------------------------------------------------------------------------
+# match_centroids_he
+# ---------------------------------------------------------------------------
+
+
+def test_match_centroids_he_exact():
+    """When ICP-transformed CellViT perfectly overlaps CSV-in-HE, all should match."""
+    rng = np.random.default_rng(4)
+    n = 50
+    he_pts = rng.uniform(0, 1000, (n, 2))
+    csv_in_he = he_pts.copy()  # perfect overlap
+    mx_pts = he_pts * 0.5      # dummy MX coords
+
+    src_he, dst_mx = match_centroids_he(
+        icp_he=he_pts,
+        he_pts_he=he_pts,
+        csv_in_he=csv_in_he,
+        mx_pts=mx_pts,
+        distance_gate=1.0,
+    )
+    assert len(src_he) == n
+    np.testing.assert_allclose(dst_mx, mx_pts, atol=1e-9)
+
+
+def test_match_centroids_he_empty_when_far():
+    """No matches when all pairs exceed distance gate."""
+    he_pts = np.array([[0.0, 0.0], [100.0, 0.0]])
+    csv_in_he = he_pts + 1000.0
+    mx_pts = csv_in_he * 0.5
+
+    src_he, dst_mx = match_centroids_he(
+        icp_he=he_pts,
+        he_pts_he=he_pts,
+        csv_in_he=csv_in_he,
+        mx_pts=mx_pts,
+        distance_gate=5.0,
+    )
+    assert len(src_he) == 0
+    assert len(dst_mx) == 0
+
+
+def test_update_index_with_icp(tmp_path):
+    """update_index should store icp_matrix and icp_n_iters fields."""
+    index_path = tmp_path / "index.json"
+    index_path.write_text(json.dumps({"warp_matrix": [[0.5, 0, 0], [0, 0.5, 0]], "patches": []}))
+
+    ctrl_he = np.array([[0.0, 0.0], [100.0, 100.0]])
+    ctrl_mx = ctrl_he * 0.5
+    icp_m = np.array([[1.0, 0.01, 2.0], [-0.01, 1.0, -3.0]])
+
+    update_index(
+        processed_dir=tmp_path,
+        tps_control_he=ctrl_he,
+        tps_control_mx=ctrl_mx,
+        n_matches=20,
+        inlier_fraction=0.9,
+        icp_matrix=icp_m,
+        icp_n_iters=7,
+        icp_n_matches=150,
+    )
+
+    result = json.loads(index_path.read_text())
+    assert result["registration_mode"] == "icp_tps"
+    assert result["icp_n_iters"] == 7
+    assert result["icp_n_matches"] == 150
+    assert len(result["icp_matrix"]) == 2
+    assert len(result["icp_matrix"][0]) == 3

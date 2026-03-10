@@ -8,6 +8,8 @@ processed*/
 .DS_Store
 *.npy
 *.txt
+crop/
+*.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

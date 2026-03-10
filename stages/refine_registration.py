@@ -1,10 +1,11 @@
 """
-refine_registration.py — Stage 2.5: CellViT-guided TPS registration refinement.
+refine_registration.py — Stage 2.5: CellViT-guided ICP + TPS registration refinement.
 
 Uses CellViT-detected H&E nuclei and CSV cell centroids (ground-truth MX space)
-as landmark correspondences to fit a thin-plate-spline (TPS) warp that replaces
-the current global affine+deformable transform.  Produces pixel-aligned
-H&E+multiplex patch pairs for multimodal model training.
+as landmark correspondences to fit an ICP-refined affine followed by a
+thin-plate-spline (TPS) warp.  All matching is done in H&E pixel space for
+interpretability.  Produces pixel-aligned H&E+multiplex patch pairs for
+multimodal model training.
 
 Pipeline:
   Stage 1 → processed_crop/
@@ -14,12 +15,12 @@ Pipeline:
 Algorithm
 ---------
 1. Build global H&E centroid cloud from CellViT JSON files.
-2. Load MX centroid cloud from CSV (Xt, Yt columns).
-3. Match H&E centroids to MX centroids using current m_full + KDTree.
-4. RANSAC affine to filter outliers from matched pairs.
-5. Fit TPS on inlier matches with scipy RBFInterpolator.
+2. Load CSV centroids (Xt, Yt in µm) → MX px (÷ csv_mpp) → H&E px (inv m_full).
+3. ICP in H&E space: iteratively align CellViT cloud toward CSV-in-HE cloud.
+4. Post-ICP mutual nearest-neighbour matching + RANSAC affine outlier filter.
+5. Fit TPS (H&E px → MX px) on RANSAC inliers with scipy RBFInterpolator.
 6. Re-extract multiplex patches with TPS warp (cv2.remap).
-7. Update index.json with TPS control points and metadata.
+7. Update index.json with ICP matrix, TPS control points and metadata.
 
 CLI
 ---
@@ -28,8 +29,8 @@ python -m stages.refine_registration \\
   --he-image data/WD-76845-096-crop.ome.tif \\
   --multiplex-image data/WD-76845-097-crop.ome.tif \\
   --csv data/WD-76845-097.csv \\
-  --coord-scale 0.5 \\
-  --distance-gate 10 \\
+  --csv-mpp 0.65 \\
+  --distance-gate 20 \\
   --max-tps-points 2000
 """
 
@@ -127,17 +128,208 @@ def load_mx_centroids(
 
 
 # ---------------------------------------------------------------------------
-# Step 3: Initial matching with m_full
+# Step 2 (new): Convert CSV centroids µm → MX px → H&E px
 # ---------------------------------------------------------------------------
 
 
-def apply_affine(m_full: np.ndarray, pts_he: np.ndarray) -> np.ndarray:
-    """Apply 2x3 affine (H&E px → MX px) to Nx2 array. Returns Nx2."""
-    a, b, tx = float(m_full[0, 0]), float(m_full[0, 1]), float(m_full[0, 2])
-    c, d, ty = float(m_full[1, 0]), float(m_full[1, 1]), float(m_full[1, 2])
-    x = a * pts_he[:, 0] + b * pts_he[:, 1] + tx
-    y = c * pts_he[:, 0] + d * pts_he[:, 1] + ty
+def csv_to_he_coords(
+    csv_path: pathlib.Path,
+    m_full: np.ndarray,
+    csv_mpp: float = 1.0,
+    crop_origin: tuple[float, float] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert CSV cell centroids (µm) to both MX px and H&E px.
+
+    Parameters
+    ----------
+    csv_path    : Path to CSV with 'Xt', 'Yt' columns (in µm).
+    m_full      : 2×3 affine mapping H&E px → MX px.
+    csv_mpp     : µm per pixel of the CSV coordinate space (divides Xt/Yt).
+    crop_origin : (ox, oy) offset in full-slide MX px to subtract after mpp
+                  conversion, for when multiplex-image is a crop.
+
+    Returns
+    -------
+    mx_pts : (N, 2) float64  — centroids in MX pixel space
+    he_pts : (N, 2) float64  — centroids in H&E pixel space via inv(m_full)
+    """
+    df = pd.read_csv(csv_path)
+    if "Xt" not in df.columns or "Yt" not in df.columns:
+        raise ValueError(
+            f"CSV must have 'Xt' and 'Yt' columns; found: {list(df.columns)[:10]}"
+        )
+    mx_pts = df[["Xt", "Yt"]].to_numpy(dtype=np.float64)
+    if csv_mpp != 1.0:
+        mx_pts = mx_pts / csv_mpp
+    if crop_origin is not None:
+        mx_pts = mx_pts - np.array(crop_origin, dtype=np.float64)
+
+    # MX px → H&E px via inv(m_full)
+    m3 = np.vstack([m_full, [0.0, 0.0, 1.0]])   # 3×3
+    m3_inv = np.linalg.inv(m3)                   # 3×3 inverse
+    m_inv = m3_inv[:2, :]                         # 2×3: MX px → H&E px
+
+    ones = np.ones((len(mx_pts), 1), dtype=np.float64)
+    he_pts = (m_inv @ np.hstack([mx_pts, ones]).T).T  # (N, 2)
+
+    return mx_pts, he_pts
+
+
+# ---------------------------------------------------------------------------
+# Step 3 (new): ICP in H&E space
+# ---------------------------------------------------------------------------
+
+
+def affine_icp(
+    src_he: np.ndarray,
+    dst_he: np.ndarray,
+    max_iter: int = 50,
+    tol: float = 1e-4,
+    distance_gate: float | None = None,
+) -> tuple[np.ndarray, int, int]:
+    """Point-to-point affine ICP aligning CellViT cloud toward CSV-in-H&E cloud.
+
+    Each iteration:
+      1. Nearest-neighbour match src_curr → dst_he (optional distance gate).
+      2. Fit affine via cv2.estimateAffine2D (RANSAC).
+      3. Apply step transform to src_curr; accumulate into M_icp.
+      4. Converge when ‖M_step[:,:2] − I‖_F + ‖M_step[:,2]‖ < tol.
+
+    Parameters
+    ----------
+    src_he        : (N, 2) CellViT centroids in H&E px (aligned toward dst).
+    dst_he        : (M, 2) CSV centroids in H&E px (fixed target).
+    max_iter      : Maximum number of ICP iterations.
+    tol           : Convergence threshold on the step-transform magnitude.
+    distance_gate : Maximum H&E px distance for NN matching per iteration.
+
+    Returns
+    -------
+    M_icp     : (2, 3) cumulative affine  (H&E → corrected H&E)
+    n_matches : Number of matched pairs in the final iteration.
+    n_iters   : Number of iterations performed.
+    """
+    dst_kdtree = scipy.spatial.KDTree(dst_he)
+    M_cum = np.eye(2, 3, dtype=np.float64)  # starts as identity
+    src_curr = src_he.astype(np.float64).copy()
+    n_matches = 0
+    n_iters = 0
+
+    for i in range(max_iter):
+        dists, fwd_idx = dst_kdtree.query(src_curr, workers=-1)
+
+        if distance_gate is not None:
+            mask = dists <= distance_gate
+            if mask.sum() < 4:
+                log.warning(
+                    "ICP iter %d: only %d pts within gate (need >= 4); stopping.", i, mask.sum()
+                )
+                break
+            src_m = src_curr[mask]
+            dst_m = dst_he[fwd_idx[mask]]
+        else:
+            src_m = src_curr
+            dst_m = dst_he[fwd_idx]
+
+        n_matches = len(src_m)
+
+        M_step, _ = cv2.estimateAffine2D(
+            src_m.astype(np.float32),
+            dst_m.astype(np.float32),
+            method=cv2.RANSAC,
+            ransacReprojThreshold=5.0,
+        )
+        if M_step is None:
+            log.warning("ICP iter %d: estimateAffine2D returned None; stopping.", i)
+            break
+
+        M_step = M_step.astype(np.float64)
+
+        # Apply step to current cloud
+        ones = np.ones((len(src_curr), 1), dtype=np.float64)
+        src_curr = (M_step @ np.hstack([src_curr, ones]).T).T
+
+        # Accumulate: M_cum = M_step ∘ M_cum
+        M_step3 = np.vstack([M_step, [0.0, 0.0, 1.0]])
+        M_cum3 = np.vstack([M_cum, [0.0, 0.0, 1.0]])
+        M_cum = (M_step3 @ M_cum3)[:2, :]
+
+        delta = np.linalg.norm(M_step[:, :2] - np.eye(2)) + np.linalg.norm(M_step[:, 2])
+        n_iters = i + 1
+        if delta < tol:
+            log.info("  ICP converged at iteration %d (delta=%.2e).", n_iters, delta)
+            break
+    else:
+        log.warning("ICP did not converge within %d iterations.", max_iter)
+
+    return M_cum, n_matches, n_iters
+
+
+# ---------------------------------------------------------------------------
+# Step 3: Affine application helper + new HE-space matching
+# ---------------------------------------------------------------------------
+
+
+def apply_affine(m: np.ndarray, pts: np.ndarray) -> np.ndarray:
+    """Apply a 2×3 affine to (N, 2) points. Returns (N, 2)."""
+    a, b, tx = float(m[0, 0]), float(m[0, 1]), float(m[0, 2])
+    c, d, ty = float(m[1, 0]), float(m[1, 1]), float(m[1, 2])
+    x = a * pts[:, 0] + b * pts[:, 1] + tx
+    y = c * pts[:, 0] + d * pts[:, 1] + ty
     return np.column_stack([x, y])
+
+
+def match_centroids_he(
+    icp_he: np.ndarray,
+    he_pts_he: np.ndarray,
+    csv_in_he: np.ndarray,
+    mx_pts: np.ndarray,
+    distance_gate: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Match ICP-aligned CellViT cloud to CSV-in-H&E, returning TPS src/dst.
+
+    Matching is done in H&E space (interpretable). Mutual nearest-neighbour
+    check is applied to reduce false matches.
+
+    Parameters
+    ----------
+    icp_he     : (N, 2) ICP-transformed CellViT centroids in H&E px.
+    he_pts_he  : (N, 2) original CellViT centroids in H&E px (TPS source).
+    csv_in_he  : (M, 2) CSV centroids in H&E px (matching target).
+    mx_pts     : (M, 2) CSV centroids in MX px (TPS destination).
+    distance_gate : Max H&E px distance for a valid match.
+
+    Returns
+    -------
+    src_he : (K, 2) original CellViT H&E coords for matched pairs.
+    dst_mx : (K, 2) matched CSV MX coords for matched pairs.
+    """
+    csv_kdtree = scipy.spatial.KDTree(csv_in_he)
+
+    # Forward: each ICP-aligned CellViT → nearest CSV-in-HE
+    dists, fwd_idx = csv_kdtree.query(icp_he, workers=-1)
+    valid_mask = dists <= distance_gate
+
+    if valid_mask.sum() == 0:
+        return np.empty((0, 2)), np.empty((0, 2))
+
+    # Mutual NN check
+    icp_kdtree = scipy.spatial.KDTree(icp_he[valid_mask])
+    matched_csv_he = csv_in_he[fwd_idx[valid_mask]]
+    _, back_idx = icp_kdtree.query(matched_csv_he, workers=-1)
+
+    valid_indices = np.where(valid_mask)[0]
+    is_mutual = back_idx == np.arange(valid_mask.sum())
+
+    src_he = he_pts_he[valid_indices[is_mutual]]
+    dst_mx = mx_pts[fwd_idx[valid_indices[is_mutual]]]
+
+    return src_he, dst_mx
+
+
+# ---------------------------------------------------------------------------
+# (kept for backward-compat) old MX-space matching — no longer called by main
+# ---------------------------------------------------------------------------
 
 
 def match_centroids(
@@ -147,7 +339,7 @@ def match_centroids(
     m_full: np.ndarray,
     distance_gate: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Match H&E centroids to MX centroids via m_full + KDTree.
+    """(Legacy) Match H&E centroids to MX centroids via m_full + KDTree.
 
     Uses mutual nearest-neighbour check in MX pixel space.
 
@@ -156,23 +348,18 @@ def match_centroids(
     src_he : (M, 2) matched H&E centroids in H&E full-res px
     dst_mx : (M, 2) matched MX centroids in MX px
     """
-    # Apply current affine to get approximate MX locations
     he_approx_mx = apply_affine(m_full, he_pts_he)
 
-    # Forward: each H&E centroid → nearest MX centroid
     dists, fwd_idx = kdtree.query(he_approx_mx, workers=-1)
     valid_mask = dists <= distance_gate
 
     if valid_mask.sum() == 0:
         return np.empty((0, 2)), np.empty((0, 2))
 
-    # Mutual nearest-neighbour check:
-    # For each matched MX centroid, find the nearest H&E approx point
     he_kdtree = scipy.spatial.KDTree(he_approx_mx[valid_mask])
     matched_mx_pts = mx_pts[fwd_idx[valid_mask]]
     _, back_idx = he_kdtree.query(matched_mx_pts, workers=-1)
 
-    # back_idx refers to positions in valid_mask subset; map back to original
     valid_indices = np.where(valid_mask)[0]
     is_mutual = back_idx == np.arange(valid_mask.sum())
 
@@ -455,21 +642,28 @@ def update_index(
     tps_control_mx: np.ndarray,
     n_matches: int,
     inlier_fraction: float,
+    icp_matrix: np.ndarray | None = None,
+    icp_n_iters: int = 0,
+    icp_n_matches: int = 0,
 ) -> None:
-    """Update index.json with TPS control points and metadata."""
+    """Update index.json with ICP matrix, TPS control points and metadata."""
     index_path = processed_dir / "index.json"
     with index_path.open() as fh:
         index = json.load(fh)
 
-    index["registration_mode"] = "tps"
+    index["registration_mode"] = "icp_tps"
     index["tps_n_matches"] = int(n_matches)
     index["tps_inlier_fraction"] = float(inlier_fraction)
     index["tps_control_he"] = tps_control_he.tolist()
     index["tps_control_mx"] = tps_control_mx.tolist()
+    if icp_matrix is not None:
+        index["icp_matrix"] = icp_matrix.tolist()
+    index["icp_n_iters"] = int(icp_n_iters)
+    index["icp_n_matches"] = int(icp_n_matches)
 
     with index_path.open("w") as fh:
         json.dump(index, fh, indent=2)
-    log.info("Updated index.json with TPS metadata (%d control points).", len(tps_control_he))
+    log.info("Updated index.json with ICP+TPS metadata (%d control points).", len(tps_control_he))
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +699,6 @@ def main(args: argparse.Namespace) -> None:
 
     processed_dir = pathlib.Path(args.processed)
     cellvit_dir = processed_dir / "cellvit"
-    mx_dir = processed_dir / "multiplex"
     index_path = processed_dir / "index.json"
 
     # Load index.json
@@ -522,7 +715,7 @@ def main(args: argparse.Namespace) -> None:
     m_full = np.array(m_full_list, dtype=np.float64)
     log.info("  m_full = %s", m_full.tolist())
 
-    # Resolve channel indices: prefer stored list, else resolve from names via metadata CSV
+    # Resolve channel indices
     channel_indices = index.get("channel_indices")
     if channel_indices is None:
         channel_names = index.get("channels", [])
@@ -536,12 +729,12 @@ def main(args: argparse.Namespace) -> None:
                 "to resolve channel names. Pass --metadata-csv."
             )
 
-    # Step 1: Build H&E centroid cloud
+    # Step 1: Build H&E centroid cloud from CellViT JSONs
     log.info("Step 1: Loading H&E centroids from CellViT JSONs ...")
-    he_pts_he, he_pts_mx = load_he_centroids(
+    he_pts_he, _ = load_he_centroids(
         cellvit_dir=cellvit_dir,
         patches=patches,
-        coord_scale=args.coord_scale,
+        coord_scale=1.0,  # coord_scale unused; we work in HE space throughout
     )
     log.info("  %d H&E centroids loaded.", len(he_pts_he))
 
@@ -551,36 +744,55 @@ def main(args: argparse.Namespace) -> None:
             "Run Stage 2 (CellViT) before Stage 2.5."
         )
 
-    # Step 2: Load MX centroid cloud
-    log.info("Step 2: Loading MX centroids from %s ...", args.csv)
+    # Step 2: Load CSV centroids → MX px → H&E px via inv(m_full)
+    log.info("Step 2: Loading CSV centroids from %s and converting to H&E px ...", args.csv)
     crop_origin = tuple(args.mx_crop_origin) if args.mx_crop_origin else None
     if crop_origin:
         log.info("  Applying crop origin offset: (%.1f, %.1f) MX px", *crop_origin)
-    mx_pts, mx_kdtree = load_mx_centroids(
-        pathlib.Path(args.csv), csv_mpp=args.csv_mpp, crop_origin=crop_origin
-    )
-    log.info("  %d MX centroids loaded.", len(mx_pts))
-
-    # Step 3: Match with m_full
-    log.info("Step 3: Matching centroids (distance gate = %g MX px) ...", args.distance_gate)
-    src_he, dst_mx = match_centroids(
-        he_pts_he=he_pts_he,
-        mx_pts=mx_pts,
-        kdtree=mx_kdtree,
+    mx_pts, csv_in_he = csv_to_he_coords(
+        pathlib.Path(args.csv),
         m_full=m_full,
+        csv_mpp=args.csv_mpp,
+        crop_origin=crop_origin,
+    )
+    log.info("  %d CSV centroids loaded (MX px → H&E px via inv(m_full)).", len(mx_pts))
+
+    # Step 3: ICP in H&E space to correct global drift in m_full
+    log.info(
+        "Step 3: ICP alignment in H&E space (max_iter=%d, tol=%.1e, gate=%g H&E px) ...",
+        args.icp_max_iter, args.icp_tol, args.distance_gate,
+    )
+    M_icp, icp_n_matches, icp_n_iters = affine_icp(
+        src_he=he_pts_he,
+        dst_he=csv_in_he,
+        max_iter=args.icp_max_iter,
+        tol=args.icp_tol,
+        distance_gate=args.distance_gate,
+    )
+    log.info(
+        "  ICP done: %d iters, %d final matches, M_icp=%s",
+        icp_n_iters, icp_n_matches, M_icp.tolist(),
+    )
+
+    # Step 4: Post-ICP matching in H&E space + RANSAC
+    log.info("Step 4: Post-ICP mutual NN matching + RANSAC (gate=%g H&E px) ...", args.distance_gate)
+    icp_he = apply_affine(M_icp, he_pts_he)
+    src_he, dst_mx = match_centroids_he(
+        icp_he=icp_he,
+        he_pts_he=he_pts_he,
+        csv_in_he=csv_in_he,
+        mx_pts=mx_pts,
         distance_gate=args.distance_gate,
     )
     n_initial = len(src_he)
-    log.info("  %d mutual nearest-neighbour matches.", n_initial)
+    log.info("  %d mutual nearest-neighbour matches (H&E space).", n_initial)
 
     if n_initial < 4:
         raise RuntimeError(
-            f"Only {n_initial} matches found (need >= 4). "
-            "Check --distance-gate, --coord-scale, or m_full quality."
+            f"Only {n_initial} post-ICP matches found (need >= 4). "
+            "Try increasing --distance-gate or checking ICP convergence."
         )
 
-    # Step 4: RANSAC filtering
-    log.info("Step 4: RANSAC filtering ...")
     src_he_inlier, dst_mx_inlier = ransac_filter(src_he, dst_mx, ransac_thresh=5.0)
     n_inliers = len(src_he_inlier)
     inlier_frac = n_inliers / max(1, n_initial)
@@ -592,11 +804,10 @@ def main(args: argparse.Namespace) -> None:
             "Matching quality too low for TPS."
         )
 
-    # Step 5: Fit TPS
-    log.info("Step 5: Fitting TPS (max_tps_points=%d) ...", args.max_tps_points)
+    # Step 5: Fit TPS (H&E px → MX px)
+    log.info("Step 5: Fitting TPS H&E px → MX px (max_tps_points=%d) ...", args.max_tps_points)
     tps_x, tps_y = fit_tps(src_he_inlier, dst_mx_inlier, max_tps_points=args.max_tps_points)
 
-    # Use subsampled control points for storage
     src_sub, dst_sub = subsample_uniform(src_he_inlier, dst_mx_inlier, args.max_tps_points)
     residual = compute_tps_residual(tps_x, tps_y, src_he_inlier, dst_mx_inlier)
     log.info("  TPS residual (mean L2 on inliers): %.3f MX px", residual)
@@ -624,10 +835,15 @@ def main(args: argparse.Namespace) -> None:
         tps_control_mx=dst_sub,
         n_matches=n_inliers,
         inlier_fraction=inlier_frac,
+        icp_matrix=M_icp,
+        icp_n_iters=icp_n_iters,
+        icp_n_matches=icp_n_matches,
     )
 
     print(
         f"\nStage 2.5 complete.\n"
+        f"  ICP iters       : {icp_n_iters}\n"
+        f"  ICP matches     : {icp_n_matches}\n"
         f"  Initial matches : {n_initial}\n"
         f"  RANSAC inliers  : {n_inliers} ({100*inlier_frac:.1f}%)\n"
         f"  TPS control pts : {len(src_sub)}\n"
@@ -637,26 +853,24 @@ def main(args: argparse.Namespace) -> None:
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Stage 2.5: CellViT-guided TPS registration refinement.",
+        description="Stage 2.5: CellViT-guided ICP + TPS registration refinement.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--processed", required=True, help="Processed output directory.")
     p.add_argument("--he-image", required=True, help="H&E OME-TIFF path.")
     p.add_argument("--multiplex-image", required=True, help="Multiplex OME-TIFF path.")
-    p.add_argument("--csv", required=True, help="MX cell CSV with Xt,Yt columns.")
+    p.add_argument("--csv", required=True, help="MX cell CSV with Xt,Yt columns (µm).")
     p.add_argument(
         "--metadata-csv",
         default=None,
-        help="Multiplex channel metadata CSV (same as Stage 1 --metadata-csv). "
-        "Required to resolve channel names from index.json when channel_indices "
-        "is not stored.",
+        help="Multiplex channel metadata CSV. Required when channel_indices is not "
+        "stored in index.json.",
     )
     p.add_argument(
         "--csv-mpp",
         type=float,
         default=0.65,
-        help="µm/px of CSV coordinate space. Divides Xt/Yt by this value to "
-        "convert from µm to MX px (default: 0.65 for WD-76845-097).",
+        help="µm/px of CSV coordinate space (divides Xt/Yt to convert µm → MX px).",
     )
     p.add_argument(
         "--mx-crop-origin",
@@ -665,21 +879,25 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         metavar=("OX", "OY"),
         help="Top-left corner of the crop image in full-slide MX px (x y). "
-        "Required when --multiplex-image is a crop of the full slide and "
-        "--csv contains full-slide coordinates. Subtracted from CSV coords "
-        "after mpp conversion to bring them into crop MX px space.",
-    )
-    p.add_argument(
-        "--coord-scale",
-        type=float,
-        default=0.5,
-        help="Scale factor: he_mpp / mx_mpp (typically 0.5).",
+        "Subtracted from CSV coords after mpp conversion.",
     )
     p.add_argument(
         "--distance-gate",
         type=float,
-        default=10.0,
-        help="Max distance (MX px) for centroid matching.",
+        default=20.0,
+        help="Max H&E px distance for ICP and post-ICP centroid matching.",
+    )
+    p.add_argument(
+        "--icp-max-iter",
+        type=int,
+        default=50,
+        help="Maximum ICP iterations.",
+    )
+    p.add_argument(
+        "--icp-tol",
+        type=float,
+        default=1e-4,
+        help="ICP convergence threshold on step-transform magnitude.",
     )
     p.add_argument(
         "--max-tps-points",
