@@ -107,9 +107,7 @@ def parse_crop_region(
         x0, y0, width, height = parts
         return x0, y0, width, height
 
-    raise ValueError(
-        "crop_region must be 'x,y', 'x,y,size', or 'x,y,width,height'"
-    )
+    raise ValueError("crop_region must be 'x,y', 'x,y,size', or 'x,y,width,height'")
 
 
 def _normalize_channel_u8(channel: np.ndarray) -> np.ndarray:
@@ -205,8 +203,16 @@ def _full_affine_to_overview(
     c, d, ty = map(float, m_full[1])
     return np.array(
         [
-            [a * image1_sx * image2_inv_sx, b * image1_sy * image2_inv_sx, tx * image2_inv_sx],
-            [c * image1_sx * image2_inv_sy, d * image1_sy * image2_inv_sy, ty * image2_inv_sy],
+            [
+                a * image1_sx * image2_inv_sx,
+                b * image1_sy * image2_inv_sx,
+                tx * image2_inv_sx,
+            ],
+            [
+                c * image1_sx * image2_inv_sy,
+                d * image1_sy * image2_inv_sy,
+                ty * image2_inv_sy,
+            ],
         ],
         dtype=np.float32,
     )
@@ -365,14 +371,17 @@ def _auto_detect_shared_crop(
         image2_h,
         image2_w,
     )
-    image2_in_image1 = cv2.warpAffine(
-        image2_mask.astype(np.float32),
-        m_ov,
-        (image1_mask.shape[1], image1_mask.shape[0]),
-        flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=0,
-    ) > 0.5
+    image2_in_image1 = (
+        cv2.warpAffine(
+            image2_mask.astype(np.float32),
+            m_ov,
+            (image1_mask.shape[1], image1_mask.shape[0]),
+            flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+        > 0.5
+    )
     shared_mask = np.logical_and(image1_mask, image2_in_image1)
 
     best_score = float("-inf")
@@ -383,8 +392,12 @@ def _auto_detect_shared_crop(
     for y0 in range(0, image1_h - crop_size + 1, stride):
         for x0 in range(0, image1_w - crop_size + 1, stride):
             image1_box = (x0, y0, crop_size, crop_size)
-            image1_frac = _mask_fraction_for_box(image1_mask, image1_box, image1_w, image1_h)
-            shared_frac = _mask_fraction_for_box(shared_mask, image1_box, image1_w, image1_h)
+            image1_frac = _mask_fraction_for_box(
+                image1_mask, image1_box, image1_w, image1_h
+            )
+            shared_frac = _mask_fraction_for_box(
+                shared_mask, image1_box, image1_w, image1_h
+            )
             if image1_frac < 0.6 or shared_frac < 0.5:
                 continue
 
@@ -397,7 +410,9 @@ def _auto_detect_shared_crop(
             ):
                 continue
 
-            image2_frac = _mask_fraction_for_box(image2_mask, image2_box, image2_w, image2_h)
+            image2_frac = _mask_fraction_for_box(
+                image2_mask, image2_box, image2_w, image2_h
+            )
             if image2_frac < 0.6:
                 continue
 
@@ -413,7 +428,9 @@ def _auto_detect_shared_crop(
                 }
 
     if best_image1_box is None or best_image2_box is None or best_stats is None:
-        raise ValueError("Could not find a shared crop region that fits inside both images")
+        raise ValueError(
+            "Could not find a shared crop region that fits inside both images"
+        )
 
     return best_image1_box, best_image2_box, best_stats
 
@@ -580,8 +597,12 @@ def crop_tiff_pair(
             }
         else:
             print(f"[pair-crop] building tissue masks at 1/{downsample} resolution ...")
-            image1_chw = read_overview_chw(store1, image1_axes, image1_h, image1_w, downsample)
-            image2_chw = read_overview_chw(store2, image2_axes, image2_h, image2_w, downsample)
+            image1_chw = read_overview_chw(
+                store1, image1_axes, image1_h, image1_w, downsample
+            )
+            image2_chw = read_overview_chw(
+                store2, image2_axes, image2_h, image2_w, downsample
+            )
             image1_mask = _build_binary_tissue_mask(image1_chw)
             image2_mask = _build_binary_tissue_mask(image2_chw)
 
@@ -628,10 +649,20 @@ def crop_tiff_pair(
         _validate_box_within_image(image2_box, image2_w, image2_h, "image2")
 
         crop1, crop1_axes = _read_window(
-            store1, image1_axes, image1_box[1], image1_box[0], image1_box[3], image1_box[2]
+            store1,
+            image1_axes,
+            image1_box[1],
+            image1_box[0],
+            image1_box[3],
+            image1_box[2],
         )
         crop2, crop2_axes = _read_window(
-            store2, image2_axes, image2_box[1], image2_box[0], image2_box[3], image2_box[2]
+            store2,
+            image2_axes,
+            image2_box[1],
+            image2_box[0],
+            image2_box[3],
+            image2_box[2],
         )
 
     out1, out2 = _resolve_pair_crop_paths(
@@ -654,10 +685,7 @@ def crop_tiff_pair(
         f"shared={stats['shared_tissue_fraction']:.3f} "
         f"image2={stats['image2_tissue_fraction']:.3f}"
     )
-    print(
-        f"[pair-crop] saved {out1} and {out2} "
-        f"in {time.perf_counter() - t0:.1f}s"
-    )
+    print(f"[pair-crop] saved {out1} and {out2} " f"in {time.perf_counter() - t0:.1f}s")
     return out1, out2
 
 

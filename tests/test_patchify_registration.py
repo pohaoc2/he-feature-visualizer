@@ -236,6 +236,24 @@ class TestRegisterHEMXAffine:
         assert abs(M[0, 0] - 1.0) < 0.01
         assert abs(M[1, 1] - 1.0) < 0.01
 
+    def test_fallback_scale_override_used_when_same_size(self):
+        """Fallback scale override should be honored for equal-size crops."""
+        he_mask = np.zeros((8, 8), dtype=bool)
+        mx_mask = np.zeros((8, 8), dtype=bool)
+        # Pass fallback_scale as HE/MX ratio (=2) to get HE->MX scale=0.5.
+        M = m.register_he_mx_affine(
+            he_mask,
+            mx_mask,
+            ds=16,
+            he_h=128,
+            he_w=128,
+            mx_h=128,
+            mx_w=128,
+            fallback_scale=2.0,
+        )
+        assert abs(M[0, 0] - 0.5) < 0.01
+        assert abs(M[1, 1] - 0.5) < 0.01
+
     def test_identical_masks_near_identity(self):
         """Identical masks with sufficient structure → M_full close to identity."""
         rng = np.random.default_rng(0)
@@ -1328,10 +1346,10 @@ def test_force_deformable_cli_sets_registration_mode_deformable(tmp_path, monkey
 
 
 class TestPatchifyDebugLimit:
-    """Regression test for the current debug-only extraction cap."""
+    """Regression test for expected full-grid extraction behavior."""
 
-    def test_patchify_limits_to_first_10_patches(self, tmp_path):
-        """Pipeline currently caps extraction to coords[:10] for debug runs."""
+    def test_patchify_extracts_full_grid_without_debug_cap(self, tmp_path):
+        """Pipeline should extract the full 4x4 grid for a 1024 image."""
         he_path = tmp_path / "he.ome.tif"
         mx_path = tmp_path / "mx.ome.tif"
         csv_path = tmp_path / "meta.csv"
@@ -1373,7 +1391,7 @@ class TestPatchifyDebugLimit:
         assert result.returncode == 0, result.stderr
 
         data = json.loads((out_dir / "index.json").read_text())
-        assert len(data["patches"]) == 10
+        assert len(data["patches"]) == 16
 
 
 class TestChannelDriftQC:
@@ -1699,8 +1717,15 @@ def test_register_he_mx_affine_intensity_returns_valid_matrix():
     mx_mask = mx_dna > 0.2
 
     m = register_he_mx_affine_intensity(
-        he_gray, mx_dna, he_mask.astype(bool), mx_mask.astype(bool),
-        ds=8, he_h=1024, he_w=1024, mx_h=768, mx_w=768
+        he_gray,
+        mx_dna,
+        he_mask.astype(bool),
+        mx_mask.astype(bool),
+        ds=8,
+        he_h=1024,
+        he_w=1024,
+        mx_h=768,
+        mx_w=768,
     )
     assert m.shape == (2, 3)
     assert m.dtype == np.float32
@@ -1717,8 +1742,15 @@ def test_register_he_mx_affine_intensity_fallback_on_blank():
     blank_mx_mask = np.zeros((48, 48), dtype=bool)
 
     m = register_he_mx_affine_intensity(
-        blank_he, blank_mx, blank_mask, blank_mx_mask,
-        ds=8, he_h=512, he_w=512, mx_h=384, mx_w=384
+        blank_he,
+        blank_mx,
+        blank_mask,
+        blank_mx_mask,
+        ds=8,
+        he_h=512,
+        he_w=512,
+        mx_h=384,
+        mx_w=384,
     )
     assert m.shape == (2, 3)
     assert m.dtype == np.float32
@@ -1726,6 +1758,31 @@ def test_register_he_mx_affine_intensity_fallback_on_blank():
     expected_scale = 384 / 512
     assert abs(m[0, 0] - expected_scale) < 0.05
     assert abs(m[1, 1] - expected_scale) < 0.05
+
+
+def test_register_he_mx_affine_intensity_fallback_scale_override_same_size():
+    """Intensity fallback should honor fallback_scale for equal-size crops."""
+    import numpy as np
+    from stages.patchify_lib.registration import register_he_mx_affine_intensity
+
+    blank_he = np.zeros((64, 64), dtype=np.float32)
+    blank_mx = np.zeros((64, 64), dtype=np.float32)
+    blank_mask = np.zeros((64, 64), dtype=bool)
+
+    mtx = register_he_mx_affine_intensity(
+        blank_he,
+        blank_mx,
+        blank_mask,
+        blank_mask,
+        ds=8,
+        he_h=512,
+        he_w=512,
+        mx_h=512,
+        mx_w=512,
+        fallback_scale=2.0,
+    )
+    assert abs(mtx[0, 0] - 0.5) < 0.01
+    assert abs(mtx[1, 1] - 0.5) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -1736,7 +1793,7 @@ def test_register_he_mx_affine_intensity_fallback_on_blank():
 def test_read_he_gray_overview_cyx_returns_float32_hw(tmp_path):
     """_read_he_gray_overview returns float32 (H,W) for CYX input."""
     import numpy as np
-    import tifffile, zarr
+    import tifffile
     import stages.patchify as pm
 
     arr = np.zeros((3, 64, 64), dtype=np.uint8)
@@ -1748,9 +1805,7 @@ def test_read_he_gray_overview_cyx_returns_float32_hw(tmp_path):
     tifffile.imwrite(str(p), arr, metadata={"axes": "CYX"})
 
     with tifffile.TiffFile(str(p)) as f:
-        store = zarr.open(f.aszarr(), mode="r")
-        if hasattr(store, "keys") and "0" in store:
-            store = store["0"]
+        store = pm.open_zarr_store(f)
         result = pm._read_he_gray_overview(store, "CYX", 64, 64, ds=4)
 
     assert result.ndim == 2
@@ -1763,7 +1818,7 @@ def test_read_he_gray_overview_cyx_returns_float32_hw(tmp_path):
 def test_read_he_gray_overview_syx_returns_float32_hw(tmp_path):
     """_read_he_gray_overview returns float32 (H,W) for SYX (single-series, no C axis) input."""
     import numpy as np
-    import tifffile, zarr
+    import tifffile
     import stages.patchify as pm
 
     # SYX: single-series grayscale — shape (1, H, W) or read as (H, W, 3) via read_overview_chw
@@ -1775,9 +1830,7 @@ def test_read_he_gray_overview_syx_returns_float32_hw(tmp_path):
     tifffile.imwrite(str(p), arr, metadata={"axes": "SYX"})
 
     with tifffile.TiffFile(str(p)) as f:
-        store = zarr.open(f.aszarr(), mode="r")
-        if hasattr(store, "keys") and "0" in store:
-            store = store["0"]
+        store = pm.open_zarr_store(f)
         axes = f.series[0].axes
         result = pm._read_he_gray_overview(store, axes, 64, 64, ds=4)
 
@@ -1797,7 +1850,9 @@ def test_register_he_mx_orb_returns_none_on_blank_images():
     from stages.patchify_lib.registration import register_he_mx_orb
 
     blank = np.zeros((128, 128), dtype=np.uint8)
-    result = register_he_mx_orb(blank, blank, ds=8, he_h=1024, he_w=1024, mx_h=768, mx_w=768)
+    result = register_he_mx_orb(
+        blank, blank, ds=8, he_h=1024, he_w=1024, mx_h=768, mx_w=768
+    )
     assert result is None
 
 
@@ -1840,15 +1895,24 @@ def test_evaluate_registration_qc_returns_expected_keys():
     m_full = np.array([[0.5, 0, 0], [0, 0.5, 0]], dtype=np.float32)
 
     result = _evaluate_registration_qc(
-        m_full, he_mask, mx_mask,
-        he_h=512, he_w=512, mx_h=256, mx_w=256,
-        ds=8, coords=[], patch_size=64,
+        m_full,
+        he_mask,
+        mx_mask,
+        he_h=512,
+        he_w=512,
+        mx_h=256,
+        mx_w=256,
+        ds=8,
+        coords=[],
+        patch_size=64,
     )
     assert "global_qc" in result
     assert "patch_qc" in result
     assert "decision" in result
     assert result["decision"] in (
-        PASS_AFFINE, "FAIL_GLOBAL_NEEDS_LANDMARKS", "FAIL_LOCAL_NEEDS_DEFORMABLE"
+        PASS_AFFINE,
+        "FAIL_GLOBAL_NEEDS_LANDMARKS",
+        "FAIL_LOCAL_NEEDS_DEFORMABLE",
     )
 
 
@@ -1872,15 +1936,27 @@ def test_registration_cascade_method_stored_in_final_transform(tmp_path):
     csv_path.write_text("Channel ID,Target Name\nChannel:0:0,DNA\nChannel:0:1,CD31\n")
 
     result = subprocess.run(
-        [sys.executable, "-m", "stages.patchify",
-         "--he-image", str(he_path),
-         "--multiplex-image", str(mx_path),
-         "--metadata-csv", str(csv_path),
-         "--out", str(tmp_path / "out"),
-         "--channels", "DNA",
-         "--patch-size", "64",
-         "--overview-downsample", "8"],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            "-m",
+            "stages.patchify",
+            "--he-image",
+            str(he_path),
+            "--multiplex-image",
+            str(mx_path),
+            "--metadata-csv",
+            str(csv_path),
+            "--out",
+            str(tmp_path / "out"),
+            "--channels",
+            "DNA",
+            "--patch-size",
+            "64",
+            "--overview-downsample",
+            "8",
+        ],
+        capture_output=True,
+        text=True,
         cwd=_PROJECT_ROOT,
     )
     # Don't require returncode==0 (may fail on no tissue), just check output artifact

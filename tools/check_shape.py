@@ -240,9 +240,7 @@ def print_info(label: str, info: dict) -> None:
     print(f"  Dimensions: {info['img_w']} x {info['img_h']} px  (W x H)")
     n_channels = info.get("n_channels")
     if n_channels is None:
-        n_channels = _channel_count_from_axes_shape(
-            info.get("axes"), info.get("shape")
-        )
+        n_channels = _channel_count_from_axes_shape(info.get("axes"), info.get("shape"))
     if n_channels is not None:
         print(f"  Channels  : {n_channels}")
     else:

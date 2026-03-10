@@ -75,11 +75,13 @@ def open_zarr_store(tif: tifffile.TiffFile) -> zarr.Array | _NumpyStore:
             raise
         warnings.warn(
             "tifffile.aszarr is unavailable with current zarr/tifffile versions; "
-            "falling back to in-memory array store.",
+            "falling back to memory-mapped array store.",
             RuntimeWarning,
             stacklevel=2,
         )
-        return _NumpyStore(np.asarray(tif.series[0].asarray()))
+        # Use tifffile's memmap output mode to avoid loading whole-slide data
+        # into RAM when zarr access is unavailable in this environment.
+        return _NumpyStore(tif.series[0].asarray(out="memmap"))
 
 
 def get_image_dims(tif: tifffile.TiffFile) -> tuple[int, int, str]:

@@ -44,13 +44,14 @@ import tifffile
 
 from utils.ome import get_image_dims, open_zarr_store, read_overview_chw
 
-
 # ---------------------------------------------------------------------------
 # Mask loading
 # ---------------------------------------------------------------------------
 
 
-def load_mask_overview(mask_path: pathlib.Path, ds: int) -> tuple[np.ndarray, int, int, bool]:
+def load_mask_overview(
+    mask_path: pathlib.Path, ds: int
+) -> tuple[np.ndarray, int, int, bool]:
     """Load mask at 1/ds resolution.
 
     Returns
@@ -82,7 +83,9 @@ def load_csv_centroids(csv_path: pathlib.Path, csv_mpp: float = 0.65) -> np.ndar
     """
     df = pd.read_csv(csv_path)
     if "Xt" not in df.columns or "Yt" not in df.columns:
-        raise ValueError(f"CSV must have 'Xt' and 'Yt' columns; found: {list(df.columns)[:10]}")
+        raise ValueError(
+            f"CSV must have 'Xt' and 'Yt' columns; found: {list(df.columns)[:10]}"
+        )
     pts = df[["Xt", "Yt"]].to_numpy(dtype=np.float64)
     if csv_mpp != 1.0:
         pts = pts / csv_mpp
@@ -191,7 +194,9 @@ def main(args: argparse.Namespace) -> None:
     pct_inside = 100 * n_inside / max(1, len(centroids))
 
     print(f"\nResults:")
-    print(f"  CSV centroids hitting mask : {n_inside:,} / {len(centroids):,}  ({pct_inside:.1f}%)")
+    print(
+        f"  CSV centroids hitting mask : {n_inside:,} / {len(centroids):,}  ({pct_inside:.1f}%)"
+    )
     print(f"  CSV centroids outside mask : {len(centroids) - n_inside:,}")
 
     if is_instance:
@@ -220,13 +225,21 @@ def _parse_args() -> argparse.Namespace:
         description="QC: overlay CSV cell centroids on nucleus segmentation mask.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--seg", required=True,
-                   help="Segmentation mask OME-TIFF (instance uint32 or binary uint16).")
-    p.add_argument("--csv", required=True, help="Cell features CSV with Xt, Yt columns.")
+    p.add_argument(
+        "--seg",
+        required=True,
+        help="Segmentation mask OME-TIFF (instance uint32 or binary uint16).",
+    )
+    p.add_argument(
+        "--csv", required=True, help="Cell features CSV with Xt, Yt columns."
+    )
     p.add_argument("--save-png", default=None, help="Path to save overlay PNG.")
-    p.add_argument("--downsample", type=int, default=8,
-                   help="Overview downsample factor.")
-    p.add_argument("--dot-radius", type=int, default=2, help="Dot radius for centroids.")
+    p.add_argument(
+        "--downsample", type=int, default=8, help="Overview downsample factor."
+    )
+    p.add_argument(
+        "--dot-radius", type=int, default=2, help="Dot radius for centroids."
+    )
     p.add_argument(
         "--csv-mpp",
         type=float,
@@ -234,7 +247,9 @@ def _parse_args() -> argparse.Namespace:
         help="µm/px of CSV coordinate space. Divides Xt/Yt by this value to "
         "convert from µm to MX px (default: 0.65 for WD-76845-097).",
     )
-    p.add_argument("--max-dots", type=int, default=50000, help="Max number of dots to show.")
+    p.add_argument(
+        "--max-dots", type=int, default=50000, help="Max number of dots to show."
+    )
     return p.parse_args()
 
 

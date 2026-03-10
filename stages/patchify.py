@@ -193,7 +193,9 @@ def _read_he_gray_overview(
     store, axes: str, img_h: int, img_w: int, ds: int
 ) -> np.ndarray:
     """Read H&E at overview resolution and return normalized float32 grayscale (H, W)."""
-    chw = read_overview_chw(store, axes, img_h, img_w, ds)  # (C, H, W) uint8 or original dtype
+    chw = read_overview_chw(
+        store, axes, img_h, img_w, ds
+    )  # (C, H, W) uint8 or original dtype
     if chw.shape[0] == 1:
         # Single-channel (e.g. SYX) — already grayscale
         gray = chw[0]
@@ -1481,8 +1483,16 @@ def main():
             m_full = np.array([[scale, 0, 0], [0, scale, 0]], dtype=np.float32)
             registration_method = "fallback_scale"
             final_qc = _evaluate_registration_qc(
-                m_full, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
-                cascade_coords, patch_size,
+                m_full,
+                mask,
+                mx_mask,
+                he_h,
+                he_w,
+                mx_h,
+                mx_w,
+                ds,
+                cascade_coords,
+                patch_size,
             )
             decision = final_qc["decision"]
             global_qc = final_qc["global_qc"]
@@ -1498,17 +1508,40 @@ def main():
             # fine-scale (ds=8) refinement to resolve sub-pixel translation.
             ds_fine = 8
             print("  [A] Phase-corr ECC on tissue masks (coarse) ...")
-            m_A_coarse = register_he_mx_affine(mask, mx_mask, ds, he_h, he_w, mx_h, mx_w)
+            m_A_coarse = register_he_mx_affine(
+                mask,
+                mx_mask,
+                ds,
+                he_h,
+                he_w,
+                mx_h,
+                mx_w,
+                fallback_scale=(1.0 / scale) if scale > 0 else None,
+            )
             print(f"  [A] Fine-scale refinement at ds={ds_fine} ...")
             he_mask_fine = build_tissue_mask(he_store, he_axes, he_w, he_h, ds_fine)
             mx_mask_fine = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds_fine)
             m_A = refine_affine_fine_scale(
-                he_mask_fine, mx_mask_fine, m_A_coarse,
-                ds_fine, he_h, he_w, mx_h, mx_w,
+                he_mask_fine,
+                mx_mask_fine,
+                m_A_coarse,
+                ds_fine,
+                he_h,
+                he_w,
+                mx_h,
+                mx_w,
             )
             qc_A = _evaluate_registration_qc(
-                m_A, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
-                cascade_coords, patch_size,
+                m_A,
+                mask,
+                mx_mask,
+                he_h,
+                he_w,
+                mx_h,
+                mx_w,
+                ds,
+                cascade_coords,
+                patch_size,
             )
             if qc_A["decision"] == PASS_AFFINE:
                 print(f"  [A] PASS (iou={qc_A['global_qc']['mask_iou']:.3f})")
@@ -1528,14 +1561,29 @@ def main():
 
                 print("  [B] Intensity-based ECC (HE gray vs DNA channel) ...")
                 m_B = register_he_mx_affine_intensity(
-                    he_gray_ov, mx_dna_ov_f32,
-                    mask, mx_mask,
-                    ds, he_h, he_w, mx_h, mx_w,
+                    he_gray_ov,
+                    mx_dna_ov_f32,
+                    mask,
+                    mx_mask,
+                    ds,
+                    he_h,
+                    he_w,
+                    mx_h,
+                    mx_w,
                     fallback_m_full=m_A,
+                    fallback_scale=(1.0 / scale) if scale > 0 else None,
                 )
                 qc_B = _evaluate_registration_qc(
-                    m_B, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
-                    cascade_coords, patch_size,
+                    m_B,
+                    mask,
+                    mx_mask,
+                    he_h,
+                    he_w,
+                    mx_h,
+                    mx_w,
+                    ds,
+                    cascade_coords,
+                    patch_size,
                 )
                 if qc_B["decision"] == PASS_AFFINE:
                     print(f"  [B] PASS (iou={qc_B['global_qc']['mask_iou']:.3f})")
@@ -1555,12 +1603,26 @@ def main():
                     )
                     print("  [C] ORB feature matching + RANSAC ...")
                     m_C = register_he_mx_orb(
-                        he_gray_u8, mx_dna_u8, ds, he_h, he_w, mx_h, mx_w,
+                        he_gray_u8,
+                        mx_dna_u8,
+                        ds,
+                        he_h,
+                        he_w,
+                        mx_h,
+                        mx_w,
                     )
                     if m_C is not None:
                         qc_C = _evaluate_registration_qc(
-                            m_C, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
-                            cascade_coords, patch_size,
+                            m_C,
+                            mask,
+                            mx_mask,
+                            he_h,
+                            he_w,
+                            mx_h,
+                            mx_w,
+                            ds,
+                            cascade_coords,
+                            patch_size,
                         )
                         print(
                             f"  [C] iou={qc_C['global_qc']['mask_iou']:.3f} "
@@ -1569,7 +1631,9 @@ def main():
                         m_full = m_C
                         registration_method = "orb"
                     else:
-                        print("  [C] ORB returned no valid transform -> using best of A/B by IoU")
+                        print(
+                            "  [C] ORB returned no valid transform -> using best of A/B by IoU"
+                        )
                         iou_A = qc_A["global_qc"]["mask_iou"]
                         iou_B = qc_B["global_qc"]["mask_iou"]
                         if iou_A >= iou_B:
@@ -1581,8 +1645,16 @@ def main():
 
             # Final QC using selected m_full
             final_qc = _evaluate_registration_qc(
-                m_full, mask, mx_mask, he_h, he_w, mx_h, mx_w, ds,
-                cascade_coords, patch_size,
+                m_full,
+                mask,
+                mx_mask,
+                he_h,
+                he_w,
+                mx_h,
+                mx_w,
+                ds,
+                cascade_coords,
+                patch_size,
             )
             decision = final_qc["decision"]
             global_qc = final_qc["global_qc"]
@@ -1593,14 +1665,22 @@ def main():
         # giving 8× sharper tissue boundary signal to detect local deformation.
         deform_attempted = False
         if decision == FAIL_LOCAL_NEEDS_DEFORMABLE and args.register:
-            print(f"  [D] Affine patch QC failed -> fine-scale deformable (ds={ds_fine}) ...")
+            print(
+                f"  [D] Affine patch QC failed -> fine-scale deformable (ds={ds_fine}) ..."
+            )
             deform_attempted = True
 
             # he_mask_fine / mx_mask_fine were computed above for approach A.
             deform_state = estimate_deformable_field_intensity(
-                None, None,  # intensity images reserved for future use
-                he_mask_fine, mx_mask_fine,
-                m_full, he_h, he_w, mx_h, mx_w,
+                None,
+                None,  # intensity images reserved for future use
+                he_mask_fine,
+                mx_mask_fine,
+                m_full,
+                he_h,
+                he_w,
+                mx_h,
+                mx_w,
             )
             print(
                 f"  [D] iou_affine={deform_state['iou_affine']:.4f} "
@@ -1615,26 +1695,42 @@ def main():
             # `dx_ov * he_sx` still gives the correct full-res displacement.
             h_ov64, w_ov64 = mask.shape
             scale_ratio = float(ds) / float(ds_fine)  # e.g. 64/8 = 8
-            flow_dx_64 = cv2.resize(
-                deform_state["flow_dx_ov"], (w_ov64, h_ov64),
-                interpolation=cv2.INTER_LINEAR,
-            ) / scale_ratio
-            flow_dy_64 = cv2.resize(
-                deform_state["flow_dy_ov"], (w_ov64, h_ov64),
-                interpolation=cv2.INTER_LINEAR,
-            ) / scale_ratio
-            deform_patch_qc = compute_deformable_patch_qc_metrics(
-                mask, mx_mask, m_full,
-                flow_dx_64, flow_dy_64,
-                he_h, he_w, mx_h, mx_w,
+            flow_dx_64 = (
+                cv2.resize(
+                    deform_state["flow_dx_ov"],
+                    (w_ov64, h_ov64),
+                    interpolation=cv2.INTER_LINEAR,
+                )
+                / scale_ratio
             )
-            # Accept deformable if either the patch QC improves significantly OR
-            # the overview IoU improves by ≥1% (the coarse patch_qc can miss the
-            # full-res improvement when the rescaled flow is < 1 overview pixel).
+            flow_dy_64 = (
+                cv2.resize(
+                    deform_state["flow_dy_ov"],
+                    (w_ov64, h_ov64),
+                    interpolation=cv2.INTER_LINEAR,
+                )
+                / scale_ratio
+            )
+            deform_patch_qc = compute_deformable_patch_qc_metrics(
+                mask,
+                mx_mask,
+                m_full,
+                flow_dx_64,
+                flow_dy_64,
+                he_h,
+                he_w,
+                mx_h,
+                mx_w,
+            )
+            # Accept deformable when forced, or if either the patch QC improves
+            # significantly OR the overview IoU improves by >=1%
+            # (the coarse patch_qc can miss full-res improvement when the
+            # rescaled flow is <1 overview pixel).
             iou_gain = deform_state["iou_deformable"] - deform_state["iou_affine"]
             patch_ok = float(deform_patch_qc.get("improved_fraction", 0)) >= 0.5
             iou_ok = iou_gain >= 0.01
-            if patch_ok or iou_ok:
+            force_ok = bool(args.force_deformable)
+            if force_ok or patch_ok or iou_ok:
                 # Store the rescaled flow so patch extraction uses ds=64 units
                 # (read_multiplex_patch_affine_deform auto-scales by w_ov).
                 deform_state = dict(deform_state)
@@ -1642,6 +1738,8 @@ def main():
                 deform_state["flow_dy_ov"] = flow_dy_64
                 registration_mode = REG_MODE_DEFORMABLE
                 decision = PASS_AFFINE  # deformable is good enough
+                if force_ok:
+                    print("  [D] Forcing deformable mode (--force-deformable).")
                 print(
                     f"  [D] Deformable PASS "
                     f"(improved_fraction={deform_patch_qc['improved_fraction']:.2f}, "
@@ -1689,7 +1787,7 @@ def main():
         mx_vis_coords: list[tuple[int, int]] = []
         print(f"  Multiplex save threshold: overlap >= {min_mx_overlap:.3f}")
 
-        for idx, (x0, y0) in enumerate(coords[:10]):
+        for idx, (x0, y0) in enumerate(coords[:]):
             if idx % 500 == 0:
                 print(f"  {idx}/{len(coords)} ...")
 

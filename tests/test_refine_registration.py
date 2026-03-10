@@ -31,7 +31,6 @@ from stages.refine_registration import (
     _make_patch_pixel_grid,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -174,7 +173,9 @@ def test_match_centroids_identity():
     kdtree = scipy.spatial.KDTree(mx_pts)
     m_full = _identity_m_full()
 
-    src_he, dst_mx = match_centroids(he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0)
+    src_he, dst_mx = match_centroids(
+        he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0
+    )
     assert len(src_he) == n
     np.testing.assert_allclose(src_he, dst_mx)
 
@@ -187,7 +188,9 @@ def test_match_centroids_scale_half():
     kdtree = scipy.spatial.KDTree(mx_pts)
     m_full = _scale_m_full(0.5, 0.5)
 
-    src_he, dst_mx = match_centroids(he_pts_he, mx_pts, kdtree, m_full, distance_gate=0.5)
+    src_he, dst_mx = match_centroids(
+        he_pts_he, mx_pts, kdtree, m_full, distance_gate=0.5
+    )
     assert len(src_he) == n
 
 
@@ -198,7 +201,9 @@ def test_match_centroids_too_far():
     kdtree = scipy.spatial.KDTree(mx_pts)
     m_full = _identity_m_full()
 
-    src_he, dst_mx = match_centroids(he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0)
+    src_he, dst_mx = match_centroids(
+        he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0
+    )
     assert len(src_he) == 0
 
 
@@ -348,7 +353,9 @@ def test_update_index(tmp_path):
 def test_csv_to_he_coords_identity(tmp_path):
     """With identity m_full and csv_mpp=1, MX px == CSV µm and HE px == MX px."""
     csv_path = tmp_path / "cells.csv"
-    pd.DataFrame({"Xt": [100.0, 200.0], "Yt": [50.0, 150.0]}).to_csv(csv_path, index=False)
+    pd.DataFrame({"Xt": [100.0, 200.0], "Yt": [50.0, 150.0]}).to_csv(
+        csv_path, index=False
+    )
 
     m_full = _identity_m_full()
     mx_pts, he_pts = csv_to_he_coords(csv_path, m_full, csv_mpp=1.0)
@@ -441,7 +448,9 @@ def test_affine_icp_distance_gate_too_small():
     src = np.array([[0.0, 0.0], [100.0, 100.0], [200.0, 0.0], [300.0, 200.0]])
     dst = src + 1000.0  # very far away
 
-    M_icp, n_matches, n_iters = affine_icp(src, dst, max_iter=10, tol=1e-4, distance_gate=1.0)
+    M_icp, n_matches, n_iters = affine_icp(
+        src, dst, max_iter=10, tol=1e-4, distance_gate=1.0
+    )
     # Should return without raising; n_matches may be 0
     assert M_icp.shape == (2, 3)
 
@@ -467,7 +476,7 @@ def test_match_centroids_he_exact():
     n = 50
     he_pts = rng.uniform(0, 1000, (n, 2))
     csv_in_he = he_pts.copy()  # perfect overlap
-    mx_pts = he_pts * 0.5      # dummy MX coords
+    mx_pts = he_pts * 0.5  # dummy MX coords
 
     src_he, dst_mx = match_centroids_he(
         icp_he=he_pts,
@@ -500,7 +509,9 @@ def test_match_centroids_he_empty_when_far():
 def test_update_index_with_icp(tmp_path):
     """update_index should store icp_matrix and icp_n_iters fields."""
     index_path = tmp_path / "index.json"
-    index_path.write_text(json.dumps({"warp_matrix": [[0.5, 0, 0], [0, 0.5, 0]], "patches": []}))
+    index_path.write_text(
+        json.dumps({"warp_matrix": [[0.5, 0, 0], [0, 0.5, 0]], "patches": []})
+    )
 
     ctrl_he = np.array([[0.0, 0.0], [100.0, 100.0]])
     ctrl_mx = ctrl_he * 0.5

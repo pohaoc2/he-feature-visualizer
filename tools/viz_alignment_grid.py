@@ -49,10 +49,10 @@ from PIL import Image
 from utils.normalize import percentile_to_uint8
 from utils.ome import get_image_dims
 
-
 # ---------------------------------------------------------------------------
 # Loaders
 # ---------------------------------------------------------------------------
+
 
 def _open_zarr(tif: tifffile.TiffFile):
     raw = zarr.open(tif.series[0].aszarr(), mode="r")
@@ -67,10 +67,14 @@ def _load_he_overview(he_path: pathlib.Path, ds: int) -> np.ndarray:
         ax = axes.upper()
         sl: list = []
         for a in ax:
-            if a == "C":   sl.append(slice(None))
-            elif a == "Y": sl.append(slice(0, (img_h // ds) * ds, ds))
-            elif a == "X": sl.append(slice(0, (img_w // ds) * ds, ds))
-            else:          sl.append(0)
+            if a == "C":
+                sl.append(slice(None))
+            elif a == "Y":
+                sl.append(slice(0, (img_h // ds) * ds, ds))
+            elif a == "X":
+                sl.append(slice(0, (img_w // ds) * ds, ds))
+            else:
+                sl.append(0)
         data = np.asarray(store[tuple(sl)])
         if "C" in ax and ax.index("C") != 0:
             data = np.moveaxis(data, ax.index("C"), 0)
@@ -94,10 +98,14 @@ def _load_mx_dna_overview(mx_path: pathlib.Path, ds: int) -> np.ndarray:
         ax = axes.upper()
         sl: list = []
         for a in ax:
-            if a == "C":   sl.append(0)
-            elif a == "Y": sl.append(slice(0, (img_h // ds) * ds, ds))
-            elif a == "X": sl.append(slice(0, (img_w // ds) * ds, ds))
-            else:          sl.append(0)
+            if a == "C":
+                sl.append(0)
+            elif a == "Y":
+                sl.append(slice(0, (img_h // ds) * ds, ds))
+            elif a == "X":
+                sl.append(slice(0, (img_w // ds) * ds, ds))
+            else:
+                sl.append(0)
         ch0 = np.asarray(store[tuple(sl)])
     if ch0.ndim > 2:
         ch0 = ch0.squeeze()
@@ -140,10 +148,14 @@ def _load_seg_crop(
         ax = tif.series[0].axes.upper()
         sl: list = []
         for a in ax:
-            if a == "Y": sl.append(slice(oy, oy + ch))
-            elif a == "X": sl.append(slice(ox, ox + cw))
-            elif a == "C": sl.append(0)
-            else:          sl.append(0)
+            if a == "Y":
+                sl.append(slice(oy, oy + ch))
+            elif a == "X":
+                sl.append(slice(ox, ox + cw))
+            elif a == "C":
+                sl.append(0)
+            else:
+                sl.append(0)
         seg = np.asarray(store_lvl[tuple(sl)])
 
     if seg.ndim > 2:
@@ -155,6 +167,7 @@ def _load_seg_crop(
 # ---------------------------------------------------------------------------
 # Centroid loaders
 # ---------------------------------------------------------------------------
+
 
 def load_cellvit_pts(cellvit_dir: pathlib.Path, patches: list[dict]) -> np.ndarray:
     """(N, 2) CellViT centroids in H&E full-res px."""
@@ -187,6 +200,7 @@ def load_csv_pts_mx(
 # Coordinate transforms
 # ---------------------------------------------------------------------------
 
+
 def _inv_m_full(m_full: np.ndarray) -> np.ndarray:
     m3 = np.eye(3, dtype=np.float64)
     m3[:2] = m_full
@@ -213,17 +227,21 @@ def warp_mx_to_he(
     mx_gray must be at native MX overview resolution (NOT pre-resized to H&E).
     """
     m_ov = m_full.astype(np.float64).copy()
-    m_ov[:, 2] /= ds   # scale translation to overview px; linear part unchanged
+    m_ov[:, 2] /= ds  # scale translation to overview px; linear part unchanged
     return cv2.warpAffine(
-        mx_gray, m_ov, (he_w, he_h),
+        mx_gray,
+        m_ov,
+        (he_w, he_h),
         flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
-        borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
     )
 
 
 # ---------------------------------------------------------------------------
 # Drawing helpers
 # ---------------------------------------------------------------------------
+
 
 def _dots(
     img: np.ndarray,
@@ -236,8 +254,12 @@ def _dots(
     if len(pts_ov) == 0:
         return out, 0
     h, w = out.shape[:2]
-    in_b = (pts_ov[:, 0] >= 0) & (pts_ov[:, 0] < w) & \
-           (pts_ov[:, 1] >= 0) & (pts_ov[:, 1] < h)
+    in_b = (
+        (pts_ov[:, 0] >= 0)
+        & (pts_ov[:, 0] < w)
+        & (pts_ov[:, 1] >= 0)
+        & (pts_ov[:, 1] < h)
+    )
     pts_in = pts_ov[in_b]
     if len(pts_in) > max_pts:
         idx = np.random.default_rng(0).choice(len(pts_in), max_pts, replace=False)
@@ -249,8 +271,19 @@ def _dots(
 
 def _label(img: np.ndarray, text: str, scale: float = 0.5) -> np.ndarray:
     out = img.copy()
-    cv2.putText(out, text, (5, 18), cv2.FONT_HERSHEY_SIMPLEX, scale, (0,0,0), 4, cv2.LINE_AA)
-    cv2.putText(out, text, (5, 18), cv2.FONT_HERSHEY_SIMPLEX, scale, (255,255,255), 1, cv2.LINE_AA)
+    cv2.putText(
+        out, text, (5, 18), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 4, cv2.LINE_AA
+    )
+    cv2.putText(
+        out,
+        text,
+        (5, 18),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        scale,
+        (255, 255, 255),
+        1,
+        cv2.LINE_AA,
+    )
     return out
 
 
@@ -263,6 +296,7 @@ def _resize_to(img: np.ndarray, h: int, w: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Zoom patch helper
 # ---------------------------------------------------------------------------
+
 
 def _make_zoom_panel(
     patch_id: str,
@@ -295,8 +329,12 @@ def _make_zoom_panel(
     m_inv = _inv_m_full(m_full)
     csv_he = mx_to_he(csv_pts_mx_crop, m_inv)
     csv_local = csv_he - np.array([x0, y0])
-    in_p = ((csv_local[:, 0] >= 0) & (csv_local[:, 0] < patch_size) &
-            (csv_local[:, 1] >= 0) & (csv_local[:, 1] < patch_size))
+    in_p = (
+        (csv_local[:, 0] >= 0)
+        & (csv_local[:, 0] < patch_size)
+        & (csv_local[:, 1] >= 0)
+        & (csv_local[:, 1] < patch_size)
+    )
     for x, y in csv_local[in_p].astype(int):
         cv2.circle(out, (x, y), 4, (0, 0, 220), -1)
 
@@ -307,6 +345,7 @@ def _make_zoom_panel(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main(args: argparse.Namespace) -> None:
     out_dir = pathlib.Path(args.out_dir)
@@ -366,8 +405,10 @@ def main(args: argparse.Namespace) -> None:
         )
         seg_gray = _resize_to(seg_gray, ov_h, ov_w)
         n_seg = (seg_gray > 0).sum()
-        print(f"  seg crop overview: {seg_gray.shape[1]}x{seg_gray.shape[0]}, "
-              f"nonzero overview px: {n_seg:,}")
+        print(
+            f"  seg crop overview: {seg_gray.shape[1]}x{seg_gray.shape[0]}, "
+            f"nonzero overview px: {n_seg:,}"
+        )
 
     # -----------------------------------------------------------------------
     # Load centroids
@@ -383,13 +424,15 @@ def main(args: argparse.Namespace) -> None:
     mx_full_w = mx_w_nat * ds
     mx_full_h = mx_h_nat * ds
     in_crop = (
-        (csv_pts_mx_all[:, 0] >= 0) & (csv_pts_mx_all[:, 0] < mx_full_w) &
-        (csv_pts_mx_all[:, 1] >= 0) & (csv_pts_mx_all[:, 1] < mx_full_h)
+        (csv_pts_mx_all[:, 0] >= 0)
+        & (csv_pts_mx_all[:, 0] < mx_full_w)
+        & (csv_pts_mx_all[:, 1] >= 0)
+        & (csv_pts_mx_all[:, 1] < mx_full_h)
     )
     csv_pts_mx_crop = csv_pts_mx_all[in_crop]
-    csv_pts_mx_ov = csv_pts_mx_crop / ds           # MX crop overview px
+    csv_pts_mx_ov = csv_pts_mx_crop / ds  # MX crop overview px
     csv_pts_he_crop = mx_to_he(csv_pts_mx_crop, m_inv)  # H&E full-res px
-    csv_pts_he_ov = csv_pts_he_crop / ds           # H&E overview px
+    csv_pts_he_ov = csv_pts_he_crop / ds  # H&E overview px
     print(f"  CSV: {len(csv_pts_mx_crop):,} / {len(csv_pts_mx_all):,} in crop")
 
     # -----------------------------------------------------------------------
@@ -404,8 +447,14 @@ def main(args: argparse.Namespace) -> None:
         jp = processed_dir / "cellvit" / f"{pid}.json"
         n_cv = len(json.load(jp.open()).get("cells", [])) if jp.exists() else 0
         csv_local = csv_pts_he_crop - np.array([x0, y0])
-        n_csv = int(((csv_local[:, 0] >= 0) & (csv_local[:, 0] < patch_size) &
-                     (csv_local[:, 1] >= 0) & (csv_local[:, 1] < patch_size)).sum())
+        n_csv = int(
+            (
+                (csv_local[:, 0] >= 0)
+                & (csv_local[:, 0] < patch_size)
+                & (csv_local[:, 1] >= 0)
+                & (csv_local[:, 1] < patch_size)
+            ).sum()
+        )
         if n_cv + n_csv > best_score:
             best_score, best_pid = n_cv + n_csv, pid
     print(f"  Zoom patch: {best_pid} (score={best_score})")
@@ -439,17 +488,18 @@ def main(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     he_gray = cv2.cvtColor(he_bgr, cv2.COLOR_BGR2GRAY)
     blend = np.zeros((ov_h, ov_w, 3), dtype=np.uint8)
-    blend[:, :, 0] = he_gray           # B channel = H&E
-    blend[:, :, 1] = mx_gray_warped    # G channel = warped MX DNA
+    blend[:, :, 0] = he_gray  # B channel = H&E
+    blend[:, :, 1] = mx_gray_warped  # G channel = warped MX DNA
     c3r1 = _label(blend, "C3 H&E(blue) + warped-MX(green)")
 
     c3r2 = he_bgr.copy()
-    c3r2, _ = _dots(c3r2, cv_pts_ov,     (0, 220, 0),  r)  # green = CellViT
-    c3r2, _ = _dots(c3r2, csv_pts_he_ov, (0, 0, 220),  r)  # red   = CSV→H&E
+    c3r2, _ = _dots(c3r2, cv_pts_ov, (0, 220, 0), r)  # green = CellViT
+    c3r2, _ = _dots(c3r2, csv_pts_he_ov, (0, 0, 220), r)  # red   = CSV→H&E
     c3r2 = _label(c3r2, "C3 CellViT=green  CSV->HE=red")
 
-    c3r3 = _make_zoom_panel(best_pid, processed_dir, csv_pts_mx_crop,
-                            m_full, ov_h, ov_w, patch_size)
+    c3r3 = _make_zoom_panel(
+        best_pid, processed_dir, csv_pts_mx_crop, m_full, ov_h, ov_w, patch_size
+    )
 
     # -----------------------------------------------------------------------
     # Column 4: seg.tif crop in MX native space
@@ -486,9 +536,14 @@ def main(args: argparse.Namespace) -> None:
     print(f"\nSaved: {out_path}  ({grid.shape[1]}x{grid.shape[0]} px)")
 
     names = [
-        ["c1r1_he.png",           "c2r1_mx_warped.png",     "c3r1_blend.png",       "c4r1_seg.png"],
-        ["c1r2_cellvit.png",      "c2r2_csv_he.png",        "c3r2_cv_csv_he.png",   "c4r2_seg_csv.png"],
-        ["c1r3_he_cellvit.png",   "c2r3_mx_csv.png",        "c3r3_zoom.png",        "c4r3_mx_seg.png"],
+        ["c1r1_he.png", "c2r1_mx_warped.png", "c3r1_blend.png", "c4r1_seg.png"],
+        [
+            "c1r2_cellvit.png",
+            "c2r2_csv_he.png",
+            "c3r2_cv_csv_he.png",
+            "c4r2_seg_csv.png",
+        ],
+        ["c1r3_he_cellvit.png", "c2r3_mx_csv.png", "c3r3_zoom.png", "c4r3_mx_seg.png"],
     ]
     for row_p, row_n in zip(panels, names):
         for panel, name in zip(row_p, row_n):
@@ -505,18 +560,20 @@ def _parse_args() -> argparse.Namespace:
         description="3×3+1col alignment debug grid.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--processed",       required=True)
-    p.add_argument("--he-image",        required=True)
+    p.add_argument("--processed", required=True)
+    p.add_argument("--he-image", required=True)
     p.add_argument("--multiplex-image", required=True)
-    p.add_argument("--csv",             required=True)
-    p.add_argument("--seg",             default=None,
-                   help="Full-slide seg TIFF (YX uint16) for column 4.")
-    p.add_argument("--csv-mpp",         type=float, default=0.65)
-    p.add_argument("--mx-crop-origin",  type=float, nargs=2, default=None,
-                   metavar=("OX", "OY"))
-    p.add_argument("--downsample",      type=int,   default=8)
-    p.add_argument("--dot-radius",      type=int,   default=2)
-    p.add_argument("--out-dir",         default="debug/")
+    p.add_argument("--csv", required=True)
+    p.add_argument(
+        "--seg", default=None, help="Full-slide seg TIFF (YX uint16) for column 4."
+    )
+    p.add_argument("--csv-mpp", type=float, default=0.65)
+    p.add_argument(
+        "--mx-crop-origin", type=float, nargs=2, default=None, metavar=("OX", "OY")
+    )
+    p.add_argument("--downsample", type=int, default=8)
+    p.add_argument("--dot-radius", type=int, default=2)
+    p.add_argument("--out-dir", default="debug/")
     return p.parse_args()
 
 

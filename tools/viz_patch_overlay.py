@@ -47,7 +47,12 @@ def main() -> None:
         default=None,
         help="Patch IDs to visualize (e.g. 20736_512). Default: random sample.",
     )
-    ap.add_argument("--n", type=int, default=4, help="Number of random patches (if --patches not given)")
+    ap.add_argument(
+        "--n",
+        type=int,
+        default=4,
+        help="Number of random patches (if --patches not given)",
+    )
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument(
         "--channels",
@@ -56,7 +61,11 @@ def main() -> None:
         default=[0],
         help="Multiplex channel indices to show (default: 0 = DNA)",
     )
-    ap.add_argument("--out", default=None, help="Output PNG path (default: <processed>/patch_overlay.png)")
+    ap.add_argument(
+        "--out",
+        default=None,
+        help="Output PNG path (default: <processed>/patch_overlay.png)",
+    )
     args = ap.parse_args()
 
     processed = Path(args.processed)
@@ -65,7 +74,9 @@ def main() -> None:
     # Resolve patch list
     with open(processed / "index.json") as f:
         index = json.load(f)
-    all_patches = [f"{e['x0']}_{e['y0']}" for e in index["patches"] if e.get("has_multiplex")]
+    all_patches = [
+        f"{e['x0']}_{e['y0']}" for e in index["patches"] if e.get("has_multiplex")
+    ]
 
     if args.patches:
         patch_ids = args.patches

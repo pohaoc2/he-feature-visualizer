@@ -79,7 +79,9 @@ def _transform_points(points_xy: np.ndarray, m: np.ndarray) -> np.ndarray:
     return (m.astype(np.float64) @ hom.T).T
 
 
-def _transform_points_linear_centered(points_xy: np.ndarray, m: np.ndarray) -> np.ndarray:
+def _transform_points_linear_centered(
+    points_xy: np.ndarray, m: np.ndarray
+) -> np.ndarray:
     """Apply only linear part of 2x3 affine, centered on point-cloud centroid."""
     linear = m[:, :2].astype(np.float64)
     center = points_xy.mean(axis=0, keepdims=True).astype(np.float64)

@@ -68,6 +68,7 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
     he_w: int,
     mx_h: int,
     mx_w: int,
+    fallback_scale: float | None = None,
 ) -> np.ndarray:
     """Compute affine warp M_full (2x3) mapping H&E full-res -> MX full-res."""
     he_ov_h, he_ov_w = he_mask.shape
@@ -88,7 +89,11 @@ def register_he_mx_affine(  # pylint: disable=unused-argument
         )
     except cv2.error as e:  # pylint: disable=catching-non-exception
         print(f"  WARNING: ECC registration failed ({e}). Falling back to mpp scale.")
-        scale = he_w / mx_w
+        scale = (
+            float(fallback_scale)
+            if (fallback_scale is not None and fallback_scale > 0)
+            else (he_w / mx_w)
+        )
         return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
 
     # ECC occasionally leaves a small global translation bias on sparse masks.
@@ -171,7 +176,8 @@ def refine_affine_fine_scale(
     mx_ov_h, mx_ov_w = mx_mask_fine.shape
 
     mx_resized = cv2.resize(
-        mx_mask_fine.astype(np.float32), (he_ov_w, he_ov_h),
+        mx_mask_fine.astype(np.float32),
+        (he_ov_w, he_ov_h),
         interpolation=cv2.INTER_LINEAR,
     )
     he_f32 = cv2.GaussianBlur(he_mask_fine.astype(np.float32), (5, 5), 0)
@@ -188,8 +194,16 @@ def refine_affine_fine_scale(
     #             ≈  a*rx * x_he_ov + b*rx * y_he_ov + tx*rx/ds_fine
     rx = he_ov_w / mx_ov_w
     ry = he_ov_h / mx_ov_h
-    a, b, tx = float(m_full_coarse[0, 0]), float(m_full_coarse[0, 1]), float(m_full_coarse[0, 2])
-    c, d, ty = float(m_full_coarse[1, 0]), float(m_full_coarse[1, 1]), float(m_full_coarse[1, 2])
+    a, b, tx = (
+        float(m_full_coarse[0, 0]),
+        float(m_full_coarse[0, 1]),
+        float(m_full_coarse[0, 2]),
+    )
+    c, d, ty = (
+        float(m_full_coarse[1, 0]),
+        float(m_full_coarse[1, 1]),
+        float(m_full_coarse[1, 2]),
+    )
     m_ov_init = np.array(
         [
             [a * rx, b * rx, tx * rx / ds_fine],
@@ -201,8 +215,11 @@ def refine_affine_fine_scale(
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 200, 1e-5)
     try:
         _, m_ov_fine = cv2.findTransformECC(
-            he_f32, mx_f32, m_ov_init.astype(np.float32),
-            cv2.MOTION_AFFINE, criteria,
+            he_f32,
+            mx_f32,
+            m_ov_init.astype(np.float32),
+            cv2.MOTION_AFFINE,
+            criteria,
         )
     except cv2.error as e:  # pylint: disable=catching-non-exception
         print(f"  WARNING: fine-scale ECC failed ({e}). Keeping coarse result.")
@@ -230,6 +247,7 @@ def register_he_mx_affine_intensity(
     mx_h: int,
     mx_w: int,
     fallback_m_full: np.ndarray | None = None,
+    fallback_scale: float | None = None,
 ) -> np.ndarray:
     """Affine registration using actual image intensities instead of binary masks.
 
@@ -254,9 +272,14 @@ def register_he_mx_affine_intensity(
         mx_dna_ov, (he_ov_w, he_ov_h), interpolation=cv2.INTER_LINEAR
     )
     # Resize MX mask for centroid init
-    mx_mask_resized = cv2.resize(
-        mx_mask.astype(np.float32), (he_ov_w, he_ov_h), interpolation=cv2.INTER_LINEAR
-    ) > 0.5
+    mx_mask_resized = (
+        cv2.resize(
+            mx_mask.astype(np.float32),
+            (he_ov_w, he_ov_h),
+            interpolation=cv2.INTER_LINEAR,
+        )
+        > 0.5
+    )
 
     # Mild blur to smooth noise without removing texture
     he_f = cv2.GaussianBlur(he_gray_ov.astype(np.float32), (3, 3), 0)
@@ -274,14 +297,21 @@ def register_he_mx_affine_intensity(
         print(f"  WARNING: intensity ECC failed ({e}). Returning fallback transform.")
         if fallback_m_full is not None:
             return fallback_m_full
-        scale = he_w / mx_w
+        scale = (
+            float(fallback_scale)
+            if (fallback_scale is not None and fallback_scale > 0)
+            else (he_w / mx_w)
+        )
         return np.array([[1 / scale, 0, 0], [0, 1 / scale, 0]], dtype=np.float32)
 
     # Re-centre cap (same logic as register_he_mx_affine)
     mx_warped = cv2.warpAffine(
-        mx_f, m_ov.astype(np.float32), (he_ov_w, he_ov_h),
+        mx_f,
+        m_ov.astype(np.float32),
+        (he_ov_w, he_ov_h),
         flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
-        borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
     )
     he_ctr = _mask_centroid_or_none(he_mask > 0)
     mx_ctr = _mask_centroid_or_none(mx_warped > mx_warped.mean() + 1e-6)
@@ -364,7 +394,9 @@ def register_he_mx_orb(
         and match_pair[0].distance < ratio_thresh * match_pair[1].distance
     ]
     if len(good) < min_inliers:
-        print(f"  WARNING: ORB ratio test left only {len(good)} matches (need {min_inliers}).")
+        print(
+            f"  WARNING: ORB ratio test left only {len(good)} matches (need {min_inliers})."
+        )
         return None
 
     pts_he = np.float32([kp1[m.queryIdx].pt for m in good])

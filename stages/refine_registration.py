@@ -117,7 +117,9 @@ def load_mx_centroids(
     """
     df = pd.read_csv(csv_path)
     if "Xt" not in df.columns or "Yt" not in df.columns:
-        raise ValueError(f"CSV must have 'Xt' and 'Yt' columns; found: {list(df.columns)[:10]}")
+        raise ValueError(
+            f"CSV must have 'Xt' and 'Yt' columns; found: {list(df.columns)[:10]}"
+        )
     mx_pts = df[["Xt", "Yt"]].to_numpy(dtype=np.float64)
     if csv_mpp != 1.0:
         mx_pts = mx_pts / csv_mpp
@@ -165,9 +167,9 @@ def csv_to_he_coords(
         mx_pts = mx_pts - np.array(crop_origin, dtype=np.float64)
 
     # MX px → H&E px via inv(m_full)
-    m3 = np.vstack([m_full, [0.0, 0.0, 1.0]])   # 3×3
-    m3_inv = np.linalg.inv(m3)                   # 3×3 inverse
-    m_inv = m3_inv[:2, :]                         # 2×3: MX px → H&E px
+    m3 = np.vstack([m_full, [0.0, 0.0, 1.0]])  # 3×3
+    m3_inv = np.linalg.inv(m3)  # 3×3 inverse
+    m_inv = m3_inv[:2, :]  # 2×3: MX px → H&E px
 
     ones = np.ones((len(mx_pts), 1), dtype=np.float64)
     he_pts = (m_inv @ np.hstack([mx_pts, ones]).T).T  # (N, 2)
@@ -222,7 +224,9 @@ def affine_icp(
             mask = dists <= distance_gate
             if mask.sum() < 4:
                 log.warning(
-                    "ICP iter %d: only %d pts within gate (need >= 4); stopping.", i, mask.sum()
+                    "ICP iter %d: only %d pts within gate (need >= 4); stopping.",
+                    i,
+                    mask.sum(),
                 )
                 break
             src_m = src_curr[mask]
@@ -381,7 +385,9 @@ def ransac_filter(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Filter matches using cv2.estimateAffine2D RANSAC. Returns inlier pairs."""
     if len(src_he) < 4:
-        log.warning("Too few matches (%d) for RANSAC; skipping RANSAC filter.", len(src_he))
+        log.warning(
+            "Too few matches (%d) for RANSAC; skipping RANSAC filter.", len(src_he)
+        )
         return src_he, dst_mx
 
     src_f = src_he.astype(np.float32)
@@ -663,7 +669,10 @@ def update_index(
 
     with index_path.open("w") as fh:
         json.dump(index, fh, indent=2)
-    log.info("Updated index.json with ICP+TPS metadata (%d control points).", len(tps_control_he))
+    log.info(
+        "Updated index.json with ICP+TPS metadata (%d control points).",
+        len(tps_control_he),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -721,8 +730,13 @@ def main(args: argparse.Namespace) -> None:
         channel_names = index.get("channels", [])
         if channel_names and args.metadata_csv:
             from utils.channels import resolve_channel_indices
-            channel_indices, _ = resolve_channel_indices(args.metadata_csv, channel_names)
-            log.info("  Resolved %d channel indices from metadata CSV.", len(channel_indices))
+
+            channel_indices, _ = resolve_channel_indices(
+                args.metadata_csv, channel_names
+            )
+            log.info(
+                "  Resolved %d channel indices from metadata CSV.", len(channel_indices)
+            )
         else:
             raise ValueError(
                 "index.json has no 'channel_indices' and no --metadata-csv provided "
@@ -745,7 +759,9 @@ def main(args: argparse.Namespace) -> None:
         )
 
     # Step 2: Load CSV centroids → MX px → H&E px via inv(m_full)
-    log.info("Step 2: Loading CSV centroids from %s and converting to H&E px ...", args.csv)
+    log.info(
+        "Step 2: Loading CSV centroids from %s and converting to H&E px ...", args.csv
+    )
     crop_origin = tuple(args.mx_crop_origin) if args.mx_crop_origin else None
     if crop_origin:
         log.info("  Applying crop origin offset: (%.1f, %.1f) MX px", *crop_origin)
@@ -760,7 +776,9 @@ def main(args: argparse.Namespace) -> None:
     # Step 3: ICP in H&E space to correct global drift in m_full
     log.info(
         "Step 3: ICP alignment in H&E space (max_iter=%d, tol=%.1e, gate=%g H&E px) ...",
-        args.icp_max_iter, args.icp_tol, args.distance_gate,
+        args.icp_max_iter,
+        args.icp_tol,
+        args.distance_gate,
     )
     M_icp, icp_n_matches, icp_n_iters = affine_icp(
         src_he=he_pts_he,
@@ -771,11 +789,16 @@ def main(args: argparse.Namespace) -> None:
     )
     log.info(
         "  ICP done: %d iters, %d final matches, M_icp=%s",
-        icp_n_iters, icp_n_matches, M_icp.tolist(),
+        icp_n_iters,
+        icp_n_matches,
+        M_icp.tolist(),
     )
 
     # Step 4: Post-ICP matching in H&E space + RANSAC
-    log.info("Step 4: Post-ICP mutual NN matching + RANSAC (gate=%g H&E px) ...", args.distance_gate)
+    log.info(
+        "Step 4: Post-ICP mutual NN matching + RANSAC (gate=%g H&E px) ...",
+        args.distance_gate,
+    )
     icp_he = apply_affine(M_icp, he_pts_he)
     src_he, dst_mx = match_centroids_he(
         icp_he=icp_he,
@@ -796,7 +819,9 @@ def main(args: argparse.Namespace) -> None:
     src_he_inlier, dst_mx_inlier = ransac_filter(src_he, dst_mx, ransac_thresh=5.0)
     n_inliers = len(src_he_inlier)
     inlier_frac = n_inliers / max(1, n_initial)
-    log.info("  %d inliers / %d total (%.1f%%)", n_inliers, n_initial, 100 * inlier_frac)
+    log.info(
+        "  %d inliers / %d total (%.1f%%)", n_inliers, n_initial, 100 * inlier_frac
+    )
 
     if n_inliers < 4:
         raise RuntimeError(
@@ -805,10 +830,17 @@ def main(args: argparse.Namespace) -> None:
         )
 
     # Step 5: Fit TPS (H&E px → MX px)
-    log.info("Step 5: Fitting TPS H&E px → MX px (max_tps_points=%d) ...", args.max_tps_points)
-    tps_x, tps_y = fit_tps(src_he_inlier, dst_mx_inlier, max_tps_points=args.max_tps_points)
+    log.info(
+        "Step 5: Fitting TPS H&E px → MX px (max_tps_points=%d) ...",
+        args.max_tps_points,
+    )
+    tps_x, tps_y = fit_tps(
+        src_he_inlier, dst_mx_inlier, max_tps_points=args.max_tps_points
+    )
 
-    src_sub, dst_sub = subsample_uniform(src_he_inlier, dst_mx_inlier, args.max_tps_points)
+    src_sub, dst_sub = subsample_uniform(
+        src_he_inlier, dst_mx_inlier, args.max_tps_points
+    )
     residual = compute_tps_residual(tps_x, tps_y, src_he_inlier, dst_mx_inlier)
     log.info("  TPS residual (mean L2 on inliers): %.3f MX px", residual)
 
