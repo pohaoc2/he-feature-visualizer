@@ -1,25 +1,23 @@
 """
-viz_registration_debug.py — 4-panel registration debug visualization.
+viz_registration_debug.py — ICP point-assignment debug visualization.
 
-Generates a figure comparing CellViT detections, CSV centroids in H&E space,
-and their alignment after ICP.  Run after Stage 2 (CellViT), before Stage 2.5.
+Generates a 3-panel figure comparing original and ICP-modified CSV point
+assignments against CellViT detections in H&E space.
 
 Panels
 ------
-a  H&E overview (high-res) with Stage 1 patch grid boxes.
-b  CellViT centroids (all patches) overlaid on H&E.
-c  CSV-in-HE (blue, pre-ICP) vs ICP-aligned CellViT (orange), zoomed to patch
-   region with H&E px axes.
-d  Overlap: CellViT (green) vs CSV-in-HE (red), same zoom and axes.
+a  Cropped HE region + CellViT contours + original CSV-in-HE points.
+b  Cropped HE region + CellViT contours + ICP-modified CSV points.
+c  Zoomed patch region of panel b.
 
 IMPORTANT — coordinate spaces
 ------------------------------
 - CellViT centroids are in H&E crop pixel space (0 … img_w × 0 … img_h).
 - CSV (Xt, Yt) are in µm for the FULL SLIDE.  After ÷csv_mpp → full-slide MX
-  px.  If the multiplex image is a CROP, you MUST pass --mx-crop-origin OX OY
-  (top-left of the crop in full-slide MX px) so that CSV coords are shifted into
-  crop MX px space before inv(m_full) is applied.  Without this, CSV centroids
-  will project far outside the crop and panels c/d will look empty.
+  px.  If the multiplex image is a CROP, pass --mx-crop-origin OX OY (top-left
+  of the crop in full-slide MX px), or store mx_crop_origin in index.json.
+  Without this shift into crop MX px space before inv(m_full), CSV centroids
+  will project far outside the crop and point overlays will look empty.
 
 CLI
 ---
@@ -28,7 +26,9 @@ python -m tools.viz_registration_debug \\
   --he-image data/WD-76845-096-crop.ome.tif \\
   --csv data/WD-76845-097.csv \\
   --csv-mpp 0.65 \\
-  --mx-crop-origin OX OY \\   # required for crops
+  --mx-crop-origin OX OY \\
+  --crop-margin 128 \\
+  --zoom-patch 0_1024 \\
   --out-png crop/registration_debug.png
 """
 
@@ -53,6 +53,7 @@ from stages.refine_registration import (
     apply_affine,
     csv_to_he_coords,
     load_he_centroids,
+    resolve_mx_crop_origin,
 )
 
 # ---------------------------------------------------------------------------
@@ -213,6 +214,92 @@ def _transform_contours(m: np.ndarray, contours: list[np.ndarray]) -> list[np.nd
     return transformed
 
 
+def _in_bbox(pts: np.ndarray, x0: float, x1: float, y0: float, y1: float) -> np.ndarray:
+    """Return boolean mask for points inside ROI."""
+    if len(pts) == 0:
+        return np.zeros((0,), dtype=bool)
+    return (
+        (pts[:, 0] >= x0)
+        & (pts[:, 0] <= x1)
+        & (pts[:, 1] >= y0)
+        & (pts[:, 1] <= y1)
+    )
+
+
+def _trajectory_segments(
+    src_pts: np.ndarray,
+    dst_pts: np.ndarray,
+    x0: float,
+    x1: float,
+    y0: float,
+    y1: float,
+    max_segments: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Build line segments showing src->dst trajectories near a ROI."""
+    if len(src_pts) == 0 or len(dst_pts) == 0:
+        return np.empty((0, 2, 2), dtype=np.float64)
+
+    src_in = _in_bbox(src_pts, x0, x1, y0, y1)
+    dst_in = _in_bbox(dst_pts, x0, x1, y0, y1)
+    keep = np.where(src_in | dst_in)[0]
+    if len(keep) == 0:
+        return np.empty((0, 2, 2), dtype=np.float64)
+    if len(keep) > max_segments:
+        keep = rng.choice(keep, size=max_segments, replace=False)
+
+    return np.stack([src_pts[keep], dst_pts[keep]], axis=1).astype(np.float64)
+
+
+def _invert_affine_2x3(m: np.ndarray) -> np.ndarray:
+    """Return inverse of a 2x3 affine matrix as 2x3."""
+    m3 = np.vstack([m, [0.0, 0.0, 1.0]])
+    inv3 = np.linalg.inv(m3)
+    return inv3[:2, :]
+
+
+def _select_zoom_patch(
+    patches: list[dict],
+    img_w: int,
+    img_h: int,
+    default_patch_size: int,
+    patch_key: str | None,
+) -> tuple[int, int, int]:
+    """Choose zoom patch by explicit key or nearest-to-center fallback."""
+    if not patches:
+        return 0, 0, default_patch_size
+
+    if patch_key:
+        try:
+            sx, sy = patch_key.split("_", 1)
+            x_key = int(sx)
+            y_key = int(sy)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"--zoom-patch must be 'x0_y0', got: {patch_key!r}") from exc
+        for p in patches:
+            if int(p["x0"]) == x_key and int(p["y0"]) == y_key:
+                return x_key, y_key, int(p.get("patch_size", default_patch_size))
+        raise ValueError(f"--zoom-patch {patch_key!r} not found in index.json patches.")
+
+    cx = 0.5 * float(img_w)
+    cy = 0.5 * float(img_h)
+    best = None
+    best_d2 = float("inf")
+    for p in patches:
+        x0 = int(p["x0"])
+        y0 = int(p["y0"])
+        ps = int(p.get("patch_size", default_patch_size))
+        pcx = x0 + 0.5 * ps
+        pcy = y0 + 0.5 * ps
+        d2 = (pcx - cx) ** 2 + (pcy - cy) ** 2
+        if d2 < best_d2:
+            best_d2 = d2
+            best = (x0, y0, ps)
+
+    assert best is not None
+    return best
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -255,11 +342,16 @@ def main(args: argparse.Namespace) -> None:
         )
 
     # CSV centroids → MX px + H&E px
-    crop_origin = tuple(args.mx_crop_origin) if args.mx_crop_origin else None
+    cli_origin = tuple(args.mx_crop_origin) if args.mx_crop_origin else None
+    crop_origin = resolve_mx_crop_origin(index, cli_origin=cli_origin)
     if crop_origin is None:
         print(
             "WARNING: --mx-crop-origin not provided. CSV coords may be in full-slide "
-            "MX space and will project outside the crop. Panels c/d may look empty."
+            "MX space and will project outside the crop. Overlays may look empty."
+        )
+    elif cli_origin is None:
+        print(
+            f"Using mx_crop_origin from index.json: ({crop_origin[0]:.1f}, {crop_origin[1]:.1f})"
         )
     mx_pts, csv_in_he = csv_to_he_coords(
         pathlib.Path(args.csv),
@@ -296,213 +388,212 @@ def main(args: argparse.Namespace) -> None:
     else:
         print("Skipping ICP: too few centroids.")
 
-    icp_cellvit_he = apply_affine(M_icp, he_pts_he) if len(he_pts_he) > 0 else he_pts_he
-    icp_contours = _transform_contours(M_icp, he_contours) if he_contours else []
+    # Build ICP-modified CSV points in original HE frame:
+    # M_icp maps CellViT -> CSV-in-HE, so inverse maps CSV -> CellViT.
+    M_icp_inv = _invert_affine_2x3(M_icp)
+    csv_icp_he = apply_affine(M_icp_inv, csv_in_he) if len(csv_in_he) > 0 else csv_in_he
 
-    # Patch bounding box in H&E px
-    px0 = [p["x0"] for p in patches]
-    py0 = [p["y0"] for p in patches]
-    patch_x_min = min(px0)
-    patch_y_min = min(py0)
-    patch_x_max = max(px0) + patch_size
-    patch_y_max = max(py0) + patch_size
-    margin = patch_size // 2
-    roi_x0 = max(0, patch_x_min - margin)
-    roi_x1 = min(img_w, patch_x_max + margin)
-    roi_y0 = max(0, patch_y_min - margin)
-    roi_y1 = min(img_h, patch_y_max + margin)
-    print(f"Patch ROI (H&E px): x=[{roi_x0}, {roi_x1}]  y=[{roi_y0}, {roi_y1}]")
+    zoom_x0, zoom_y0, zoom_ps = _select_zoom_patch(
+        patches=patches,
+        img_w=img_w,
+        img_h=img_h,
+        default_patch_size=patch_size,
+        patch_key=args.zoom_patch,
+    )
+    crop_margin = max(0, int(args.crop_margin))
+    view_x0 = max(0, zoom_x0 - crop_margin)
+    view_y0 = max(0, zoom_y0 - crop_margin)
+    view_x1 = min(img_w, zoom_x0 + zoom_ps + crop_margin)
+    view_y1 = min(img_h, zoom_y0 + zoom_ps + crop_margin)
+    margin = max(0, int(args.zoom_margin))
+    roi_x0 = max(0, zoom_x0 - margin)
+    roi_y0 = max(0, zoom_y0 - margin)
+    roi_x1 = min(img_w, zoom_x0 + zoom_ps + margin)
+    roi_y1 = min(img_h, zoom_y0 + zoom_ps + margin)
+    print(
+        f"Zoom patch: x0={zoom_x0}, y0={zoom_y0}, size={zoom_ps}, "
+        f"ROI x=[{roi_x0}, {roi_x1}] y=[{roi_y0}, {roi_y1}]"
+    )
+    print(
+        f"Cropped A/B ROI: x=[{view_x0}, {view_x1}] y=[{view_y0}, {view_y1}]"
+    )
 
     rng = np.random.default_rng(0)
-    N_MAX = 8000  # max scatter points per cloud
-
-    # -----------------------------------------------------------------------
-    # Plot
-    # -----------------------------------------------------------------------
-    fig, axes_grid = plt.subplots(2, 2, figsize=(16, 11), dpi=150)
-    fig.suptitle("Registration Debug: Stage 2.5 ICP+TPS", fontsize=13)
-
-    ax_a, ax_b = axes_grid[0, 0], axes_grid[0, 1]
-    ax_c, ax_d = axes_grid[1, 0], axes_grid[1, 1]
-
-    # Extent maps overview pixels → H&E full-res px for panels a/b
-    extent_lo = [0, img_w, img_h, 0]  # [left, right, bottom, top] in H&E px
-
-    # ── Panel a: H&E overview + patch grid ──────────────────────────────────
-    ax_a.imshow(rgb_lo, extent=extent_lo, origin="upper", aspect="equal")
-    ax_a.set_title("a) H&E overview + patch grid")
-    for p in patches:
-        rect = mpatches.Rectangle(
-            (p["x0"], p["y0"]),
-            patch_size,
-            patch_size,
-            linewidth=1.0,
-            edgecolor="lime",
-            facecolor="none",
-        )
-        ax_a.add_patch(rect)
-    ax_a.set_xlabel("H&E x (px)")
-    ax_a.set_ylabel("H&E y (px)")
-    ax_a.invert_yaxis()
-
-    # ── Panel b: CellViT centroids + contours on H&E ────────────────────────
-    ax_b.imshow(rgb_lo, extent=extent_lo, origin="upper", aspect="equal")
-    ax_b.set_title(
-        f"b) CellViT centroids + contours (points={len(he_pts_he)}, contours={len(he_contours)})"
-    )
-    _add_contours(
-        ax_b,
-        he_contours,
-        color="deepskyblue",
-        linewidth=args.contour_lw,
-        alpha=args.contour_alpha,
-    )
-    if len(he_pts_he) > 0:
-        pts = _subsample(he_pts_he, N_MAX, rng)
-        ax_b.scatter(pts[:, 0], pts[:, 1], s=1, c="yellow", alpha=0.7, linewidths=0)
-    ax_b.set_xlabel("H&E x (px)")
-    ax_b.set_ylabel("H&E y (px)")
-    ax_b.invert_yaxis()
-
-    # Extent for high-res ROI panels (maps hi-res overview → H&E px)
+    N_MAX = 10000
+    extent_lo = [0, img_w, img_h, 0]
     extent_hi = [0, img_w, img_h, 0]
 
-    def _setup_roi_ax(ax: plt.Axes, title: str) -> None:
-        """Configure ROI axis with H&E px limits and labels."""
-        ax.imshow(rgb_hi, extent=extent_hi, origin="upper", aspect="equal")
-        ax.set_xlim(roi_x0, roi_x1)
-        ax.set_ylim(roi_y1, roi_y0)  # y inverted (image origin top-left)
-        ax.set_title(title)
+    fig, (ax_a, ax_b, ax_c) = plt.subplots(1, 3, figsize=(22, 7), dpi=150)
+    fig.suptitle("ICP Point Assignment Debug", fontsize=13)
+
+    for ax in (ax_a, ax_b):
+        ax.imshow(rgb_lo, extent=extent_lo, origin="upper", aspect="equal")
         ax.set_xlabel("H&E x (px)")
         ax.set_ylabel("H&E y (px)")
-        # Draw patch outlines for reference
-        for p in patches:
-            rect = mpatches.Rectangle(
-                (p["x0"], p["y0"]),
-                patch_size,
-                patch_size,
-                linewidth=0.6,
-                edgecolor="lime",
-                facecolor="none",
-                alpha=0.5,
-            )
-            ax.add_patch(rect)
+        ax.set_xlim(view_x0, view_x1)
+        ax.set_ylim(view_y1, view_y0)
 
-    # ── Panel c: CSV-in-HE (blue) vs ICP-aligned CellViT (orange) ───────────
-    _setup_roi_ax(
-        ax_c, "c) CSV-in-HE (blue) vs ICP-aligned CellViT (orange + contours)"
-    )
-
-    if len(csv_in_he) > 0:
-        pts_csv = _subsample(
-            _filter_bbox(csv_in_he, roi_x0, roi_x1, roi_y0, roi_y1), N_MAX, rng
+    # a) original CSV points
+    ax_a.set_title("a) Cropped HE + CellViT + original CSV")
+    if len(he_contours) > 0:
+        he_contours_view = _filter_contours_bbox(
+            he_contours, view_x0, view_x1, view_y0, view_y1
         )
-        n_visible = len(pts_csv)
-        ax_c.scatter(
-            pts_csv[:, 0],
-            pts_csv[:, 1],
-            s=4,
-            c="deepskyblue",
-            alpha=0.6,
-            linewidths=0,
-            label=f"CSV-in-HE (visible={n_visible})",
+        _add_contours(
+            ax_a,
+            he_contours_view,
+            color="cyan",
+            linewidth=args.contour_lw,
+            alpha=args.contour_alpha,
         )
-        if n_visible == 0:
-            ax_c.text(
-                0.5,
-                0.5,
-                "CSV-in-HE: 0 pts in ROI\n(check --mx-crop-origin)",
-                transform=ax_c.transAxes,
-                ha="center",
-                va="center",
-                color="deepskyblue",
-                fontsize=9,
-                bbox=dict(boxstyle="round", fc="black", alpha=0.6),
-            )
-
-    if len(icp_cellvit_he) > 0:
-        pts_icp = _subsample(
-            _filter_bbox(icp_cellvit_he, roi_x0, roi_x1, roi_y0, roi_y1), N_MAX, rng
-        )
-        ax_c.scatter(
-            pts_icp[:, 0],
-            pts_icp[:, 1],
-            s=4,
-            c="orange",
-            alpha=0.6,
-            linewidths=0,
-            label=f"ICP CellViT (visible={len(pts_icp)})",
-        )
-    roi_icp_contours = _filter_contours_bbox(
-        icp_contours, roi_x0, roi_x1, roi_y0, roi_y1
-    )
-    _add_contours(
-        ax_c,
-        roi_icp_contours,
-        color="orange",
-        linewidth=args.contour_lw,
-        alpha=args.contour_alpha,
-    )
-
-    ax_c.legend(loc="upper right", markerscale=3, fontsize=7)
-
-    # ── Panel d: CellViT + contours (green/cyan) vs CSV-in-HE (red) ────────
-    _setup_roi_ax(
-        ax_d, "d) Overlap: CellViT (green + cyan contours) vs CSV-in-HE (red)"
-    )
-
-    roi_contours = _filter_contours_bbox(he_contours, roi_x0, roi_x1, roi_y0, roi_y1)
-    _add_contours(
-        ax_d,
-        roi_contours,
-        color="cyan",
-        linewidth=args.contour_lw,
-        alpha=args.contour_alpha,
-    )
-
     if len(he_pts_he) > 0:
         pts_cv = _subsample(
-            _filter_bbox(he_pts_he, roi_x0, roi_x1, roi_y0, roi_y1), N_MAX, rng
+            _filter_bbox(he_pts_he, view_x0, view_x1, view_y0, view_y1), N_MAX, rng
         )
-        ax_d.scatter(
+        ax_a.scatter(
             pts_cv[:, 0],
             pts_cv[:, 1],
-            s=4,
+            s=float(args.cellvit_point_size),
+            c="lime",
+            alpha=0.6,
+            linewidths=0,
+            label=f"CellViT ({len(pts_cv)})",
+        )
+    if len(csv_in_he) > 0:
+        pts_csv = _subsample(
+            _filter_bbox(csv_in_he, view_x0, view_x1, view_y0, view_y1), N_MAX, rng
+        )
+        ax_a.scatter(
+            pts_csv[:, 0],
+            pts_csv[:, 1],
+            s=float(args.csv_point_size),
+            c="red",
+            alpha=0.55,
+            linewidths=0,
+            label=f"CSV original ({len(pts_csv)})",
+        )
+    ax_a.legend(loc="upper right", markerscale=3, fontsize=7)
+
+    # b) ICP-modified CSV points
+    ax_b.set_title("b) Cropped HE + CellViT + transformed CSV (ICP)")
+    if len(he_contours) > 0:
+        _add_contours(
+            ax_b,
+            he_contours_view,
+            color="cyan",
+            linewidth=args.contour_lw,
+            alpha=args.contour_alpha,
+        )
+    if len(he_pts_he) > 0:
+        pts_cv2 = _subsample(
+            _filter_bbox(he_pts_he, view_x0, view_x1, view_y0, view_y1), N_MAX, rng
+        )
+        ax_b.scatter(
+            pts_cv2[:, 0],
+            pts_cv2[:, 1],
+            s=float(args.cellvit_point_size),
+            c="lime",
+            alpha=0.6,
+            linewidths=0,
+            label=f"CellViT ({len(pts_cv2)})",
+        )
+    if len(csv_icp_he) > 0:
+        pts_csv_icp = _subsample(
+            _filter_bbox(csv_icp_he, view_x0, view_x1, view_y0, view_y1), N_MAX, rng
+        )
+        ax_b.scatter(
+            pts_csv_icp[:, 0],
+            pts_csv_icp[:, 1],
+            s=float(args.csv_point_size),
+            c="orange",
+            alpha=0.55,
+            linewidths=0,
+            label=f"CSV ICP-modified ({len(pts_csv_icp)})",
+        )
+    traj_segments = _trajectory_segments(
+        src_pts=csv_in_he,
+        dst_pts=csv_icp_he,
+        x0=view_x0,
+        x1=view_x1,
+        y0=view_y0,
+        y1=view_y1,
+        max_segments=max(1, int(args.max_trajectories)),
+        rng=rng,
+    )
+    if len(traj_segments) > 0:
+        traj_collection = LineCollection(
+            traj_segments,
+            colors="yellow",
+            linewidths=float(args.trajectory_lw),
+            alpha=0.28,
+        )
+        ax_b.add_collection(traj_collection)
+    zoom_rect = mpatches.Rectangle(
+        (zoom_x0, zoom_y0),
+        zoom_ps,
+        zoom_ps,
+        linewidth=float(args.box_lw),
+        edgecolor="yellow",
+        facecolor="none",
+    )
+    ax_b.add_patch(zoom_rect)
+    ax_b.legend(loc="upper right", markerscale=3, fontsize=7)
+
+    # c) zoom patch from panel b
+    ax_c.imshow(rgb_hi, extent=extent_hi, origin="upper", aspect="equal")
+    ax_c.set_xlim(roi_x0, roi_x1)
+    ax_c.set_ylim(roi_y1, roi_y0)
+    ax_c.set_xlabel("H&E x (px)")
+    ax_c.set_ylabel("H&E y (px)")
+    ax_c.set_title("c) Zoom patch of panel b")
+
+    if len(he_contours) > 0:
+        roi_contours = _filter_contours_bbox(he_contours, roi_x0, roi_x1, roi_y0, roi_y1)
+        _add_contours(
+            ax_c,
+            roi_contours,
+            color="cyan",
+            linewidth=args.contour_lw,
+            alpha=args.contour_alpha,
+        )
+    if len(he_pts_he) > 0:
+        pts_cv_zoom = _subsample(
+            _filter_bbox(he_pts_he, roi_x0, roi_x1, roi_y0, roi_y1), N_MAX, rng
+        )
+        ax_c.scatter(
+            pts_cv_zoom[:, 0],
+            pts_cv_zoom[:, 1],
+            s=float(args.zoom_point_size),
             c="lime",
             alpha=0.7,
             linewidths=0,
-            label=f"CellViT (visible={len(pts_cv)})",
+            label=f"CellViT ({len(pts_cv_zoom)})",
         )
-
-    if len(csv_in_he) > 0:
-        pts_csv2 = _subsample(
-            _filter_bbox(csv_in_he, roi_x0, roi_x1, roi_y0, roi_y1), N_MAX, rng
+    if len(csv_icp_he) > 0:
+        pts_csv_zoom = _subsample(
+            _filter_bbox(csv_icp_he, roi_x0, roi_x1, roi_y0, roi_y1), N_MAX, rng
         )
-        ax_d.scatter(
-            pts_csv2[:, 0],
-            pts_csv2[:, 1],
-            s=4,
-            c="red",
-            alpha=0.6,
+        ax_c.scatter(
+            pts_csv_zoom[:, 0],
+            pts_csv_zoom[:, 1],
+            s=float(args.zoom_point_size),
+            c="orange",
+            alpha=0.65,
             linewidths=0,
-            label=f"CSV-in-HE (visible={len(pts_csv2)})",
+            label=f"CSV ICP-modified ({len(pts_csv_zoom)})",
         )
-        if len(pts_csv2) == 0:
-            ax_d.text(
-                0.5,
-                0.45,
-                "CSV-in-HE: 0 pts in ROI\n(check --mx-crop-origin)",
-                transform=ax_d.transAxes,
-                ha="center",
-                va="center",
-                color="red",
-                fontsize=9,
-                bbox=dict(boxstyle="round", fc="black", alpha=0.6),
-            )
+    patch_rect_zoom = mpatches.Rectangle(
+        (zoom_x0, zoom_y0),
+        zoom_ps,
+        zoom_ps,
+        linewidth=float(args.box_lw),
+        edgecolor="yellow",
+        facecolor="none",
+    )
+    ax_c.add_patch(patch_rect_zoom)
+    ax_c.legend(loc="upper right", markerscale=2, fontsize=7)
 
-    ax_d.legend(loc="upper right", markerscale=3, fontsize=7)
-
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     out_png = pathlib.Path(args.out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, bbox_inches="tight")
@@ -512,7 +603,7 @@ def main(args: argparse.Namespace) -> None:
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="4-panel registration debug visualization (run after Stage 2).",
+        description="3-panel ICP point-assignment debug visualization.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
@@ -529,9 +620,63 @@ def _parse_args() -> argparse.Namespace:
         nargs=2,
         default=None,
         metavar=("OX", "OY"),
-        help="Top-left of crop in full-slide MX px (required for crop images).",
+        help="Top-left of crop in full-slide MX px. If omitted, attempts to "
+        "read mx_crop_origin from index.json.",
     )
     p.add_argument("--out-png", required=True, help="Output PNG path.")
+    p.add_argument(
+        "--zoom-patch",
+        default=None,
+        help="Optional zoom patch key in x0_y0 format. Default: patch nearest image center.",
+    )
+    p.add_argument(
+        "--zoom-margin",
+        type=int,
+        default=0,
+        help="Extra margin (pixels) around zoom patch for panel c.",
+    )
+    p.add_argument(
+        "--crop-margin",
+        type=int,
+        default=128,
+        help="Extra margin (pixels) around the selected patch for panels a/b.",
+    )
+    p.add_argument(
+        "--max-trajectories",
+        type=int,
+        default=2500,
+        help="Maximum CSV trajectory segments (original -> transformed) drawn in panel b.",
+    )
+    p.add_argument(
+        "--cellvit-point-size",
+        type=float,
+        default=9.0,
+        help="Marker size for CellViT centroids in panels a/b.",
+    )
+    p.add_argument(
+        "--csv-point-size",
+        type=float,
+        default=9.0,
+        help="Marker size for CSV centroids in panels a/b.",
+    )
+    p.add_argument(
+        "--zoom-point-size",
+        type=float,
+        default=14.0,
+        help="Marker size for centroids in zoom panel c.",
+    )
+    p.add_argument(
+        "--trajectory-lw",
+        type=float,
+        default=1.0,
+        help="Line width for CSV trajectory segments in panel b.",
+    )
+    p.add_argument(
+        "--box-lw",
+        type=float,
+        default=1.8,
+        help="Line width for zoom patch rectangles in panels b/c.",
+    )
     p.add_argument(
         "--overview-ds",
         type=int,
@@ -542,12 +687,12 @@ def _parse_args() -> argparse.Namespace:
         "--roi-overview-ds",
         type=int,
         default=1,
-        help="Downsample factor for H&E background in panels c/d (smaller = higher resolution).",
+        help="Downsample factor for H&E background in panel c (smaller = higher resolution).",
     )
     p.add_argument(
         "--contour-lw",
         type=float,
-        default=0.9,
+        default=1.4,
         help="Line width for CellViT contour overlays.",
     )
     p.add_argument(

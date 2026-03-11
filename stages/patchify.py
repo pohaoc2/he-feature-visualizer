@@ -1337,6 +1337,34 @@ def main():
     parser.add_argument("--he-image", required=True)
     parser.add_argument("--multiplex-image", required=True)
     parser.add_argument("--metadata-csv", required=True)
+    parser.add_argument(
+        "--he-source-image",
+        default=None,
+        help="Optional full-slide H&E source path used to generate --he-image crop.",
+    )
+    parser.add_argument(
+        "--multiplex-source-image",
+        default=None,
+        help="Optional full-slide multiplex source path used to generate "
+        "--multiplex-image crop.",
+    )
+    parser.add_argument(
+        "--he-crop-origin",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("OX", "OY"),
+        help="Optional top-left (x y) of H&E crop in full-slide H&E px.",
+    )
+    parser.add_argument(
+        "--mx-crop-origin",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("OX", "OY"),
+        help="Optional top-left (x y) of multiplex crop in full-slide MX px. "
+        "Saved into index.json for Stage 2.5 CSV projection.",
+    )
     parser.add_argument("--out", default="processed")
     parser.add_argument("--patch-size", type=int, default=256)
     parser.add_argument("--stride", type=int, default=256)
@@ -1787,7 +1815,7 @@ def main():
         mx_vis_coords: list[tuple[int, int]] = []
         print(f"  Multiplex save threshold: overlap >= {min_mx_overlap:.3f}")
 
-        for idx, (x0, y0) in enumerate(coords[:]):
+        for idx, (x0, y0) in enumerate(coords[:10]):
             if idx % 500 == 0:
                 print(f"  {idx}/{len(coords)} ...")
 
@@ -1974,6 +2002,7 @@ def main():
                 "mx_mpp": mx_mpp_x,
                 "scale_he_to_mx": scale,
                 "channels": resolved_names,
+                "channel_indices": [int(i) for i in channel_indices],
                 "warp_matrix": m_full.tolist(),
                 "registration": args.register,
                 "registration_qc_decision": decision,
@@ -1981,6 +2010,46 @@ def main():
             }
             if args.mask_image:
                 meta["mask_image"] = str(args.mask_image)
+
+            if args.he_crop_origin is not None:
+                meta["he_crop_origin"] = [
+                    float(args.he_crop_origin[0]),
+                    float(args.he_crop_origin[1]),
+                ]
+            if args.mx_crop_origin is not None:
+                meta["mx_crop_origin"] = [
+                    float(args.mx_crop_origin[0]),
+                    float(args.mx_crop_origin[1]),
+                ]
+
+            if (
+                args.he_source_image
+                or args.multiplex_source_image
+                or args.he_crop_origin is not None
+                or args.mx_crop_origin is not None
+            ):
+                crop_region: dict = {
+                    "he_size": [int(he_w), int(he_h)],
+                    "mx_size": [int(mx_w), int(mx_h)],
+                }
+                if args.he_source_image:
+                    crop_region["he_source_image"] = str(args.he_source_image)
+                if args.multiplex_source_image:
+                    crop_region["multiplex_source_image"] = str(
+                        args.multiplex_source_image
+                    )
+                if args.he_crop_origin is not None:
+                    crop_region["he_origin"] = [
+                        float(args.he_crop_origin[0]),
+                        float(args.he_crop_origin[1]),
+                    ]
+                if args.mx_crop_origin is not None:
+                    crop_region["mx_origin"] = [
+                        float(args.mx_crop_origin[0]),
+                        float(args.mx_crop_origin[1]),
+                    ]
+                meta["crop_region"] = crop_region
+
             json.dump(meta, f, indent=2)
 
         print(f"Index written to {out_dir / 'index.json'}")

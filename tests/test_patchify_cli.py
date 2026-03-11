@@ -72,6 +72,7 @@ def test_patchify_cli_writes_nonempty_index(tmp_path):
     assert index_path.exists()
     data = json.loads(index_path.read_text())
     assert len(data["patches"]) >= 1
+    assert data["channel_indices"] == [0, 1, 2, 3]
 
 
 def test_patchify_filters_dirty_gray_background_with_hsv_method(tmp_path):
@@ -147,3 +148,34 @@ def test_patchify_rejects_invalid_min_multiplex_overlap():
     )
     assert result.returncode != 0
     assert "--min-multiplex-overlap must be between 0.0 and 1.0." in result.stderr
+
+
+def test_patchify_persists_crop_region_metadata(tmp_path):
+    """Optional crop-origin/source args should be saved into index.json."""
+    result, out = _run_patchify(
+        [
+            "--tissue-min",
+            "0.0",
+            "--he-source-image",
+            "data/WD-76845-096.ome.tif",
+            "--multiplex-source-image",
+            "data/WD-76845-097.ome.tif",
+            "--he-crop-origin",
+            "24187",
+            "25127",
+            "--mx-crop-origin",
+            "11669",
+            "12594",
+        ],
+        tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+
+    data = json.loads((out / "index.json").read_text())
+    assert data["he_crop_origin"] == [24187.0, 25127.0]
+    assert data["mx_crop_origin"] == [11669.0, 12594.0]
+    assert "crop_region" in data
+    assert data["crop_region"]["he_source_image"] == "data/WD-76845-096.ome.tif"
+    assert data["crop_region"]["multiplex_source_image"] == "data/WD-76845-097.ome.tif"
+    assert data["crop_region"]["he_origin"] == [24187.0, 25127.0]
+    assert data["crop_region"]["mx_origin"] == [11669.0, 12594.0]

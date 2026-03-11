@@ -10,7 +10,7 @@ multimodal model training.
 Pipeline:
   Stage 1 → processed_crop/
   Stage 2 (CellViT) → processed_crop/cellvit/*.json
-  Stage 2.5 (this) → updates processed_crop/index.json + multiplex/*.npy
+  Stage 2.5 (this) → writes processed_crop/index_icp_tps.json + updates multiplex/*.npy
 
 Algorithm
 ---------
@@ -20,7 +20,7 @@ Algorithm
 4. Post-ICP mutual nearest-neighbour matching + RANSAC affine outlier filter.
 5. Fit TPS (H&E px → MX px) on RANSAC inliers with scipy RBFInterpolator.
 6. Re-extract multiplex patches with TPS warp (cv2.remap).
-7. Update index.json with ICP matrix, TPS control points and metadata.
+7. Write updated index file with ICP matrix, TPS control points and metadata.
 
 CLI
 ---
@@ -175,6 +175,111 @@ def csv_to_he_coords(
     he_pts = (m_inv @ np.hstack([mx_pts, ones]).T).T  # (N, 2)
 
     return mx_pts, he_pts
+
+
+# ---------------------------------------------------------------------------
+# Crop-origin resolution
+# ---------------------------------------------------------------------------
+
+
+def _coerce_origin_pair(value: object) -> tuple[float, float] | None:
+    """Normalize origin-like payload to ``(x, y)`` float tuple."""
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        try:
+            return float(value[0]), float(value[1])
+        except (TypeError, ValueError):
+            return None
+
+    if isinstance(value, dict):
+        if "x0" in value and "y0" in value:
+            try:
+                return float(value["x0"]), float(value["y0"])
+            except (TypeError, ValueError):
+                return None
+        if "x" in value and "y" in value:
+            try:
+                return float(value["x"]), float(value["y"])
+            except (TypeError, ValueError):
+                return None
+
+    return None
+
+
+def resolve_mx_crop_origin(
+    index_payload: dict,
+    cli_origin: tuple[float, float] | None = None,
+) -> tuple[float, float] | None:
+    """Resolve MX crop origin with precedence: CLI -> index.json metadata."""
+    if cli_origin is not None:
+        return float(cli_origin[0]), float(cli_origin[1])
+
+    origin = _coerce_origin_pair(index_payload.get("mx_crop_origin"))
+    if origin is not None:
+        return origin
+
+    crop_region = index_payload.get("crop_region")
+    if isinstance(crop_region, dict):
+        for key in ("mx_origin", "mx_crop_origin", "mx"):
+            origin = _coerce_origin_pair(crop_region.get(key))
+            if origin is not None:
+                return origin
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Patch ROI helpers (HE space)
+# ---------------------------------------------------------------------------
+
+
+def patch_roi_bbox_he(
+    patches: list[dict],
+    patch_size_default: int = 256,
+) -> tuple[float, float, float, float]:
+    """Bounding box of all Stage-1 patches in H&E pixel space.
+
+    Returns (x_min, x_max, y_min, y_max), where max bounds are exclusive.
+    """
+    if not patches:
+        raise ValueError("Cannot compute patch ROI bbox: index has no patches.")
+
+    x_min = np.inf
+    y_min = np.inf
+    x_max = -np.inf
+    y_max = -np.inf
+
+    for patch_meta in patches:
+        x0 = float(patch_meta["x0"])
+        y0 = float(patch_meta["y0"])
+        patch_size = float(patch_meta.get("patch_size", patch_size_default))
+        x_min = min(x_min, x0)
+        y_min = min(y_min, y0)
+        x_max = max(x_max, x0 + patch_size)
+        y_max = max(y_max, y0 + patch_size)
+
+    return float(x_min), float(x_max), float(y_min), float(y_max)
+
+
+def filter_csv_to_patch_roi(
+    mx_pts: np.ndarray,
+    csv_in_he: np.ndarray,
+    roi_bbox_he: tuple[float, float, float, float],
+    margin_px: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Keep CSV points whose HE-projected location is inside patch ROI + margin."""
+    x_min, x_max, y_min, y_max = roi_bbox_he
+    x0 = x_min - float(margin_px)
+    x1 = x_max + float(margin_px)
+    y0 = y_min - float(margin_px)
+    y1 = y_max + float(margin_px)
+
+    keep = (
+        (csv_in_he[:, 0] >= x0)
+        & (csv_in_he[:, 0] <= x1)
+        & (csv_in_he[:, 1] >= y0)
+        & (csv_in_he[:, 1] <= y1)
+    )
+    return mx_pts[keep], csv_in_he[keep], keep
 
 
 # ---------------------------------------------------------------------------
@@ -648,13 +753,25 @@ def update_index(
     tps_control_mx: np.ndarray,
     n_matches: int,
     inlier_fraction: float,
+    he_total: int = 0,
+    csv_total: int = 0,
+    he_match_rate: float = 0.0,
+    csv_match_rate: float = 0.0,
+    he_inlier_rate: float = 0.0,
+    csv_inlier_rate: float = 0.0,
+    csv_total_before_roi: int = 0,
+    csv_roi_margin_px: float = 0.0,
+    csv_roi_bbox_he: tuple[float, float, float, float] | None = None,
     icp_matrix: np.ndarray | None = None,
     icp_n_iters: int = 0,
     icp_n_matches: int = 0,
-) -> None:
-    """Update index.json with ICP matrix, TPS control points and metadata."""
-    index_path = processed_dir / "index.json"
-    with index_path.open() as fh:
+    index_in_name: str = "index.json",
+    index_out_name: str = "index.json",
+) -> pathlib.Path:
+    """Write updated index file with ICP matrix, TPS control points and metadata."""
+    index_in_path = processed_dir / index_in_name
+    index_out_path = processed_dir / index_out_name
+    with index_in_path.open() as fh:
         index = json.load(fh)
 
     index["registration_mode"] = "icp_tps"
@@ -666,13 +783,31 @@ def update_index(
         index["icp_matrix"] = icp_matrix.tolist()
     index["icp_n_iters"] = int(icp_n_iters)
     index["icp_n_matches"] = int(icp_n_matches)
+    index["he_total_centroids"] = int(he_total)
+    index["csv_total_centroids"] = int(csv_total)
+    index["he_match_rate"] = float(he_match_rate)
+    index["csv_match_rate"] = float(csv_match_rate)
+    index["he_inlier_rate"] = float(he_inlier_rate)
+    index["csv_inlier_rate"] = float(csv_inlier_rate)
+    index["csv_total_before_roi"] = int(csv_total_before_roi)
+    index["csv_roi_margin_px"] = float(csv_roi_margin_px)
+    if csv_roi_bbox_he is not None:
+        x_min, x_max, y_min, y_max = csv_roi_bbox_he
+        index["csv_roi_bbox_he"] = {
+            "x_min": float(x_min),
+            "x_max": float(x_max),
+            "y_min": float(y_min),
+            "y_max": float(y_max),
+        }
 
-    with index_path.open("w") as fh:
+    with index_out_path.open("w") as fh:
         json.dump(index, fh, indent=2)
     log.info(
-        "Updated index.json with ICP+TPS metadata (%d control points).",
+        "Wrote %s with ICP+TPS metadata (%d control points).",
+        index_out_path,
         len(tps_control_he),
     )
+    return index_out_path
 
 
 # ---------------------------------------------------------------------------
@@ -762,16 +897,61 @@ def main(args: argparse.Namespace) -> None:
     log.info(
         "Step 2: Loading CSV centroids from %s and converting to H&E px ...", args.csv
     )
-    crop_origin = tuple(args.mx_crop_origin) if args.mx_crop_origin else None
-    if crop_origin:
-        log.info("  Applying crop origin offset: (%.1f, %.1f) MX px", *crop_origin)
+    cli_origin = tuple(args.mx_crop_origin) if args.mx_crop_origin else None
+    crop_origin = resolve_mx_crop_origin(index, cli_origin=cli_origin)
+    if crop_origin is not None:
+        if cli_origin is not None:
+            log.info(
+                "  Applying crop origin offset from CLI: (%.1f, %.1f) MX px",
+                *crop_origin,
+            )
+        else:
+            log.info(
+                "  Using crop origin from index.json: (%.1f, %.1f) MX px",
+                *crop_origin,
+            )
+    else:
+        log.info("  No crop origin offset applied.")
     mx_pts, csv_in_he = csv_to_he_coords(
         pathlib.Path(args.csv),
         m_full=m_full,
         csv_mpp=args.csv_mpp,
         crop_origin=crop_origin,
     )
-    log.info("  %d CSV centroids loaded (MX px → H&E px via inv(m_full)).", len(mx_pts))
+    csv_total_before_roi = len(mx_pts)
+    roi_bbox_he = patch_roi_bbox_he(
+        patches, patch_size_default=index.get("patch_size", 256)
+    )
+
+    if args.no_csv_roi_filter:
+        csv_roi_margin_px = 0.0
+        log.info(
+            "  %d CSV centroids loaded (ROI filter disabled).",
+            csv_total_before_roi,
+        )
+    else:
+        if args.csv_roi_margin is None:
+            csv_roi_margin_px = 0.5 * float(index.get("patch_size", 256))
+        else:
+            csv_roi_margin_px = float(args.csv_roi_margin)
+        mx_pts, csv_in_he, _keep = filter_csv_to_patch_roi(
+            mx_pts,
+            csv_in_he,
+            roi_bbox_he=roi_bbox_he,
+            margin_px=csv_roi_margin_px,
+        )
+        log.info(
+            "  %d / %d CSV centroids kept inside patch ROI (margin=%.1f px).",
+            len(mx_pts),
+            csv_total_before_roi,
+            csv_roi_margin_px,
+        )
+
+    if len(mx_pts) < 4:
+        raise RuntimeError(
+            f"Only {len(mx_pts)} CSV points remain after ROI filtering "
+            "(need >= 4). Try increasing --csv-roi-margin or disable ROI filtering."
+        )
 
     # Step 3: ICP in H&E space to correct global drift in m_full
     log.info(
@@ -819,8 +999,32 @@ def main(args: argparse.Namespace) -> None:
     src_he_inlier, dst_mx_inlier = ransac_filter(src_he, dst_mx, ransac_thresh=5.0)
     n_inliers = len(src_he_inlier)
     inlier_frac = n_inliers / max(1, n_initial)
+    he_total = len(he_pts_he)
+    csv_total = len(csv_in_he)
+    he_match_rate = n_initial / max(1, he_total)
+    csv_match_rate = n_initial / max(1, csv_total)
+    he_inlier_rate = n_inliers / max(1, he_total)
+    csv_inlier_rate = n_inliers / max(1, csv_total)
     log.info(
         "  %d inliers / %d total (%.1f%%)", n_inliers, n_initial, 100 * inlier_frac
+    )
+    log.info(
+        "  Match rates: HE %.1f%% (%d/%d), CSV %.1f%% (%d/%d)",
+        100 * he_match_rate,
+        n_initial,
+        he_total,
+        100 * csv_match_rate,
+        n_initial,
+        csv_total,
+    )
+    log.info(
+        "  Inlier rates: HE %.1f%% (%d/%d), CSV %.1f%% (%d/%d)",
+        100 * he_inlier_rate,
+        n_inliers,
+        he_total,
+        100 * csv_inlier_rate,
+        n_inliers,
+        csv_total,
     )
 
     if n_inliers < 4:
@@ -859,17 +1063,27 @@ def main(args: argparse.Namespace) -> None:
     else:
         log.info("Step 6: Skipped (--skip-reextract).")
 
-    # Step 7: Update index.json
-    log.info("Step 7: Updating index.json ...")
-    update_index(
+    # Step 7: Write updated index file
+    log.info("Step 7: Writing updated index file ...")
+    index_out_path = update_index(
         processed_dir=processed_dir,
         tps_control_he=src_sub,
         tps_control_mx=dst_sub,
         n_matches=n_inliers,
         inlier_fraction=inlier_frac,
+        he_total=he_total,
+        csv_total=csv_total,
+        he_match_rate=he_match_rate,
+        csv_match_rate=csv_match_rate,
+        he_inlier_rate=he_inlier_rate,
+        csv_inlier_rate=csv_inlier_rate,
+        csv_total_before_roi=csv_total_before_roi,
+        csv_roi_margin_px=csv_roi_margin_px,
+        csv_roi_bbox_he=None if args.no_csv_roi_filter else roi_bbox_he,
         icp_matrix=M_icp,
         icp_n_iters=icp_n_iters,
         icp_n_matches=icp_n_matches,
+        index_out_name=args.index_out,
     )
 
     print(
@@ -878,8 +1092,14 @@ def main(args: argparse.Namespace) -> None:
         f"  ICP matches     : {icp_n_matches}\n"
         f"  Initial matches : {n_initial}\n"
         f"  RANSAC inliers  : {n_inliers} ({100*inlier_frac:.1f}%)\n"
+        f"  HE match rate   : {100*he_match_rate:.1f}% ({n_initial}/{he_total})\n"
+        f"  CSV match rate  : {100*csv_match_rate:.1f}% ({n_initial}/{csv_total})\n"
+        f"  HE inlier rate  : {100*he_inlier_rate:.1f}% ({n_inliers}/{he_total})\n"
+        f"  CSV inlier rate : {100*csv_inlier_rate:.1f}% ({n_inliers}/{csv_total})\n"
+        f"  CSV kept in ROI : {csv_total}/{csv_total_before_roi}\n"
         f"  TPS control pts : {len(src_sub)}\n"
         f"  TPS residual    : {residual:.3f} MX px\n"
+        f"  Index output    : {index_out_path}\n"
     )
 
 
@@ -911,13 +1131,26 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         metavar=("OX", "OY"),
         help="Top-left corner of the crop image in full-slide MX px (x y). "
-        "Subtracted from CSV coords after mpp conversion.",
+        "Subtracted from CSV coords after mpp conversion. If omitted, "
+        "attempts to read mx_crop_origin from index.json.",
     )
     p.add_argument(
         "--distance-gate",
         type=float,
         default=20.0,
         help="Max H&E px distance for ICP and post-ICP centroid matching.",
+    )
+    p.add_argument(
+        "--csv-roi-margin",
+        type=float,
+        default=None,
+        help="Margin (H&E px) added around the Stage-1 patch ROI when filtering "
+        "CSV points. Default: 0.5 * patch_size.",
+    )
+    p.add_argument(
+        "--no-csv-roi-filter",
+        action="store_true",
+        help="Disable CSV filtering to Stage-1 patch ROI.",
     )
     p.add_argument(
         "--icp-max-iter",
@@ -941,6 +1174,11 @@ def _parse_args() -> argparse.Namespace:
         "--skip-reextract",
         action="store_true",
         help="Skip re-extraction of multiplex patches (dry-run / index update only).",
+    )
+    p.add_argument(
+        "--index-out",
+        default="index_icp_tps.json",
+        help="Output index filename written under --processed.",
     )
     return p.parse_args()
 

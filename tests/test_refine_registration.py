@@ -20,12 +20,15 @@ from stages.refine_registration import (
     apply_affine,
     compute_tps_residual,
     csv_to_he_coords,
+    filter_csv_to_patch_roi,
     fit_tps,
     load_he_centroids,
     load_mx_centroids,
     match_centroids,
     match_centroids_he,
+    patch_roi_bbox_he,
     ransac_filter,
+    resolve_mx_crop_origin,
     subsample_uniform,
     update_index,
     _make_patch_pixel_grid,
@@ -345,6 +348,40 @@ def test_update_index(tmp_path):
     assert "patches" in result
 
 
+def test_update_index_writes_new_file_when_requested(tmp_path):
+    """When index_out_name differs, input index.json must remain unchanged."""
+    index_path = tmp_path / "index.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "warp_matrix": [[0.5, 0.0, -100.0], [0.0, 0.5, 200.0]],
+                "registration_mode": "affine",
+                "patches": [{"x0": 0, "y0": 0, "patch_size": 256}],
+            }
+        )
+    )
+
+    ctrl_he = np.array([[0.0, 0.0], [100.0, 0.0], [0.0, 100.0]])
+    ctrl_mx = ctrl_he * 0.5
+    out_path = update_index(
+        processed_dir=tmp_path,
+        tps_control_he=ctrl_he,
+        tps_control_mx=ctrl_mx,
+        n_matches=42,
+        inlier_fraction=0.85,
+        index_out_name="index_icp_tps.json",
+    )
+
+    original = json.loads(index_path.read_text())
+    modified = json.loads((tmp_path / "index_icp_tps.json").read_text())
+
+    assert out_path == (tmp_path / "index_icp_tps.json")
+    assert original["registration_mode"] == "affine"
+    assert "tps_n_matches" not in original
+    assert modified["registration_mode"] == "icp_tps"
+    assert modified["tps_n_matches"] == 42
+
+
 # ---------------------------------------------------------------------------
 # csv_to_he_coords
 # ---------------------------------------------------------------------------
@@ -412,6 +449,65 @@ def test_csv_to_he_coords_missing_columns(tmp_path):
 
     with pytest.raises(ValueError, match="Xt"):
         csv_to_he_coords(csv_path, _identity_m_full())
+
+
+def test_resolve_mx_crop_origin_prefers_cli():
+    index = {"mx_crop_origin": [10.0, 20.0]}
+    got = resolve_mx_crop_origin(index, cli_origin=(30.0, 40.0))
+    assert got == (30.0, 40.0)
+
+
+def test_resolve_mx_crop_origin_reads_top_level():
+    index = {"mx_crop_origin": [123.0, 456.0]}
+    got = resolve_mx_crop_origin(index)
+    assert got == (123.0, 456.0)
+
+
+def test_resolve_mx_crop_origin_reads_crop_region():
+    index = {"crop_region": {"mx_origin": [11.0, 22.0]}}
+    got = resolve_mx_crop_origin(index)
+    assert got == (11.0, 22.0)
+
+
+def test_resolve_mx_crop_origin_none_when_absent():
+    index = {"patches": []}
+    got = resolve_mx_crop_origin(index)
+    assert got is None
+
+
+def test_patch_roi_bbox_he_uses_patch_sizes():
+    patches = [
+        {"x0": 10, "y0": 20, "patch_size": 100},
+        {"x0": 80, "y0": 40, "patch_size": 200},
+    ]
+    x_min, x_max, y_min, y_max = patch_roi_bbox_he(patches, patch_size_default=256)
+    assert (x_min, x_max, y_min, y_max) == (10.0, 280.0, 20.0, 240.0)
+
+
+def test_filter_csv_to_patch_roi_applies_margin():
+    mx_pts = np.array(
+        [[1.0, 1.0], [2.0, 2.0], [3.0, 3.0], [4.0, 4.0]],
+        dtype=np.float64,
+    )
+    csv_in_he = np.array(
+        [[10.0, 10.0], [50.0, 50.0], [101.0, 101.0], [140.0, 140.0]],
+        dtype=np.float64,
+    )
+    roi = (20.0, 100.0, 20.0, 100.0)
+
+    mx_keep0, he_keep0, mask0 = filter_csv_to_patch_roi(
+        mx_pts, csv_in_he, roi_bbox_he=roi, margin_px=0.0
+    )
+    assert mask0.tolist() == [False, True, False, False]
+    assert len(mx_keep0) == 1
+    np.testing.assert_allclose(he_keep0[0], [50.0, 50.0])
+
+    mx_keep1, he_keep1, mask1 = filter_csv_to_patch_roi(
+        mx_pts, csv_in_he, roi_bbox_he=roi, margin_px=5.0
+    )
+    assert mask1.tolist() == [False, True, True, False]
+    assert len(mx_keep1) == 2
+    np.testing.assert_allclose(he_keep1[1], [101.0, 101.0])
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +619,15 @@ def test_update_index_with_icp(tmp_path):
         tps_control_mx=ctrl_mx,
         n_matches=20,
         inlier_fraction=0.9,
+        he_total=100,
+        csv_total=500,
+        he_match_rate=0.2,
+        csv_match_rate=0.04,
+        he_inlier_rate=0.15,
+        csv_inlier_rate=0.03,
+        csv_total_before_roi=700,
+        csv_roi_margin_px=128.0,
+        csv_roi_bbox_he=(0.0, 256.0, 0.0, 256.0),
         icp_matrix=icp_m,
         icp_n_iters=7,
         icp_n_matches=150,
@@ -534,3 +639,10 @@ def test_update_index_with_icp(tmp_path):
     assert result["icp_n_matches"] == 150
     assert len(result["icp_matrix"]) == 2
     assert len(result["icp_matrix"][0]) == 3
+    assert result["he_total_centroids"] == 100
+    assert result["csv_total_centroids"] == 500
+    assert result["he_match_rate"] == pytest.approx(0.2)
+    assert result["csv_match_rate"] == pytest.approx(0.04)
+    assert result["csv_total_before_roi"] == 700
+    assert result["csv_roi_margin_px"] == pytest.approx(128.0)
+    assert result["csv_roi_bbox_he"]["x_max"] == pytest.approx(256.0)
