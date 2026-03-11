@@ -16,6 +16,7 @@ import scipy.spatial
 import scipy.interpolate
 
 from stages.refine_registration import (
+    load_he_cells,
     affine_icp,
     apply_affine,
     compute_tps_residual,
@@ -24,6 +25,7 @@ from stages.refine_registration import (
     fit_tps,
     load_he_centroids,
     load_mx_centroids,
+    match_cells_he_contour,
     match_centroids,
     match_centroids_he,
     patch_roi_bbox_he,
@@ -128,6 +130,35 @@ def test_load_he_centroids_empty_cells(tmp_path):
     assert len(he_pts_he) == 0
 
 
+def test_load_he_cells_includes_contours(tmp_path):
+    """CellViT contour vertices are loaded and shifted to global H&E coords."""
+    patches = [{"x0": 100, "y0": 200}]
+    cellvit_dir = tmp_path / "cellvit"
+    cellvit_dir.mkdir()
+    (cellvit_dir / "100_200.json").write_text(
+        json.dumps(
+            {
+                "cells": [
+                    {
+                        "centroid": [10.0, 20.0],
+                        "contour": [[8, 18], [12, 18], [12, 22], [8, 22]],
+                    }
+                ]
+            }
+        )
+    )
+
+    he_pts_he, he_pts_mx, contours = load_he_cells(
+        cellvit_dir, patches, coord_scale=0.5
+    )
+    assert he_pts_he.shape == (1, 2)
+    np.testing.assert_allclose(he_pts_he[0], [110.0, 220.0])
+    np.testing.assert_allclose(he_pts_mx[0], [55.0, 110.0])
+    assert len(contours) == 1
+    assert contours[0] is not None
+    np.testing.assert_allclose(contours[0][0], [108.0, 218.0])
+
+
 # ---------------------------------------------------------------------------
 # load_mx_centroids
 # ---------------------------------------------------------------------------
@@ -208,6 +239,50 @@ def test_match_centroids_too_far():
         he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0
     )
     assert len(src_he) == 0
+
+
+def test_match_cells_he_contour_inside_point_matches():
+    """CSV point inside contour should match with distance 0."""
+    m_icp = _identity_m_full()
+    he_pts_he = np.array([[10.0, 10.0]], dtype=np.float64)
+    he_contours = [
+        np.array([[5.0, 5.0], [15.0, 5.0], [15.0, 15.0], [5.0, 15.0]], dtype=np.float64)
+    ]
+    csv_in_he = np.array([[11.0, 11.0]], dtype=np.float64)
+    mx_pts = np.array([[101.0, 201.0]], dtype=np.float64)
+
+    src_he, dst_mx = match_cells_he_contour(
+        m_icp=m_icp,
+        he_pts_he=he_pts_he,
+        he_contours_he=he_contours,
+        csv_in_he=csv_in_he,
+        mx_pts=mx_pts,
+        distance_gate=1.0,
+    )
+    assert len(src_he) == 1
+    np.testing.assert_allclose(src_he[0], [10.0, 10.0])
+    np.testing.assert_allclose(dst_mx[0], [101.0, 201.0])
+
+
+def test_match_cells_he_contour_falls_back_to_centroid_distance():
+    """Missing contour falls back to centroid-distance matching."""
+    m_icp = _identity_m_full()
+    he_pts_he = np.array([[0.0, 0.0], [20.0, 20.0]], dtype=np.float64)
+    he_contours = [None, None]
+    csv_in_he = np.array([[0.5, 0.5], [30.0, 30.0]], dtype=np.float64)
+    mx_pts = np.array([[100.0, 100.0], [200.0, 200.0]], dtype=np.float64)
+
+    src_he, dst_mx = match_cells_he_contour(
+        m_icp=m_icp,
+        he_pts_he=he_pts_he,
+        he_contours_he=he_contours,
+        csv_in_he=csv_in_he,
+        mx_pts=mx_pts,
+        distance_gate=2.0,
+    )
+    assert len(src_he) == 1
+    np.testing.assert_allclose(src_he[0], [0.0, 0.0])
+    np.testing.assert_allclose(dst_mx[0], [100.0, 100.0])
 
 
 # ---------------------------------------------------------------------------

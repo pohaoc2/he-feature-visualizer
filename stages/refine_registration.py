@@ -53,23 +53,30 @@ from utils.ome import get_image_dims, get_ome_mpp, open_zarr_store
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Step 1: Build global H&E centroid cloud from CellViT JSON files
+# Step 1: Build global H&E cell geometry from CellViT JSON files
 # ---------------------------------------------------------------------------
 
 
-def load_he_centroids(
+def load_he_cells(
     cellvit_dir: pathlib.Path,
     patches: list[dict],
     coord_scale: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Load H&E centroids from CellViT JSONs.
+    min_contour_vertices: int = 3,
+) -> tuple[np.ndarray, np.ndarray, list[np.ndarray | None]]:
+    """Load H&E centroids and contours from CellViT JSONs.
 
     Returns
     -------
-    he_pts_he : (N, 2) float64  — centroids in H&E full-res pixel space
-    he_pts_mx : (N, 2) float64  — centroids in MX pixel space (scaled by coord_scale)
+    he_pts_he : (N, 2) float64
+        Cell centroids in H&E full-resolution pixel coordinates.
+    he_pts_mx : (N, 2) float64
+        Same centroids scaled into MX pixel coordinates.
+    he_contours_he : list[(K_i, 2) float64 | None], length N
+        Per-cell contour vertices in H&E coordinates. ``None`` when contour is
+        missing/invalid for that cell.
     """
-    he_list: list[tuple[float, float]] = []
+    he_centroids: list[tuple[float, float]] = []
+    he_contours_he: list[np.ndarray | None] = []
 
     for patch_meta in patches:
         x0 = int(patch_meta["x0"])
@@ -80,22 +87,56 @@ def load_he_centroids(
             continue
         with json_path.open() as fh:
             data = json.load(fh)
-        cells = data.get("cells", [])
-        for cell in cells:
-            centroid = cell.get("centroid", None)
+
+        for cell in data.get("cells", []):
+            centroid = cell.get("centroid")
             if centroid is None or len(centroid) < 2:
                 continue
+
             lx = float(centroid[0])
             ly = float(centroid[1])
             gx_he = float(x0) + lx
             gy_he = float(y0) + ly
-            he_list.append((gx_he, gy_he))
+            he_centroids.append((gx_he, gy_he))
 
-    if not he_list:
-        return np.empty((0, 2), dtype=np.float64), np.empty((0, 2), dtype=np.float64)
+            contour = cell.get("contour")
+            contour_he: np.ndarray | None = None
+            if (
+                isinstance(contour, list)
+                and len(contour) >= min_contour_vertices
+            ):
+                arr = np.asarray(contour, dtype=np.float64)
+                if arr.ndim == 2 and arr.shape[1] >= 2:
+                    arr = arr[:, :2]
+                    arr[:, 0] += float(x0)
+                    arr[:, 1] += float(y0)
+                    if len(arr) >= min_contour_vertices:
+                        contour_he = arr
+            he_contours_he.append(contour_he)
 
-    he_pts_he = np.array(he_list, dtype=np.float64)
+    if not he_centroids:
+        return (
+            np.empty((0, 2), dtype=np.float64),
+            np.empty((0, 2), dtype=np.float64),
+            [],
+        )
+
+    he_pts_he = np.asarray(he_centroids, dtype=np.float64)
     he_pts_mx = he_pts_he * coord_scale
+    return he_pts_he, he_pts_mx, he_contours_he
+
+
+def load_he_centroids(
+    cellvit_dir: pathlib.Path,
+    patches: list[dict],
+    coord_scale: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Backwards-compatible centroid loader (without contour output)."""
+    he_pts_he, he_pts_mx, _ = load_he_cells(
+        cellvit_dir=cellvit_dir,
+        patches=patches,
+        coord_scale=coord_scale,
+    )
     return he_pts_he, he_pts_mx
 
 
@@ -436,6 +477,105 @@ def match_centroids_he(
     return src_he, dst_mx
 
 
+def _point_to_cell_distance(
+    point_he: np.ndarray,
+    cell_center_he: np.ndarray,
+    contour_he: np.ndarray | None,
+) -> float:
+    """Distance from a CSV point to a CellViT cell representation in H&E space.
+
+    If contour is available, distance is 0 when point is inside contour and
+    otherwise Euclidean distance to the contour boundary. If contour is missing,
+    falls back to centroid Euclidean distance.
+    """
+    if contour_he is None or len(contour_he) < 3:
+        return float(np.linalg.norm(point_he - cell_center_he))
+
+    signed_dist = cv2.pointPolygonTest(
+        contour_he.astype(np.float32),
+        (float(point_he[0]), float(point_he[1])),
+        True,
+    )
+    if signed_dist >= 0:
+        return 0.0
+    return float(-signed_dist)
+
+
+def match_cells_he_contour(
+    m_icp: np.ndarray,
+    he_pts_he: np.ndarray,
+    he_contours_he: list[np.ndarray | None],
+    csv_in_he: np.ndarray,
+    mx_pts: np.ndarray,
+    distance_gate: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Contour-aware mutual nearest-neighbour matching in H&E space.
+
+    Matching score for each (cell, CSV) pair:
+      - 0 if CSV point is inside transformed CellViT contour;
+      - otherwise distance to transformed contour boundary;
+      - fallback to centroid distance when contour is missing.
+
+    The function applies mutual nearest-neighbour selection under this distance
+    metric and returns source/destination pairs for downstream RANSAC/TPS.
+    """
+    n_he = len(he_pts_he)
+    n_csv = len(csv_in_he)
+    if n_he == 0 or n_csv == 0:
+        return np.empty((0, 2)), np.empty((0, 2))
+    if len(he_contours_he) != n_he:
+        raise ValueError(
+            f"len(he_contours_he) ({len(he_contours_he)}) != len(he_pts_he) ({n_he})"
+        )
+
+    icp_he = apply_affine(m_icp, he_pts_he)
+
+    # Transform all available contours with the same ICP affine.
+    icp_contours_he: list[np.ndarray | None] = []
+    for contour in he_contours_he:
+        if contour is None or len(contour) < 3:
+            icp_contours_he.append(None)
+            continue
+        icp_contours_he.append(apply_affine(m_icp, contour))
+
+    # Pairwise distance matrix under contour-aware metric.
+    # Typical sizes here are manageable (e.g., ~1.5k x ~400).
+    dist = np.empty((n_he, n_csv), dtype=np.float32)
+    for i in range(n_he):
+        c_i = icp_he[i]
+        contour_i = icp_contours_he[i]
+        if contour_i is None:
+            dist[i, :] = np.linalg.norm(csv_in_he - c_i, axis=1)
+            continue
+        for j in range(n_csv):
+            dist[i, j] = _point_to_cell_distance(csv_in_he[j], c_i, contour_i)
+
+    # Forward NN: each HE cell picks one CSV.
+    fwd_j = np.argmin(dist, axis=1)
+    fwd_d = dist[np.arange(n_he), fwd_j]
+    valid_he = fwd_d <= float(distance_gate)
+    if not np.any(valid_he):
+        return np.empty((0, 2)), np.empty((0, 2))
+
+    # Reverse NN: each CSV picks one HE cell.
+    rev_i = np.argmin(dist, axis=0)
+
+    src_idx: list[int] = []
+    dst_idx: list[int] = []
+    for i in np.where(valid_he)[0]:
+        j = int(fwd_j[i])
+        if rev_i[j] == i and dist[i, j] <= float(distance_gate):
+            src_idx.append(int(i))
+            dst_idx.append(j)
+
+    if not src_idx:
+        return np.empty((0, 2)), np.empty((0, 2))
+
+    src_he = he_pts_he[np.asarray(src_idx, dtype=np.int64)]
+    dst_mx = mx_pts[np.asarray(dst_idx, dtype=np.int64)]
+    return src_he, dst_mx
+
+
 # ---------------------------------------------------------------------------
 # (kept for backward-compat) old MX-space matching — no longer called by main
 # ---------------------------------------------------------------------------
@@ -765,6 +905,8 @@ def update_index(
     icp_matrix: np.ndarray | None = None,
     icp_n_iters: int = 0,
     icp_n_matches: int = 0,
+    cellvit_match_repr: str = "contour",
+    he_cells_with_contour: int = 0,
     index_in_name: str = "index.json",
     index_out_name: str = "index.json",
 ) -> pathlib.Path:
@@ -783,6 +925,8 @@ def update_index(
         index["icp_matrix"] = icp_matrix.tolist()
     index["icp_n_iters"] = int(icp_n_iters)
     index["icp_n_matches"] = int(icp_n_matches)
+    index["cellvit_match_repr"] = str(cellvit_match_repr)
+    index["he_cells_with_contour"] = int(he_cells_with_contour)
     index["he_total_centroids"] = int(he_total)
     index["csv_total_centroids"] = int(csv_total)
     index["he_match_rate"] = float(he_match_rate)
@@ -878,14 +1022,21 @@ def main(args: argparse.Namespace) -> None:
                 "to resolve channel names. Pass --metadata-csv."
             )
 
-    # Step 1: Build H&E centroid cloud from CellViT JSONs
-    log.info("Step 1: Loading H&E centroids from CellViT JSONs ...")
-    he_pts_he, _ = load_he_centroids(
+    # Step 1: Build H&E cell cloud (centroids + contours) from CellViT JSONs
+    log.info("Step 1: Loading H&E cell geometry from CellViT JSONs ...")
+    he_pts_he, _, he_contours_he = load_he_cells(
         cellvit_dir=cellvit_dir,
         patches=patches,
         coord_scale=1.0,  # coord_scale unused; we work in HE space throughout
+        min_contour_vertices=args.contour_min_vertices,
     )
-    log.info("  %d H&E centroids loaded.", len(he_pts_he))
+    n_with_contour = sum(1 for c in he_contours_he if c is not None)
+    log.info(
+        "  %d H&E cells loaded (%d with valid contours, %d centroid-only fallback).",
+        len(he_pts_he),
+        n_with_contour,
+        len(he_pts_he) - n_with_contour,
+    )
 
     if len(he_pts_he) == 0:
         raise RuntimeError(
@@ -976,17 +1127,28 @@ def main(args: argparse.Namespace) -> None:
 
     # Step 4: Post-ICP matching in H&E space + RANSAC
     log.info(
-        "Step 4: Post-ICP mutual NN matching + RANSAC (gate=%g H&E px) ...",
+        "Step 4: Post-ICP mutual NN matching + RANSAC (gate=%g H&E px, repr=%s) ...",
         args.distance_gate,
+        args.cellvit_match_repr,
     )
-    icp_he = apply_affine(M_icp, he_pts_he)
-    src_he, dst_mx = match_centroids_he(
-        icp_he=icp_he,
-        he_pts_he=he_pts_he,
-        csv_in_he=csv_in_he,
-        mx_pts=mx_pts,
-        distance_gate=args.distance_gate,
-    )
+    if args.cellvit_match_repr == "contour":
+        src_he, dst_mx = match_cells_he_contour(
+            m_icp=M_icp,
+            he_pts_he=he_pts_he,
+            he_contours_he=he_contours_he,
+            csv_in_he=csv_in_he,
+            mx_pts=mx_pts,
+            distance_gate=args.distance_gate,
+        )
+    else:
+        icp_he = apply_affine(M_icp, he_pts_he)
+        src_he, dst_mx = match_centroids_he(
+            icp_he=icp_he,
+            he_pts_he=he_pts_he,
+            csv_in_he=csv_in_he,
+            mx_pts=mx_pts,
+            distance_gate=args.distance_gate,
+        )
     n_initial = len(src_he)
     log.info("  %d mutual nearest-neighbour matches (H&E space).", n_initial)
 
@@ -1083,6 +1245,8 @@ def main(args: argparse.Namespace) -> None:
         icp_matrix=M_icp,
         icp_n_iters=icp_n_iters,
         icp_n_matches=icp_n_matches,
+        cellvit_match_repr=args.cellvit_match_repr,
+        he_cells_with_contour=n_with_contour,
         index_out_name=args.index_out,
     )
 
@@ -1096,6 +1260,8 @@ def main(args: argparse.Namespace) -> None:
         f"  CSV match rate  : {100*csv_match_rate:.1f}% ({n_initial}/{csv_total})\n"
         f"  HE inlier rate  : {100*he_inlier_rate:.1f}% ({n_inliers}/{he_total})\n"
         f"  CSV inlier rate : {100*csv_inlier_rate:.1f}% ({n_inliers}/{csv_total})\n"
+        f"  Match repr      : {args.cellvit_match_repr} "
+        f"(contours {n_with_contour}/{he_total})\n"
         f"  CSV kept in ROI : {csv_total}/{csv_total_before_roi}\n"
         f"  TPS control pts : {len(src_sub)}\n"
         f"  TPS residual    : {residual:.3f} MX px\n"
@@ -1138,7 +1304,19 @@ def _parse_args() -> argparse.Namespace:
         "--distance-gate",
         type=float,
         default=20.0,
-        help="Max H&E px distance for ICP and post-ICP centroid matching.",
+        help="Max H&E px distance for ICP and post-ICP CellViT/CSV matching.",
+    )
+    p.add_argument(
+        "--cellvit-match-repr",
+        choices=["contour", "centroid"],
+        default="contour",
+        help="CellViT representation used in post-ICP matching.",
+    )
+    p.add_argument(
+        "--contour-min-vertices",
+        type=int,
+        default=3,
+        help="Minimum contour vertices required to treat a CellViT contour as valid.",
     )
     p.add_argument(
         "--csv-roi-margin",

@@ -1815,7 +1815,7 @@ def main():
         mx_vis_coords: list[tuple[int, int]] = []
         print(f"  Multiplex save threshold: overlap >= {min_mx_overlap:.3f}")
 
-        for idx, (x0, y0) in enumerate(coords[:10]):
+        for idx, (x0, y0) in enumerate(coords[:]):
             if idx % 500 == 0:
                 print(f"  {idx}/{len(coords)} ...")
 
