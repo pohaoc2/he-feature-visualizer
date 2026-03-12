@@ -4,6 +4,7 @@ Commands
 --------
 overview   -- mask/OME overview PNG at reduced resolution
 crop       -- mask/OME full-resolution crop PNG
+crop-dna   -- mask + MX DNA full-resolution crop PNG with overlap panel
 pair-crop  -- save matched native-resolution TIFF crops from two images
 pair-viz   -- render two TIFFs side by side as a PNG
 
@@ -14,6 +15,12 @@ python viz_mask.py overview --mask data/WD-76845-097.tif --ome data/WD-76845-097
 
 # Existing mask + OME crop
 python viz_mask.py crop --mask data/WD-76845-097.tif --ome data/WD-76845-097.ome.tif
+
+# Mask + MX DNA crop (three panels: mask, DNA, overlap)
+python -m tools.viz_mask crop-dna \
+    --mask data/WD-76845-097.mask.tif \
+    --ome data/WD-76845-097.ome.tif \
+    --dna-channel 0
 
 # Generic matched crop: auto-detect a shared 1024x1024 region in image1
 python viz_mask.py pair-crop \
@@ -85,6 +92,24 @@ def side_by_side(left: np.ndarray, right: np.ndarray, gap: int = 8) -> np.ndarra
     canvas = np.zeros((h, left.shape[1] + gap + right.shape[1], 3), dtype=np.uint8)
     canvas[: left.shape[0], : left.shape[1]] = left
     canvas[: right.shape[0], left.shape[1] + gap :] = right
+    return canvas
+
+
+def side_by_side_many(images: list[np.ndarray], gap: int = 8) -> np.ndarray:
+    """Compose N (H, W, 3) arrays horizontally with a black gap."""
+    if not images:
+        raise ValueError("images must contain at least one panel")
+    if len(images) == 1:
+        return images[0]
+
+    h = max(img.shape[0] for img in images)
+    w = sum(img.shape[1] for img in images) + gap * (len(images) - 1)
+    canvas = np.zeros((h, w, 3), dtype=np.uint8)
+
+    x = 0
+    for img in images:
+        canvas[: img.shape[0], x : x + img.shape[1]] = img
+        x += img.shape[1] + gap
     return canvas
 
 
@@ -506,6 +531,49 @@ def read_crop(path: Path, row: int, col: int, size: int) -> np.ndarray:
         return tif.pages[0].asarray()[y0:y1, x0:x1]
 
 
+def _read_channel_crop(
+    path: Path, row: int, col: int, size: int, channel_index: int = 0
+) -> tuple[np.ndarray, tuple[int, int]]:
+    """Read a centered crop from a TIFF/OME-TIFF, selecting one channel when present."""
+    with tifffile.TiffFile(str(path)) as tif:
+        img_w, img_h, axes = get_image_dims(tif)
+        store = open_zarr_store(tif)
+
+        y0 = max(0, row - size // 2)
+        x0 = max(0, col - size // 2)
+        y1 = min(img_h, y0 + size)
+        x1 = min(img_w, x0 + size)
+        crop, crop_axes = _read_window(store, axes, y0, x0, y1 - y0, x1 - x0)
+
+    if "C" in crop_axes:
+        if channel_index < 0 or channel_index >= crop.shape[0]:
+            raise ValueError(
+                f"Requested channel {channel_index} but image has {crop.shape[0]} channels"
+            )
+        return np.asarray(crop[channel_index]), (y0, x0)
+
+    if channel_index != 0:
+        raise ValueError(
+            "Requested non-zero channel from a single-channel image; use --dna-channel 0"
+        )
+    return np.asarray(crop), (y0, x0)
+
+
+def _make_dna_mask_overlap(
+    dna_u8: np.ndarray, mask_crop: np.ndarray, alpha: float = 0.35
+) -> np.ndarray:
+    """Overlay mask foreground on top of DNA grayscale for quick spatial QC."""
+    dna_rgb = np.stack([dna_u8] * 3, axis=-1).astype(np.float32)
+    mask_fg = mask_crop > 0
+
+    tint_rgb = np.array([255.0, 64.0, 64.0], dtype=np.float32)
+    dna_rgb[mask_fg] = (1.0 - alpha) * dna_rgb[mask_fg] + alpha * tint_rgb
+
+    mask_edges = cv2.Canny((mask_fg.astype(np.uint8) * 255), 32, 96) > 0
+    dna_rgb[mask_edges] = np.array([0.0, 255.0, 255.0], dtype=np.float32)
+    return dna_rgb.clip(0, 255).astype(np.uint8)
+
+
 def visualize_crop(
     mask_path: Path,
     ome_path: Path,
@@ -549,6 +617,69 @@ def visualize_crop(
     img.save(str(out_path))
     print(
         f"[crop] saved {out_path} ({img.size[0]}x{img.size[1]}) "
+        f"in {time.perf_counter() - t0:.1f}s"
+    )
+
+
+def visualize_crop_dna(
+    mask_path: Path,
+    ome_path: Path,
+    out_path: Path,
+    row: int | None = None,
+    col: int | None = None,
+    crop_size: int = 1024,
+    search_downsample: int = 64,
+    dna_channel: int = 0,
+    overlap_alpha: float = 0.35,
+) -> None:
+    """Three-panel full-resolution crop: mask, MX DNA channel, and overlap."""
+    t0 = time.perf_counter()
+
+    if row is None or col is None:
+        print(
+            f"[crop-dna] auto-detecting densest region (search at {search_downsample}x) ..."
+        )
+        row, col = find_dense_region(mask_path, downsample=search_downsample)
+        print(f"[crop-dna] center: row={row}, col={col}")
+
+    print(f"[crop-dna] reading {crop_size}x{crop_size} crop from mask ...")
+    mask_crop, (mask_y0, mask_x0) = _read_channel_crop(mask_path, row, col, crop_size, 0)
+    print(
+        f"[crop-dna] mask origin x={mask_x0} y={mask_y0}, shape={mask_crop.shape}, "
+        f"non-zero={(mask_crop > 0).mean() * 100:.1f}%"
+    )
+
+    print(
+        f"[crop-dna] reading {crop_size}x{crop_size} crop from OME DNA channel {dna_channel} ..."
+    )
+    dna_crop, (dna_y0, dna_x0) = _read_channel_crop(
+        ome_path, row, col, crop_size, dna_channel
+    )
+    print(f"[crop-dna] DNA origin x={dna_x0} y={dna_y0}, shape={dna_crop.shape}")
+
+    if mask_crop.shape != dna_crop.shape:
+        raise ValueError(
+            "Mask crop and DNA crop shapes differ. "
+            f"mask={mask_crop.shape}, dna={dna_crop.shape}. "
+            "Ensure both images are in the same pixel space."
+        )
+
+    n_cells = int((np.unique(mask_crop) != 0).sum())
+    dna_u8 = percentile_to_uint8(dna_crop)
+    print(
+        f"[crop-dna] mask unique non-zero IDs={n_cells}, "
+        f"DNA range=[{int(dna_crop.min())}, {int(dna_crop.max())}]"
+    )
+
+    mask_rgb = colorize_mask(mask_crop)
+    dna_rgb = np.stack([dna_u8] * 3, axis=-1)
+    overlap_rgb = _make_dna_mask_overlap(dna_u8, mask_crop, alpha=overlap_alpha)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img = Image.fromarray(side_by_side_many([mask_rgb, dna_rgb, overlap_rgb], gap=4))
+    img.save(str(out_path))
+    print(
+        f"[crop-dna] saved {out_path} ({img.size[0]}x{img.size[1]}) "
         f"in {time.perf_counter() - t0:.1f}s"
     )
 
@@ -793,6 +924,48 @@ def main() -> None:
         help="Downsample for auto-detection search (default: 64)",
     )
 
+    p_crop_dna = sub.add_parser(
+        "crop-dna",
+        help="Full-resolution crop with mask, MX DNA channel, and overlap panel",
+    )
+    _add_common(p_crop_dna)
+    p_crop_dna.add_argument(
+        "--row",
+        type=int,
+        default=None,
+        help="Center row in full-res pixels (default: auto-detect)",
+    )
+    p_crop_dna.add_argument(
+        "--col",
+        type=int,
+        default=None,
+        help="Center col in full-res pixels (default: auto-detect)",
+    )
+    p_crop_dna.add_argument(
+        "--crop-size",
+        type=int,
+        default=1024,
+        help="Crop side length in pixels (default: 1024)",
+    )
+    p_crop_dna.add_argument(
+        "--search-downsample",
+        type=int,
+        default=64,
+        help="Downsample for auto-detection search (default: 64)",
+    )
+    p_crop_dna.add_argument(
+        "--dna-channel",
+        type=int,
+        default=0,
+        help="OME channel index to treat as DNA (default: 0)",
+    )
+    p_crop_dna.add_argument(
+        "--overlap-alpha",
+        type=float,
+        default=0.35,
+        help="Blend weight for mask tint in overlap panel (default: 0.35)",
+    )
+
     p_pair_crop = sub.add_parser(
         "pair-crop", help="Save matched native-resolution TIFF crops from two images"
     )
@@ -875,6 +1048,21 @@ def main() -> None:
             col=args.col,
             crop_size=args.crop_size,
             search_downsample=args.search_downsample,
+        )
+        return
+
+    if args.cmd == "crop-dna":
+        out = args.out or args.mask.parent / f"{args.mask.stem}_crop_dna_overlap.png"
+        visualize_crop_dna(
+            args.mask,
+            args.ome,
+            out,
+            row=args.row,
+            col=args.col,
+            crop_size=args.crop_size,
+            search_downsample=args.search_downsample,
+            dna_channel=args.dna_channel,
+            overlap_alpha=args.overlap_alpha,
         )
         return
 

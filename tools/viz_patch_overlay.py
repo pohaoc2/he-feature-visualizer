@@ -90,7 +90,7 @@ def main() -> None:
     n_cols = 1 + n_ch * 2  # HE + (raw + overlay) per channel
     n_rows = len(patch_ids)
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
+    _, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows))
     if n_rows == 1:
         axes = axes[np.newaxis, :]
 

@@ -7,7 +7,6 @@ All tests use synthetic data — no real TIFF or CSV files are required.
 from __future__ import annotations
 
 import json
-import pathlib
 
 import numpy as np
 import pandas as pd
@@ -126,7 +125,7 @@ def test_load_he_centroids_empty_cells(tmp_path):
     cellvit_dir.mkdir()
     (cellvit_dir / "0_0.json").write_text(json.dumps({"cells": []}))
 
-    he_pts_he, he_pts_mx = load_he_centroids(cellvit_dir, patches, coord_scale=0.5)
+    he_pts_he, _ = load_he_centroids(cellvit_dir, patches, coord_scale=0.5)
     assert len(he_pts_he) == 0
 
 
@@ -222,7 +221,7 @@ def test_match_centroids_scale_half():
     kdtree = scipy.spatial.KDTree(mx_pts)
     m_full = _scale_m_full(0.5, 0.5)
 
-    src_he, dst_mx = match_centroids(
+    src_he, _ = match_centroids(
         he_pts_he, mx_pts, kdtree, m_full, distance_gate=0.5
     )
     assert len(src_he) == n
@@ -235,7 +234,7 @@ def test_match_centroids_too_far():
     kdtree = scipy.spatial.KDTree(mx_pts)
     m_full = _identity_m_full()
 
-    src_he, dst_mx = match_centroids(
+    src_he, _ = match_centroids(
         he_pts_he, mx_pts, kdtree, m_full, distance_gate=1.0
     )
     assert len(src_he) == 0
@@ -302,7 +301,7 @@ def test_ransac_filter_keeps_inliers():
     # Add 5 outliers
     dst[-5:] = rng.uniform(0, 5000, (5, 2))
 
-    src_in, dst_in = ransac_filter(src, dst, ransac_thresh=5.0)
+    src_in, _ = ransac_filter(src, dst, ransac_thresh=5.0)
     assert len(src_in) >= n - 5  # most original inliers kept
 
 
@@ -310,7 +309,7 @@ def test_ransac_filter_too_few_points():
     """With < 4 points, no filtering is applied."""
     src = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
     dst = src + 0.1
-    src_out, dst_out = ransac_filter(src, dst)
+    src_out, _ = ransac_filter(src, dst)
     assert len(src_out) == len(src)
 
 
@@ -323,7 +322,7 @@ def test_subsample_uniform_no_op():
     """When n <= max_pts, returns all points unchanged."""
     src = np.arange(20).reshape(10, 2).astype(float)
     dst = src * 2
-    s, d = subsample_uniform(src, dst, max_pts=20)
+    s, _ = subsample_uniform(src, dst, max_pts=20)
     assert len(s) == 10
 
 
@@ -594,7 +593,7 @@ def test_affine_icp_identity():
     """When src == dst, ICP should converge immediately with identity transform."""
     rng = np.random.default_rng(1)
     pts = rng.uniform(0, 1000, (200, 2))
-    M_icp, n_matches, n_iters = affine_icp(pts, pts, max_iter=50, tol=1e-4)
+    M_icp, _, _ = affine_icp(pts, pts, max_iter=50, tol=1e-4)
     # Transform should be close to identity
     np.testing.assert_allclose(M_icp[:, :2], np.eye(2), atol=0.05)
     np.testing.assert_allclose(M_icp[:, 2], [0.0, 0.0], atol=5.0)
@@ -607,7 +606,7 @@ def test_affine_icp_pure_translation():
     tx, ty = 30.0, -20.0
     dst = src + np.array([tx, ty])  # dst = src + translation
 
-    M_icp, n_matches, n_iters = affine_icp(src, dst, max_iter=50, tol=1e-4)
+    M_icp, _, _ = affine_icp(src, dst, max_iter=50, tol=1e-4)
     src_warped = apply_affine(M_icp, src)
 
     # After ICP, src_warped should be close to dst
@@ -619,7 +618,7 @@ def test_affine_icp_distance_gate_too_small():
     src = np.array([[0.0, 0.0], [100.0, 100.0], [200.0, 0.0], [300.0, 200.0]])
     dst = src + 1000.0  # very far away
 
-    M_icp, n_matches, n_iters = affine_icp(
+    M_icp, _, _ = affine_icp(
         src, dst, max_iter=10, tol=1e-4, distance_gate=1.0
     )
     # Should return without raising; n_matches may be 0

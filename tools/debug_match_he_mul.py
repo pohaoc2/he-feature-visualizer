@@ -2,10 +2,19 @@
 """
 debug_match_he_mul.py — Interactive H&E / multiplex alignment viewer.
 
-Loads both images at 1/downsample resolution, shows three panels:
-  1. H&E overview
-  2. Selected multiplex channel (hot colormap)
-  3. Alpha-blended overlay
+Loads both images at 1/downsample resolution and shows two rows:
+  Row 1 (overview):
+    1. H&E overview
+    2. Selected multiplex channel (DNA channel shown in gray; others in hot colormap)
+    3. Alpha-blended overlay
+  Row 2 (auto zoom):
+    4. H&E zoom at an automatically selected region
+    5. DNA-channel zoom (gray)
+    6. H&E + DNA overlay zoom
+  Row 3 (optional, when seg.tif is provided/found):
+    7. H&E zoom (same region as row 2)
+    8. Segmentation IDs (same region, colorized by nucleus ID)
+    9. H&E + colorized segmentation overlay
 
 Controls:
   - Slider "Channel"  : cycle through all multiplex channels (0..N-1)
@@ -13,11 +22,13 @@ Controls:
   - ◀ Prev / Next ▶   : step one channel at a time
 
 Usage:
-    python debug_match_he_mul.py \\
-        --he-image data/CRC02-HE.ome.tif \\
-        --multiplex-image data/CRC02.ome.tif \\
-        --metadata-csv "data/CRC202105 HTAN channel metadata.csv" \\
-        [--downsample 64] [--alpha 0.5]
+    python3 -m tools.debug_match_he_mul \
+        --he-image data/WD-76845-096.ome.tif \
+        --multiplex-image data/WD-76845-097.ome.tif \
+        --metadata-csv data/WD-76845-097-metadata.csv \
+        [--index-json processed_center/index.json] \
+        [--seg-image data/WD-76845-097.ome.seg.tif] \
+        [--downsample 64] [--alpha 0.5] [--zoom-size 256] [--zoom-downsample 1]
 """
 
 import argparse
@@ -34,6 +45,7 @@ if "--save-png" in sys.argv:
 # matplotlib.pyplot must be imported after use() is set — keep below the guard.
 # pylint: disable=wrong-import-position
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import matplotlib.widgets as mwidgets
 import numpy as np
 import tifffile
@@ -43,6 +55,9 @@ from utils.normalize import percentile_to_uint8
 from utils.ome import get_ome_mpp, open_zarr_store, read_overview_chw
 
 # pylint: enable=wrong-import-position
+
+PANEL_TITLE_FONTSIZE = 9
+SUPTITLE_FONTSIZE = 8
 
 
 def _read_channel_overview(
@@ -93,6 +108,158 @@ def _apply_inverse_flow(
     )
 
 
+def _apply_inverse_flow_nearest(
+    image: np.ndarray, flow_dx: np.ndarray, flow_dy: np.ndarray
+) -> np.ndarray:
+    """Nearest-neighbour remap variant for discrete label images."""
+    h, w = image.shape
+    grid_x, grid_y = np.meshgrid(
+        np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32)
+    )
+    map_x = grid_x - flow_dx.astype(np.float32)
+    map_y = grid_y - flow_dy.astype(np.float32)
+    return cv2.remap(
+        image.astype(np.float32),
+        map_x,
+        map_y,
+        interpolation=cv2.INTER_NEAREST,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+
+
+def _colorize_instance_ids(mask: np.ndarray) -> np.ndarray:
+    """Colorize instance IDs (0 background) into RGB without huge LUT allocation."""
+    ids = np.asarray(mask)
+    out = np.zeros((*ids.shape, 3), dtype=np.uint8)
+    unique_ids = np.unique(ids)
+    unique_ids = unique_ids[unique_ids != 0]
+    for uid in unique_ids:
+        u = int(uid)
+        color = np.array(
+            [
+                (u * 37) % 200 + 30,
+                (u * 57) % 200 + 30,
+                (u * 97) % 200 + 30,
+            ],
+            dtype=np.uint8,
+        )
+        out[ids == uid] = color
+    return out
+
+
+def _is_dna_like_channel(name: str) -> bool:
+    """Heuristic: identify DNA-like channels by marker name."""
+    key = name.lower()
+    return ("dna" in key) or ("hoechst" in key) or ("dapi" in key)
+
+
+def _auto_zoom_center_from_dna(
+    dna_overview: np.ndarray, search_window: int = 64
+) -> tuple[int, int]:
+    """Find a dense foreground region in DNA overview and return (row, col)."""
+    u8 = percentile_to_uint8(dna_overview)
+    h, w = u8.shape
+    if h == 0 or w == 0:
+        return 0, 0
+    if int(u8.max()) == 0:
+        return h // 2, w // 2
+
+    blur = cv2.GaussianBlur(u8, (0, 0), sigmaX=2.0, sigmaY=2.0)
+    _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    k = max(3, int(search_window))
+    density = cv2.blur((binary > 0).astype(np.float32), (k, k))
+    peak = np.unravel_index(np.argmax(density), density.shape)
+    return int(peak[0]), int(peak[1])
+
+
+def _center_crop_box(
+    row: int, col: int, size: int, img_h: int, img_w: int
+) -> tuple[int, int, int, int]:
+    """Return (y0, y1, x0, x1) for a clamped center crop."""
+    size = max(16, min(int(size), img_h, img_w))
+    y0 = max(0, int(row) - size // 2)
+    x0 = max(0, int(col) - size // 2)
+    y1 = min(img_h, y0 + size)
+    x1 = min(img_w, x0 + size)
+    y0 = max(0, y1 - size)
+    x0 = max(0, x1 - size)
+    return y0, y1, x0, x1
+
+
+def _read_window(
+    store,
+    axes: str,
+    y0: int,
+    x0: int,
+    height: int,
+    width: int,
+    step: int = 1,
+    channel_index: int | None = None,
+) -> tuple[np.ndarray, str]:
+    """Read a TIFF window and return it in CYX or YX axis order."""
+    axes_up = axes.upper()
+    sl: list[int | slice] = []
+    for ax in axes_up:
+        if ax == "C":
+            if channel_index is None:
+                sl.append(slice(None))
+            else:
+                sl.append(int(channel_index))
+        elif ax == "Y":
+            sl.append(slice(y0, y0 + height, step))
+        elif ax == "X":
+            sl.append(slice(x0, x0 + width, step))
+        else:
+            sl.append(0)
+    arr = np.array(store[tuple(sl)])
+
+    active: list[str] = []
+    for ax in axes_up:
+        if ax == "C":
+            if channel_index is None:
+                active.append("C")
+        elif ax in ("Y", "X"):
+            active.append(ax)
+    target = [ax for ax in ("C", "Y", "X") if ax in active]
+    if active != target:
+        arr = arr.transpose([active.index(ax) for ax in target])
+    crop_axes = "".join(target) if target else "YX"
+    return arr, crop_axes
+
+
+def _transform_points_affine(m_full: np.ndarray, points_xy: np.ndarray) -> np.ndarray:
+    """Apply a 2x3 affine matrix to Nx2 points."""
+    pts = np.asarray(points_xy, dtype=np.float64)
+    ones = np.ones((pts.shape[0], 1), dtype=np.float64)
+    hom = np.concatenate([pts, ones], axis=1)
+    return (m_full.astype(np.float64) @ hom.T).T
+
+
+def _map_he_box_to_mx_box(
+    m_full: np.ndarray, he_box: tuple[int, int, int, int]
+) -> tuple[int, int, int, int]:
+    """Map a H&E full-resolution box into an axis-aligned MX full-resolution box."""
+    x0, y0, width, height = he_box
+    corners = np.array(
+        [
+            [x0, y0],
+            [x0 + width - 1, y0],
+            [x0, y0 + height - 1],
+            [x0 + width - 1, y0 + height - 1],
+        ],
+        dtype=np.float64,
+    )
+    mapped = _transform_points_affine(m_full, corners)
+    xs = mapped[:, 0]
+    ys = mapped[:, 1]
+    mx_x0 = int(np.floor(xs.min()))
+    mx_y0 = int(np.floor(ys.min()))
+    mx_x1 = int(np.ceil(xs.max())) + 1
+    mx_y1 = int(np.ceil(ys.max())) + 1
+    return mx_x0, mx_y0, mx_x1 - mx_x0, mx_y1 - mx_y0
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -128,14 +295,71 @@ def main():
         "from ECC registration instead of naive resize",
     )
     parser.add_argument(
+        "--seg-image",
+        default=None,
+        help="Optional segmentation TIFF/OME-TIFF aligned to multiplex space "
+        "(default: auto-detect <multiplex>.ome.seg.tif if present)",
+    )
+    parser.add_argument(
         "--save-png",
         default=None,
         metavar="PATH",
-        help="Save a static 3-panel PNG (H&E | MX ch0 | overlay) and exit "
+        help="Save a static figure (2x3, or 3x3 when seg row is enabled) and exit "
         "without launching the interactive viewer",
+    )
+    parser.add_argument(
+        "--dna-channel",
+        type=int,
+        default=None,
+        help="Optional loaded-channel index treated as DNA (default: auto-detect by name)",
+    )
+    parser.add_argument(
+        "--zoom-size",
+        type=int,
+        default=256,
+        help="Auto-zoom crop size in overview pixels (default: 256)",
+    )
+    parser.add_argument(
+        "--zoom-search-window",
+        type=int,
+        default=64,
+        help="Local window size used to pick the auto-zoom center (default: 64)",
+    )
+    parser.add_argument(
+        "--zoom-downsample",
+        type=int,
+        default=1,
+        help="Downsample factor for zoom-row rendering (1 = highest resolution, default: 1)",
     )
     args = parser.parse_args()
     ds = args.downsample
+
+    seg_path: Path | None = None
+    if args.seg_image:
+        seg_path = Path(args.seg_image)
+        if not seg_path.exists():
+            raise FileNotFoundError(f"--seg-image not found: {seg_path}")
+    else:
+        mx_path = Path(args.multiplex_image)
+        auto_candidates = []
+        if mx_path.name.endswith(".ome.tif"):
+            auto_candidates.append(
+                mx_path.with_name(mx_path.name.replace(".ome.tif", ".ome.seg.tif"))
+            )
+        if mx_path.name.endswith(".ome.tiff"):
+            auto_candidates.append(
+                mx_path.with_name(mx_path.name.replace(".ome.tiff", ".ome.seg.tiff"))
+            )
+        auto_candidates.append(mx_path.with_suffix(".seg.tif"))
+        auto_candidates.append(mx_path.with_suffix(".seg.tiff"))
+        for cand in auto_candidates:
+            if cand.exists():
+                seg_path = cand
+                break
+    if seg_path is not None:
+        print(f"Seg image: {seg_path}")
+    else:
+        print("Seg image: not provided/found (seg row disabled)")
 
     # ------------------------------------------------------------------
     # Load H&E overview
@@ -161,6 +385,7 @@ def main():
     # ------------------------------------------------------------------
     meta = {}
     registered = False
+    m_full = None
     m_disp = None
     flow_dx = None
     flow_dy = None
@@ -245,11 +470,37 @@ def main():
         def ch_label(pos: int) -> str:
             return all_ch_names.get(pos, f"ch{pos}")
 
+    channel_raw_index = selected_indices if selected_indices else list(range(n_ch))
+
     print(
         f"  Multiplex: {mx_w}×{mx_h} px  mpp={mx_mpp}"
         f"  overview: {mx_chw_w}×{mx_chw_h}  channels loaded={n_ch}"
     )
     print(f"  Scale HE→MX: {scale:.4f}")
+
+    if args.dna_channel is not None:
+        if args.dna_channel < 0 or args.dna_channel >= n_ch:
+            raise ValueError(
+                f"--dna-channel must be in [0, {n_ch - 1}] for loaded channels"
+            )
+        dna_idx = int(args.dna_channel)
+    else:
+        dna_idx = next(
+            (i for i in range(n_ch) if _is_dna_like_channel(ch_label(i))),
+            0,
+        )
+    dna_raw_idx = int(channel_raw_index[dna_idx])
+    print(f"  DNA channel: ch{dna_idx} ({ch_label(dna_idx)})")
+
+    if m_full is None:
+        # Fallback mapping when no index-json warp is supplied.
+        m_full = np.array(
+            [
+                [mx_w / max(1.0, float(he_w)), 0.0, 0.0],
+                [0.0, mx_h / max(1.0, float(he_h)), 0.0],
+            ],
+            dtype=np.float64,
+        )
 
     # Warp or resize each channel into H&E overview space
     action = "Warping" if registered else "Resizing"
@@ -290,10 +541,12 @@ def main():
     # ------------------------------------------------------------------
     cmap_hot = matplotlib.colormaps["hot"]
 
-    def channel_to_rgb(c_idx: int) -> np.ndarray:
-        """Normalise channel c_idx and apply 'hot' colormap -> uint8 (H, W, 3)."""
+    def channel_to_rgb(c_idx: int, force_gray: bool = False) -> np.ndarray:
+        """Render one multiplex channel as RGB (DNA channel in gray, others in hot)."""
         ch = mx_full[c_idx]
         u8 = percentile_to_uint8(ch)
+        if force_gray or c_idx == dna_idx:
+            return np.stack([u8, u8, u8], axis=-1).astype(np.uint8)
         rgba = cmap_hot(u8.astype(np.float32) / 255.0)  # (H, W, 4)
         return (rgba[:, :, :3] * 255).astype(np.uint8)
 
@@ -304,42 +557,377 @@ def main():
             .astype(np.uint8)
         )
 
+    def mx_title(c_idx: int) -> str:
+        cmap_name = "gray" if c_idx == dna_idx else "hot"
+        return f"MX ch{c_idx}: {ch_label(c_idx)} ({cmap_name})"
+
+    zoom_row, zoom_col = _auto_zoom_center_from_dna(
+        mx_full[dna_idx], search_window=args.zoom_search_window
+    )
+    y0z, y1z, x0z, x1z = _center_crop_box(
+        zoom_row, zoom_col, args.zoom_size, h_he, w_he
+    )
+    zoom_h = y1z - y0z
+    zoom_w = x1z - x0z
+    print(
+        "  Auto-zoom region "
+        f"(overview): center=(col={zoom_col}, row={zoom_row}) "
+        f"box=(x={x0z}, y={y0z}, w={zoom_w}, h={zoom_h})"
+    )
+
+    zoom_step = max(1, int(args.zoom_downsample))
+    x0_full = int(x0z * ds)
+    y0_full = int(y0z * ds)
+    x1_full = int(min(he_w, x1z * ds))
+    y1_full = int(min(he_h, y1z * ds))
+    he_box_full = (
+        x0_full,
+        y0_full,
+        max(1, x1_full - x0_full),
+        max(1, y1_full - y0_full),
+    )
+
+    he_crop_raw, he_crop_axes = _read_window(
+        he_store,
+        he_ax,
+        y0_full,
+        x0_full,
+        he_box_full[3],
+        he_box_full[2],
+        step=zoom_step,
+        channel_index=None,
+    )
+    if he_crop_axes == "YX":
+        he_chw_zoom = np.repeat(he_crop_raw[np.newaxis, ...], 3, axis=0)
+    else:
+        he_chw_zoom = (
+            he_crop_raw[:3]
+            if he_crop_raw.shape[0] >= 3
+            else np.repeat(he_crop_raw[:1], 3, axis=0)
+        )
+    if he_chw_zoom.dtype != np.uint8:
+        he_chw_zoom = np.stack([percentile_to_uint8(ch) for ch in he_chw_zoom], axis=0)
+    he_zoom = np.moveaxis(he_chw_zoom.astype(np.uint8), 0, -1)
+
+    mx_box = _map_he_box_to_mx_box(m_full, he_box_full)
+    mx_x0 = max(0, mx_box[0])
+    mx_y0 = max(0, mx_box[1])
+    mx_x1 = min(mx_w, mx_box[0] + mx_box[2])
+    mx_y1 = min(mx_h, mx_box[1] + mx_box[3])
+    mx_w_read = max(0, mx_x1 - mx_x0)
+    mx_h_read = max(0, mx_y1 - mx_y0)
+    if mx_w_read > 0 and mx_h_read > 0:
+        mx_dna_crop, _ = _read_window(
+            mx_store,
+            mx_ax,
+            mx_y0,
+            mx_x0,
+            mx_h_read,
+            mx_w_read,
+            step=1,
+            channel_index=dna_raw_idx,
+        )
+        mx_dna_crop = mx_dna_crop.astype(np.float32)
+    else:
+        mx_dna_crop = np.zeros((1, 1), dtype=np.float32)
+
+    a, b, tx = map(float, m_full[0])
+    c, d, ty = map(float, m_full[1])
+    tx_local = a * x0_full + b * y0_full + tx - mx_x0
+    ty_local = c * x0_full + d * y0_full + ty - mx_y0
+    m_local = np.array(
+        [
+            [a * zoom_step, b * zoom_step, tx_local],
+            [c * zoom_step, d * zoom_step, ty_local],
+        ],
+        dtype=np.float32,
+    )
+
+    zh, zw = he_zoom.shape[:2]
+    dna_zoom = cv2.warpAffine(
+        mx_dna_crop,
+        m_local,
+        (zw, zh),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
+    )
+
+    if flow_dx is not None and flow_dy is not None:
+        fh, fw = flow_dx.shape
+        yy, xx = np.meshgrid(
+            np.arange(zh, dtype=np.float32),
+            np.arange(zw, dtype=np.float32),
+            indexing="ij",
+        )
+        x_full_grid = float(x0_full) + xx * float(zoom_step)
+        y_full_grid = float(y0_full) + yy * float(zoom_step)
+        map_fx = x_full_grid * (fw / max(1.0, float(he_w)))
+        map_fy = y_full_grid * (fh / max(1.0, float(he_h)))
+
+        flow_dx_patch = cv2.remap(
+            flow_dx.astype(np.float32),
+            map_fx,
+            map_fy,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+        flow_dy_patch = cv2.remap(
+            flow_dy.astype(np.float32),
+            map_fx,
+            map_fy,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+        sx_disp = he_w / max(1.0, float(fw * zoom_step))
+        sy_disp = he_h / max(1.0, float(fh * zoom_step))
+        dna_zoom = _apply_inverse_flow(
+            dna_zoom,
+            flow_dx_patch * float(sx_disp),
+            flow_dy_patch * float(sy_disp),
+        )
+
+    dna_zoom_u8 = percentile_to_uint8(dna_zoom.astype(np.float32))
+    dna_zoom_rgb = np.stack([dna_zoom_u8, dna_zoom_u8, dna_zoom_u8], axis=-1)
+    print(
+        "  Zoom row source "
+        f"(full-res): x={x0_full}, y={y0_full}, w={he_box_full[2]}, h={he_box_full[3]} "
+        f"| zoom-downsample={zoom_step} -> display {zw}x{zh}"
+    )
+
+    seg_zoom_rgb = None
+    seg_overlay_rgb = None
+    if seg_path is not None:
+        with tifffile.TiffFile(str(seg_path)) as seg_tif:
+            seg_s = seg_tif.series[0]
+            seg_ax = seg_s.axes.upper()
+            seg_h = seg_s.shape[seg_ax.index("Y")]
+            seg_w = seg_s.shape[seg_ax.index("X")]
+            seg_store = open_zarr_store(seg_tif)
+
+            sx = seg_w / max(1.0, float(mx_w))
+            sy = seg_h / max(1.0, float(mx_h))
+            m_full_seg = m_full.astype(np.float64).copy()
+            m_full_seg[0, :] *= sx
+            m_full_seg[1, :] *= sy
+
+            seg_box = _map_he_box_to_mx_box(m_full_seg, he_box_full)
+            seg_x0 = max(0, seg_box[0])
+            seg_y0 = max(0, seg_box[1])
+            seg_x1 = min(seg_w, seg_box[0] + seg_box[2])
+            seg_y1 = min(seg_h, seg_box[1] + seg_box[3])
+            seg_w_read = max(0, seg_x1 - seg_x0)
+            seg_h_read = max(0, seg_y1 - seg_y0)
+
+            if seg_w_read > 0 and seg_h_read > 0:
+                seg_crop, seg_axes = _read_window(
+                    seg_store,
+                    seg_ax,
+                    seg_y0,
+                    seg_x0,
+                    seg_h_read,
+                    seg_w_read,
+                    step=1,
+                    channel_index=0 if "C" in seg_ax else None,
+                )
+                if seg_axes == "CYX":
+                    seg_crop = seg_crop[0]
+                seg_crop = np.asarray(seg_crop)
+            else:
+                seg_crop = np.zeros((1, 1), dtype=np.float32)
+
+            a_s, b_s, tx_s = map(float, m_full_seg[0])
+            c_s, d_s, ty_s = map(float, m_full_seg[1])
+            tx_local_s = a_s * x0_full + b_s * y0_full + tx_s - seg_x0
+            ty_local_s = c_s * x0_full + d_s * y0_full + ty_s - seg_y0
+            m_local_seg = np.array(
+                [
+                    [a_s * zoom_step, b_s * zoom_step, tx_local_s],
+                    [c_s * zoom_step, d_s * zoom_step, ty_local_s],
+                ],
+                dtype=np.float32,
+            )
+            seg_zoom = cv2.warpAffine(
+                seg_crop.astype(np.float32),
+                m_local_seg,
+                (zw, zh),
+                flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+                borderMode=cv2.BORDER_CONSTANT,
+                borderValue=0,
+            )
+
+            if flow_dx is not None and flow_dy is not None:
+                seg_zoom = _apply_inverse_flow_nearest(
+                    seg_zoom,
+                    flow_dx_patch * float(sx_disp),
+                    flow_dy_patch * float(sy_disp),
+                )
+
+            seg_zoom_ids = np.rint(seg_zoom).astype(np.int64, copy=False)
+            seg_zoom_rgb = _colorize_instance_ids(seg_zoom_ids)
+            seg_overlay_rgb = blend(he_zoom, seg_zoom_rgb, args.alpha)
+            n_seg_ids = int(np.unique(seg_zoom_ids[seg_zoom_ids > 0]).shape[0])
+            print(
+                f"  Seg zoom source: {seg_path} | region x={seg_x0} y={seg_y0} "
+                f"w={seg_w_read} h={seg_h_read} | unique IDs={n_seg_ids}"
+            )
+
     # ------------------------------------------------------------------
     # Build figure
     # ------------------------------------------------------------------
-    fig, (ax_he, ax_mx, ax_ov) = plt.subplots(1, 3, figsize=(19, 7))
+    has_seg_row = seg_zoom_rgb is not None and seg_overlay_rgb is not None
+    n_rows = 3 if has_seg_row else 2
+    fig, axes = plt.subplots(n_rows, 3, figsize=(9, 3 * n_rows))
+    if n_rows == 2:
+        (ax_he, ax_mx, ax_ov), (ax_he_z, ax_mx_z, ax_ov_z) = axes
+        ax_he_seg = ax_seg = ax_ov_seg = None
+    else:
+        (ax_he, ax_mx, ax_ov), (ax_he_z, ax_mx_z, ax_ov_z), (
+            ax_he_seg,
+            ax_seg,
+            ax_ov_seg,
+        ) = axes
     fig.patch.set_facecolor("#111")
-    plt.subplots_adjust(left=0.03, right=0.97, top=0.91, bottom=0.18, wspace=0.05)
+    plt.subplots_adjust(
+        left=0.03, right=0.97, top=0.92, bottom=0.18, wspace=0.05, hspace=0.08
+    )
 
     # Initial render
     init_ch = 0
     init_mx = channel_to_rgb(init_ch)
     init_ov = blend(he_rgb, init_mx, args.alpha)
+    init_zoom_ov = blend(he_zoom, dna_zoom_rgb, args.alpha)
 
     ax_he.imshow(he_rgb)
-    ax_he.set_title("H&E overview", color="white", fontsize=11, pad=6)
+    ax_he.set_title(
+        "H&E overview", color="white", fontsize=PANEL_TITLE_FONTSIZE, pad=6
+    )
     ax_he.set_xticks([])
     ax_he.set_yticks([])
     ax_he.set_facecolor("black")
 
     im_mx = ax_mx.imshow(init_mx)
-    ax_mx.set_title(
-        f"MX ch{init_ch}: {ch_label(init_ch)}", color="white", fontsize=11, pad=6
-    )
+    ax_mx.set_title(mx_title(init_ch), color="white", fontsize=PANEL_TITLE_FONTSIZE, pad=6)
     ax_mx.set_xticks([])
     ax_mx.set_yticks([])
     ax_mx.set_facecolor("black")
+    ax_mx.add_patch(
+        mpatches.Rectangle(
+            (x0z, y0z),
+            zoom_w,
+            zoom_h,
+            fill=False,
+            edgecolor="#00ffff",
+            linewidth=1.5,
+        )
+    )
 
     im_ov = ax_ov.imshow(init_ov)
     ax_ov.set_title(
         f"Overlay  α={args.alpha:.2f}  ch{init_ch}: {ch_label(init_ch)}",
         color="white",
-        fontsize=11,
+        fontsize=PANEL_TITLE_FONTSIZE,
         pad=6,
     )
     ax_ov.set_xticks([])
     ax_ov.set_yticks([])
     ax_ov.set_facecolor("black")
+    ax_ov.add_patch(
+        mpatches.Rectangle(
+            (x0z, y0z),
+            zoom_w,
+            zoom_h,
+            fill=False,
+            edgecolor="#00ffff",
+            linewidth=1.5,
+        )
+    )
+
+    ax_he_z.imshow(he_zoom)
+    ax_he_z.set_title(
+        f"H&E auto-zoom (high-res ds={zoom_step})",
+        color="white",
+        fontsize=PANEL_TITLE_FONTSIZE,
+        pad=6,
+    )
+    ax_he_z.set_xticks([])
+    ax_he_z.set_yticks([])
+    ax_he_z.set_facecolor("black")
+
+    ax_mx_z.imshow(dna_zoom_rgb)
+    ax_mx_z.set_title(
+        f"DNA auto-zoom ch{dna_idx}: {ch_label(dna_idx)} (gray)",
+        color="white",
+        fontsize=PANEL_TITLE_FONTSIZE,
+        pad=6,
+    )
+    ax_mx_z.set_xticks([])
+    ax_mx_z.set_yticks([])
+    ax_mx_z.set_facecolor("black")
+
+    im_ov_z = ax_ov_z.imshow(init_zoom_ov)
+    ax_ov_z.set_title(
+        f"Zoom overlay (H&E + DNA, high-res)  α={args.alpha:.2f}",
+        color="white",
+        fontsize=PANEL_TITLE_FONTSIZE,
+        pad=6,
+    )
+    ax_ov_z.set_xticks([])
+    ax_ov_z.set_yticks([])
+    ax_ov_z.set_facecolor("black")
+
+    im_ov_seg = None
+    if (
+        has_seg_row
+        and ax_he_seg is not None
+        and ax_seg is not None
+        and ax_ov_seg is not None
+    ):
+        ax_he_seg.imshow(he_zoom)
+        ax_he_seg.set_title(
+            f"H&E auto-zoom (same region, ds={zoom_step})",
+            color="white",
+            fontsize=PANEL_TITLE_FONTSIZE,
+            pad=6,
+        )
+        ax_he_seg.set_xticks([])
+        ax_he_seg.set_yticks([])
+        ax_he_seg.set_facecolor("black")
+
+        ax_seg.imshow(seg_zoom_rgb)
+        ax_seg.set_title(
+            "Seg IDs auto-zoom (colorized)",
+            color="white",
+            fontsize=PANEL_TITLE_FONTSIZE,
+            pad=6,
+        )
+        ax_seg.set_xticks([])
+        ax_seg.set_yticks([])
+        ax_seg.set_facecolor("black")
+
+        im_ov_seg = ax_ov_seg.imshow(seg_overlay_rgb)
+        ax_ov_seg.set_title(
+            f"Seg overlap (H&E + seg IDs)  α={args.alpha:.2f}",
+            color="white",
+            fontsize=PANEL_TITLE_FONTSIZE,
+            pad=6,
+        )
+        ax_ov_seg.set_xticks([])
+        ax_ov_seg.set_yticks([])
+        ax_ov_seg.set_facecolor("black")
+
+    ax_he.add_patch(
+        mpatches.Rectangle(
+            (x0z, y0z),
+            zoom_w,
+            zoom_h,
+            fill=False,
+            edgecolor="#00ffff",
+            linewidth=1.5,
+        )
+    )
 
     if registered and flow_dx is not None:
         reg_label = "ECC + deformable"
@@ -349,9 +937,14 @@ def main():
         reg_label = "naive resize (no registration)"
     fig.suptitle(
         f"H&E vs Multiplex  |  downsample={ds}x  |  {n_ch} channels  "
-        f"|  H&E {w_he}x{h_he}  MX {mx_chw_w}x{mx_chw_h}  |  {reg_label}",
+        f"|  H&E {w_he}x{h_he}  MX {mx_chw_w}x{mx_chw_h}  "
+        f"|  DNA ch{dna_idx}: {ch_label(dna_idx)}  "
+        f"|  zoom x={x0z} y={y0z} w={zoom_w} h={zoom_h}  "
+        f"|  zoom-ds={zoom_step}  "
+        f"|  seg-row={'on' if has_seg_row else 'off'}  "
+        f"|  {reg_label}",
         color="white",
-        fontsize=10,
+        fontsize=SUPTITLE_FONTSIZE,
         y=0.97,
     )
 
@@ -412,15 +1005,33 @@ def main():
     def _redraw(c: int, a: float) -> None:
         mx_rgb = channel_to_rgb(c)
         ov = blend(he_rgb, mx_rgb, a)
+        ov_zoom = blend(he_zoom, dna_zoom_rgb, a)
+        ov_seg = blend(he_zoom, seg_zoom_rgb, a) if has_seg_row else None
         im_mx.set_data(mx_rgb)
         im_ov.set_data(ov)
-        ax_mx.set_title(f"MX ch{c}: {ch_label(c)}", color="white", fontsize=11, pad=6)
+        im_ov_z.set_data(ov_zoom)
+        if has_seg_row and im_ov_seg is not None and ov_seg is not None:
+            im_ov_seg.set_data(ov_seg)
+        ax_mx.set_title(mx_title(c), color="white", fontsize=PANEL_TITLE_FONTSIZE, pad=6)
         ax_ov.set_title(
             f"Overlay  α={a:.2f}  ch{c}: {ch_label(c)}",
             color="white",
-            fontsize=11,
+            fontsize=PANEL_TITLE_FONTSIZE,
             pad=6,
         )
+        ax_ov_z.set_title(
+            f"Zoom overlay (H&E + DNA, high-res)  α={a:.2f}",
+            color="white",
+            fontsize=PANEL_TITLE_FONTSIZE,
+            pad=6,
+        )
+        if has_seg_row and ax_ov_seg is not None:
+            ax_ov_seg.set_title(
+                f"Seg overlap (H&E + seg IDs)  α={a:.2f}",
+                color="white",
+                fontsize=PANEL_TITLE_FONTSIZE,
+                pad=6,
+            )
         fig.canvas.draw_idle()
 
     def on_slider(_val):

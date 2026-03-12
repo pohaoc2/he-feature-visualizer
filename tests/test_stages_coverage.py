@@ -16,8 +16,6 @@ Coverage targets (lines previously at 0%):
                              read_overview_chw transposition.
 """
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest

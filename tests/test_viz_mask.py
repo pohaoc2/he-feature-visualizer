@@ -1,9 +1,16 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 import tifffile
+from PIL import Image
 
-from tools.viz_mask import crop_tiff_pair, parse_crop_region, visualize_tiff_pair
+from tools.viz_mask import (
+    crop_tiff_pair,
+    parse_crop_region,
+    visualize_crop_dna,
+    visualize_tiff_pair,
+)
 
 
 def test_parse_crop_region_supports_short_and_full_forms():
@@ -58,3 +65,60 @@ def test_visualize_tiff_pair_saves_png(tmp_path: Path):
 
     assert result == out_png
     assert out_png.exists()
+
+
+def test_visualize_crop_dna_saves_three_panel_png(tmp_path: Path):
+    mask_path = tmp_path / "cells.mask.tif"
+    mx_path = tmp_path / "mx.ome.tif"
+    out_png = tmp_path / "mask_dna_overlap.png"
+
+    mask = np.zeros((64, 64), dtype=np.uint32)
+    mask[20:44, 18:40] = 7
+    mx = np.zeros((2, 64, 64), dtype=np.uint16)
+    mx[1] = np.arange(64 * 64, dtype=np.uint16).reshape(64, 64)
+
+    tifffile.imwrite(str(mask_path), mask, metadata={"axes": "YX"})
+    tifffile.imwrite(str(mx_path), mx, metadata={"axes": "CYX"})
+
+    visualize_crop_dna(
+        mask_path,
+        mx_path,
+        out_png,
+        row=32,
+        col=32,
+        crop_size=32,
+        dna_channel=1,
+    )
+
+    assert out_png.exists()
+    img = np.asarray(Image.open(out_png))
+    # 3 panels of width 32 with 4px gaps.
+    assert img.shape[0] == 32
+    assert img.shape[1] == (32 * 3 + 4 * 2)
+
+    # Middle panel (DNA) should carry non-zero signal when dna_channel=1.
+    dna_panel = img[:, 32 + 4 : 32 + 4 + 32]
+    assert float(dna_panel.mean()) > 0.0
+
+
+def test_visualize_crop_dna_rejects_missing_channel(tmp_path: Path):
+    mask_path = tmp_path / "cells.mask.tif"
+    mx_path = tmp_path / "mx.ome.tif"
+    out_png = tmp_path / "mask_dna_overlap.png"
+
+    mask = np.zeros((32, 32), dtype=np.uint32)
+    mx = np.zeros((1, 32, 32), dtype=np.uint16)
+
+    tifffile.imwrite(str(mask_path), mask, metadata={"axes": "YX"})
+    tifffile.imwrite(str(mx_path), mx, metadata={"axes": "CYX"})
+
+    with pytest.raises(ValueError, match="Requested"):
+        visualize_crop_dna(
+            mask_path,
+            mx_path,
+            out_png,
+            row=16,
+            col=16,
+            crop_size=16,
+            dna_channel=3,
+        )

@@ -3,7 +3,7 @@
 import cv2
 import numpy as np
 
-from .qc import _full_affine_to_overview, _iou, _warp_mx_mask_to_he_template
+from .qc import _full_affine_to_overview, _iou
 
 REG_MODE_AFFINE = "affine"
 REG_MODE_DEFORMABLE = "deformable"
@@ -486,9 +486,6 @@ def estimate_deformable_field(
         flags=0,
     )
     flow = cv2.GaussianBlur(flow, (0, 0), sigmaX=1.0)
-    he_f = he_f32
-    mx_f = mx_f32
-
     max_disp = 0.08 * float(min(he_mask.shape))
     mag = np.hypot(flow[..., 0], flow[..., 1])
     scale = np.ones_like(mag, dtype=np.float32)
@@ -577,8 +574,6 @@ def estimate_deformable_field_intensity(
         borderValue=0,
     )
     mx_f32 = cv2.GaussianBlur(mx_aff.astype(np.float32), (0, 0), sigmaX=1.5)
-    mx_f = mx_f32
-
     # NOTE: calcOpticalFlowFarneback in OpenCV 4.13 is broken with float32 input.
     he_u8 = np.clip(he_f * 255, 0, 255).astype(np.uint8)
     mx_u8 = np.clip(mx_f32 * 255, 0, 255).astype(np.uint8)

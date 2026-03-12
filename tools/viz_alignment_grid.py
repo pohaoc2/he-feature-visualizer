@@ -131,7 +131,6 @@ def _load_seg_crop(
 
         # Scale factor from level 0 to requested level
         full_h = tif.series[0].levels[0].shape[-2]
-        full_w = tif.series[0].levels[0].shape[-1]
         scale = lvl_shape[-2] / full_h  # e.g. 0.5 for level 1
 
         # Crop bounds scaled to this level
@@ -622,7 +621,6 @@ def _make_zoom_panel(
     patch_br = (min(zx1 - zx0 - 1, x1_ov - zx0), min(zy1 - zy0 - 1, y1_ov - zy0))
     cv2.rectangle(zoom, patch_tl, patch_br, (0, 0, 255), 2, lineType=cv2.LINE_AA)
 
-    cv_local = cv_pts_he_ov - np.array([zx0, zy0], dtype=np.float64)
     cv_contours_local: list[np.ndarray | None] = []
     for contour in cv_contours_he_ov:
         if contour is None:

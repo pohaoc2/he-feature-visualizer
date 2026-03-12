@@ -48,7 +48,7 @@ import scipy.spatial
 import scipy.interpolate
 import tifffile
 
-from utils.ome import get_image_dims, get_ome_mpp, open_zarr_store
+from utils.ome import get_image_dims, open_zarr_store
 
 log = logging.getLogger(__name__)
 
