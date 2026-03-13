@@ -65,6 +65,15 @@ DEFAULT_OVERVIEW_DOWNSAMPLE = 64
 # ---------------------------------------------------------------------------
 
 
+def _resolve_channel_axis(axes: str) -> str | None:
+    """Return preferred channel-like axis label from an axes string."""
+    axes_up = axes.upper()
+    for ax in ("C", "I", "S"):
+        if ax in axes_up:
+            return ax
+    return None
+
+
 def colorize_mask(mask: np.ndarray, seed: int = 42) -> np.ndarray:
     """Map a uint32 label mask to an RGB image with random per-cell colours."""
     rng = np.random.default_rng(seed)
@@ -289,9 +298,10 @@ def _read_window(
 ) -> tuple[np.ndarray, str]:
     """Read a full-resolution crop and return it in CYX or YX order."""
     axes_up = axes.upper()
+    ch_axis = _resolve_channel_axis(axes_up)
     sl: list[int | slice] = []
     for ax in axes_up:
-        if ax == "C":
+        if ch_axis is not None and ax == ch_axis:
             sl.append(slice(None))
         elif ax == "Y":
             sl.append(slice(y0, y0 + height))
@@ -301,7 +311,12 @@ def _read_window(
             sl.append(0)
 
     arr = np.array(store[tuple(sl)])
-    active = [ax for ax in axes_up if ax in ("C", "Y", "X")]
+    active: list[str] = []
+    for ax in axes_up:
+        if ch_axis is not None and ax == ch_axis:
+            active.append("C")
+        elif ax in ("Y", "X"):
+            active.append(ax)
     target = [ax for ax in ("C", "Y", "X") if ax in active]
     if active != target:
         perm = [active.index(ax) for ax in target]
@@ -369,10 +384,26 @@ def _resolve_pair_crop_paths(
     return out1, out2
 
 
-def _save_tiff_crop(path: Path, arr: np.ndarray, axes: str) -> None:
-    """Write a TIFF crop, preserving dtype and canonicalized axes."""
+def _save_tiff_crop(
+    path: Path,
+    arr: np.ndarray,
+    axes: str,
+    mpp_x: float | None = None,
+    mpp_y: float | None = None,
+) -> None:
+    """Write a TIFF crop, preserving dtype/axes and optional physical pixel size."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tifffile.imwrite(str(path), arr, metadata={"axes": axes})
+    metadata: dict[str, float | str] = {"axes": axes}
+    if mpp_x is not None and mpp_y is not None:
+        metadata.update(
+            {
+                "PhysicalSizeX": float(mpp_x),
+                "PhysicalSizeY": float(mpp_y),
+                "PhysicalSizeXUnit": "µm",
+                "PhysicalSizeYUnit": "µm",
+            }
+        )
+    tifffile.imwrite(str(path), arr, ome=True, metadata=metadata)
 
 
 def _auto_detect_shared_crop(
@@ -716,8 +747,20 @@ def crop_tiff_pair(
         image2_w, image2_h, image2_axes = get_image_dims(tif2)
         store1 = open_zarr_store(tif1)
         store2 = open_zarr_store(tif2)
-        mpp1_x, _ = get_ome_mpp(tif1)
-        mpp2_x, _ = get_ome_mpp(tif2)
+        mpp1_x, mpp1_y = get_ome_mpp(tif1)
+        mpp2_x, mpp2_y = get_ome_mpp(tif2)
+
+        # If one image lacks OME mpp but both images share the same pixel grid,
+        # propagate mpp from the other image so crops remain spatially calibrated.
+        if (image1_w, image1_h) == (image2_w, image2_h):
+            if mpp1_x is None and mpp2_x is not None:
+                mpp1_x = mpp2_x
+            if mpp1_y is None and mpp2_y is not None:
+                mpp1_y = mpp2_y
+            if mpp2_x is None and mpp1_x is not None:
+                mpp2_x = mpp1_x
+            if mpp2_y is None and mpp1_y is not None:
+                mpp2_y = mpp1_y
 
         if image1_box is not None and (image1_w, image1_h) == (image2_w, image2_h):
             m_full = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
@@ -799,8 +842,8 @@ def crop_tiff_pair(
     out1, out2 = _resolve_pair_crop_paths(
         image1_path, image2_path, image1_box, image2_box, save_path
     )
-    _save_tiff_crop(out1, crop1, crop1_axes)
-    _save_tiff_crop(out2, crop2, crop2_axes)
+    _save_tiff_crop(out1, crop1, crop1_axes, mpp_x=mpp1_x, mpp_y=mpp1_y)
+    _save_tiff_crop(out2, crop2, crop2_axes, mpp_x=mpp2_x, mpp_y=mpp2_y)
 
     print(
         f"[pair-crop] image1 box: x={image1_box[0]} y={image1_box[1]} "

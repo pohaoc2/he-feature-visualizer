@@ -6,6 +6,41 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
+from tools.debug_match_he_mul import _read_channel_overview, _read_window
+
+
+def test_read_channel_overview_supports_iyx_axis():
+    """_read_channel_overview must index I-axis channels, not always plane 0."""
+    data = np.zeros((3, 8, 8), dtype=np.uint16)  # IYX
+    data[2, 2:6, 2:6] = 1234
+    out = _read_channel_overview(data, axes="IYX", img_h=8, img_w=8, ds=2, c_idx=2)
+    assert out.shape == (4, 4)
+    assert int(out.max()) == 1234
+
+
+def test_read_window_supports_yxs_rgb_axis():
+    """_read_window should preserve S-axis RGB data as CYX when reading YXS."""
+    data = np.zeros((10, 12, 3), dtype=np.uint8)  # YXS
+    data[3:7, 4:8, 0] = 11
+    data[3:7, 4:8, 1] = 22
+    data[3:7, 4:8, 2] = 33
+
+    crop, axes = _read_window(
+        data,
+        axes="YXS",
+        y0=3,
+        x0=4,
+        height=4,
+        width=4,
+        step=1,
+        channel_index=None,
+    )
+    assert axes == "CYX"
+    assert crop.shape == (3, 4, 4)
+    assert int(crop[0].mean()) == 11
+    assert int(crop[1].mean()) == 22
+    assert int(crop[2].mean()) == 33
+
 
 def test_debug_match_he_mul_save_png_smoke(tmp_path: Path):
     he_path = tmp_path / "he.ome.tif"

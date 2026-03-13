@@ -49,6 +49,74 @@ def test_crop_tiff_pair_with_explicit_region_on_same_grid(tmp_path: Path):
         np.testing.assert_array_equal(tif.asarray(), arr2[:, 12:28, 8:24])
 
 
+def test_crop_tiff_pair_preserves_iyx_channels(tmp_path: Path):
+    image1 = tmp_path / "image1.ome.tif"
+    image2 = tmp_path / "image2.tif"
+    out_prefix = tmp_path / "paired_crop_iyx"
+
+    arr1 = np.arange(3 * 64 * 64, dtype=np.uint8).reshape(3, 64, 64)
+    arr2 = np.arange(5 * 64 * 64, dtype=np.uint16).reshape(5, 64, 64)
+    tifffile.imwrite(str(image1), arr1, metadata={"axes": "CYX"})
+    tifffile.imwrite(str(image2), arr2, metadata={"axes": "IYX"})
+
+    out1, out2 = crop_tiff_pair(
+        image1,
+        image2,
+        crop_region="8,12,16",
+        save_path=out_prefix,
+    )
+
+    with tifffile.TiffFile(out1) as tif:
+        assert tif.series[0].shape == (3, 16, 16)
+        np.testing.assert_array_equal(tif.asarray(), arr1[:, 12:28, 8:24])
+
+    with tifffile.TiffFile(out2) as tif:
+        assert tif.series[0].shape == (5, 16, 16)
+        np.testing.assert_array_equal(tif.asarray(), arr2[:, 12:28, 8:24])
+
+
+def test_crop_tiff_pair_writes_mpp_metadata(tmp_path: Path):
+    from utils.ome import get_ome_mpp
+
+    image1 = tmp_path / "image1.ome.tif"
+    image2 = tmp_path / "image2.tif"
+    out_prefix = tmp_path / "paired_crop_mpp"
+
+    arr1 = np.zeros((3, 32, 32), dtype=np.uint8)
+    arr2 = np.zeros((2, 32, 32), dtype=np.uint16)
+    tifffile.imwrite(
+        str(image1),
+        arr1,
+        ome=True,
+        metadata={
+            "axes": "CYX",
+            "PhysicalSizeX": 0.325,
+            "PhysicalSizeY": 0.325,
+            "PhysicalSizeXUnit": "µm",
+            "PhysicalSizeYUnit": "µm",
+        },
+    )
+    # No explicit mpp here; should inherit because image grids are identical.
+    tifffile.imwrite(str(image2), arr2, metadata={"axes": "IYX"})
+
+    out1, out2 = crop_tiff_pair(
+        image1,
+        image2,
+        crop_region="4,4,16",
+        save_path=out_prefix,
+    )
+
+    with tifffile.TiffFile(out1) as tif:
+        mpp_x, mpp_y = get_ome_mpp(tif)
+    with tifffile.TiffFile(out2) as tif:
+        mpp2_x, mpp2_y = get_ome_mpp(tif)
+
+    assert mpp_x == pytest.approx(0.325)
+    assert mpp_y == pytest.approx(0.325)
+    assert mpp2_x == pytest.approx(0.325)
+    assert mpp2_y == pytest.approx(0.325)
+
+
 def test_visualize_tiff_pair_saves_png(tmp_path: Path):
     image1 = tmp_path / "image1.ome.tif"
     image2 = tmp_path / "image2.ome.tif"

@@ -12,6 +12,21 @@ import zarr
 OME_NS = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
 
 
+def _resolve_channel_axis(axes: str) -> str | None:
+    """Return the preferred channel-like axis label from an axes string.
+
+    Priority order matches common OME layouts:
+      1) ``C`` (channels)
+      2) ``I`` (image index / channels in some exports)
+      3) ``S`` (samples, e.g. RGB YXS)
+    """
+    axes_up = axes.upper()
+    for ax in ("C", "I", "S"):
+        if ax in axes_up:
+            return ax
+    return None
+
+
 class _NumpyStore:
     """Array-like fallback used when tifffile.aszarr is unavailable.
 
@@ -106,12 +121,13 @@ def read_overview_chw(
     If there is no C axis the result is ``(1, H, W)``.
     """
     ax_up = axes.upper()
+    ch_axis = _resolve_channel_axis(ax_up)
     h_trunc = (img_h // ds) * ds
     w_trunc = (img_w // ds) * ds
 
     sl: list[int | slice] = []
     for ax in ax_up:
-        if ax == "C":
+        if ch_axis is not None and ax == ch_axis:
             sl.append(slice(None))
         elif ax == "Y":
             sl.append(slice(0, h_trunc, ds))
@@ -122,7 +138,13 @@ def read_overview_chw(
 
     arr = np.array(store[tuple(sl)])
 
-    active = [ax for ax in ax_up if ax in ("C", "Y", "X")]
+    active: list[str] = []
+    for ax in ax_up:
+        if ch_axis is not None and ax == ch_axis:
+            active.append("C")
+        elif ax in ("Y", "X"):
+            active.append(ax)
+
     if "C" in active:
         target = [ax for ax in ("C", "Y", "X") if ax in active]
         if active != target:

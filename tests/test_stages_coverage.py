@@ -454,3 +454,33 @@ def test_read_overview_chw_cyx_no_transpose(tmp_path):
         h // 8,
         w // 8,
     ), f"Expected (4,8,8), got {overview.shape}"
+
+
+def test_read_overview_chw_yxs_rgb_as_channel_axis():
+    """read_overview_chw should treat S-axis RGB data (YXS) as channel-like."""
+    import zarr
+    from utils.ome import read_overview_chw
+
+    h, w, ds = 16, 20, 4
+    data = np.zeros((h, w, 3), dtype=np.uint8)  # YXS
+    data[:, :, 1] = 77
+    store = zarr.array(data)
+
+    overview = read_overview_chw(store, "YXS", img_h=h, img_w=w, ds=ds)
+    assert overview.shape == (3, h // ds, w // ds)
+    assert int(overview[1].mean()) == 77
+
+
+def test_read_overview_chw_iyx_channel_axis():
+    """read_overview_chw should treat I-axis as channel axis when C is absent."""
+    import zarr
+    from utils.ome import read_overview_chw
+
+    c, h, w, ds = 5, 24, 24, 6
+    data = np.zeros((c, h, w), dtype=np.uint16)  # IYX
+    data[3, :, :] = 4095
+    store = zarr.array(data)
+
+    overview = read_overview_chw(store, "IYX", img_h=h, img_w=w, ds=ds)
+    assert overview.shape == (c, h // ds, w // ds)
+    assert int(overview[3].max()) == 4095

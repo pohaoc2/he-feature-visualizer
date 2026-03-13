@@ -60,19 +60,34 @@ PANEL_TITLE_FONTSIZE = 9
 SUPTITLE_FONTSIZE = 8
 
 
+def _resolve_channel_axis(axes: str) -> str | None:
+    """Return preferred channel-like axis among C/I/S, if present."""
+    ax_up = axes.upper()
+    for ax in ("C", "I", "S"):
+        if ax in ax_up:
+            return ax
+    return None
+
+
 def _read_channel_overview(
     store, axes: str, img_h: int, img_w: int, ds: int, c_idx: int
 ) -> np.ndarray:
     """Read a single channel at overview resolution, returning (H, W).
 
-    Uses an integer index on the C axis so zarr reads only that one channel.
+    Uses an integer index on the channel-like axis (C/I/S), so zarr reads only
+    that one channel.
     """
     ax = axes.upper()
+    ch_axis = _resolve_channel_axis(ax)
+    if ch_axis is None:
+        raise ValueError(
+            f"Cannot select channel index {c_idx}: axes '{axes}' has no C/I/S axis."
+        )
     h_t = (img_h // ds) * ds
     w_t = (img_w // ds) * ds
     sl = []
     for a in ax:
-        if a == "C":
+        if a == ch_axis:
             sl.append(c_idx)
         elif a == "Y":
             sl.append(slice(0, h_t, ds))
@@ -199,9 +214,10 @@ def _read_window(
 ) -> tuple[np.ndarray, str]:
     """Read a TIFF window and return it in CYX or YX axis order."""
     axes_up = axes.upper()
+    ch_axis = _resolve_channel_axis(axes_up)
     sl: list[int | slice] = []
     for ax in axes_up:
-        if ax == "C":
+        if ch_axis is not None and ax == ch_axis:
             if channel_index is None:
                 sl.append(slice(None))
             else:
@@ -216,7 +232,7 @@ def _read_window(
 
     active: list[str] = []
     for ax in axes_up:
-        if ax == "C":
+        if ch_axis is not None and ax == ch_axis:
             if channel_index is None:
                 active.append("C")
         elif ax in ("Y", "X"):
@@ -730,7 +746,7 @@ def main():
                     seg_h_read,
                     seg_w_read,
                     step=1,
-                    channel_index=0 if "C" in seg_ax else None,
+                    channel_index=0 if _resolve_channel_axis(seg_ax) is not None else None,
                 )
                 if seg_axes == "CYX":
                     seg_crop = seg_crop[0]
