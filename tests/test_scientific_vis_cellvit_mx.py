@@ -1,0 +1,152 @@
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from PIL import Image
+
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+
+
+def _tool_cmd() -> list[str]:
+    return [sys.executable, "-m", "tools.scientific_vis_cellvit_mx"]
+
+
+def _rgba_overlay(shape: tuple[int, int], rgb: tuple[int, int, int]) -> np.ndarray:
+    out = np.zeros((shape[0], shape[1], 4), dtype=np.uint8)
+    out[8:24, 8:24, :3] = np.array(rgb, dtype=np.uint8)
+    out[8:24, 8:24, 3] = 180
+    return out
+
+
+def test_patch_comparison_figure_smoke(tmp_path: Path) -> None:
+    processed = tmp_path / "processed"
+    for subdir in ("he", "multiplex", "cellvit", "cell_types", "cell_states"):
+        (processed / subdir).mkdir(parents=True, exist_ok=True)
+
+    patch_id = "0_0"
+    Image.fromarray(np.full((64, 64, 3), 220, dtype=np.uint8), mode="RGB").save(
+        processed / "he" / f"{patch_id}.png"
+    )
+
+    mx = np.zeros((3, 64, 64), dtype=np.uint16)
+    mx[0, 10:26, 10:26] = 4500
+    mx[1, 36:52, 36:52] = 4200
+    mx[2, :, :] = 300
+    np.save(processed / "multiplex" / f"{patch_id}.npy", mx)
+
+    cellvit_payload = {
+        "patch": patch_id,
+        "cells": [
+            {
+                "centroid": [16, 16],
+                "contour": [[10, 10], [22, 10], [22, 22], [10, 22]],
+                "type_cellvit": 1,
+            },
+            {
+                "centroid": [44, 44],
+                "contour": [[38, 38], [50, 38], [50, 50], [38, 50]],
+                "type_cellvit": 2,
+            },
+        ],
+    }
+    (processed / "cellvit" / f"{patch_id}.json").write_text(
+        json.dumps(cellvit_payload),
+        encoding="utf-8",
+    )
+
+    Image.fromarray(_rgba_overlay((64, 64), (220, 50, 50)), mode="RGBA").save(
+        processed / "cell_types" / f"{patch_id}.png"
+    )
+    Image.fromarray(_rgba_overlay((64, 64), (100, 149, 237)), mode="RGBA").save(
+        processed / "cell_states" / f"{patch_id}.png"
+    )
+
+    (processed / "index.json").write_text(
+        json.dumps(
+            {
+                "patch_size": 64,
+                "channels": ["Pan-CK", "CD45", "SMA"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assignments = pd.DataFrame(
+        [
+            {
+                "patch_id": patch_id,
+                "type_cellvit": 1,
+                "type_cellvit_prior": "cancer",
+                "type_astir": "cancer",
+                "cell_type": "cancer",
+                "cell_state": "quiescent",
+                "cell_type_confidence": "high",
+                "is_mismatch": False,
+                "centroid_x_local": 16.0,
+                "centroid_y_local": 16.0,
+                "centroid_x_global": 16.0,
+                "centroid_y_global": 16.0,
+                "p_model_cancer": 0.92,
+                "p_model_immune": 0.04,
+                "p_model_healthy": 0.04,
+                "p_final_cancer": 0.93,
+                "p_final_immune": 0.04,
+                "p_final_healthy": 0.03,
+                "Pan-CK": 4500.0,
+                "CD45": 40.0,
+                "SMA": 15.0,
+            },
+            {
+                "patch_id": patch_id,
+                "type_cellvit": 2,
+                "type_cellvit_prior": "immune",
+                "type_astir": "immune",
+                "cell_type": "immune",
+                "cell_state": "proliferative",
+                "cell_type_confidence": "medium",
+                "is_mismatch": False,
+                "centroid_x_local": 44.0,
+                "centroid_y_local": 44.0,
+                "centroid_x_global": 44.0,
+                "centroid_y_global": 44.0,
+                "p_model_cancer": 0.05,
+                "p_model_immune": 0.85,
+                "p_model_healthy": 0.10,
+                "p_final_cancer": 0.05,
+                "p_final_immune": 0.88,
+                "p_final_healthy": 0.07,
+                "Pan-CK": 30.0,
+                "CD45": 4200.0,
+                "SMA": 25.0,
+            },
+        ]
+    )
+    assignments.to_csv(processed / "cell_assignments.csv", index=False)
+    (processed / "cell_summary.json").write_text(
+        json.dumps({"classifier_used": "astir"}),
+        encoding="utf-8",
+    )
+
+    out_prefix = processed / "patch_compare"
+    cmd = [
+        *_tool_cmd(),
+        "--processed",
+        str(processed),
+        "--patch",
+        patch_id,
+        "--assignments-csv",
+        str(processed / "cell_assignments.csv"),
+        "--formats",
+        "png",
+        "--out-prefix",
+        str(out_prefix),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, result.stderr
+    assert out_prefix.with_suffix(".png").exists()

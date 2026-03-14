@@ -131,8 +131,10 @@ def test_load_cell_assignments_adds_margin_and_bool(tmp_path: Path) -> None:
     loaded = reports.load_cell_assignments(csv_path)
 
     assert loaded["is_mismatch"].dtype == bool
+    assert "cellvit_mapped_type" in loaded.columns
     assert "final_margin" in loaded.columns
     assert loaded.loc[loaded["cell_id"] == "c_match", "final_margin"].item() == 0.87
+    assert loaded.loc[loaded["cell_id"] == "c_match", "cellvit_mapped_type"].item() == "other"
 
 
 def test_summarize_patch_assignments_computes_expected_metrics() -> None:

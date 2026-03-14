@@ -16,6 +16,23 @@ FINAL_PROB_COLUMNS: tuple[str, str, str] = (
 CONFIDENCE_SCORES = {"low": 0, "medium": 1, "high": 2}
 
 
+def map_cellvit_type(type_cellvit: object, type_cellvit_prior: object | None = None) -> str:
+    """Map raw CellViT classes into the shared 3-class comparison ontology."""
+    try:
+        value = int(type_cellvit)
+    except Exception:
+        return "other"
+    if value == 1:
+        return "cancer"
+    if value == 2:
+        return "immune"
+    if value == 3:
+        return "healthy"
+    if value == 5 and isinstance(type_cellvit_prior, str):
+        return type_cellvit_prior if type_cellvit_prior in {"cancer", "immune", "healthy"} else "other"
+    return "other"
+
+
 def _coerce_is_mismatch(series: pd.Series) -> pd.Series:
     if pd.api.types.is_bool_dtype(series):
         return series.fillna(False).astype(bool)
@@ -40,6 +57,14 @@ def load_cell_assignments(csv_path: Path) -> pd.DataFrame:
         df["is_mismatch"] = False
     if "cell_type_confidence" not in df.columns:
         df["cell_type_confidence"] = "low"
+    df["cellvit_mapped_type"] = [
+        map_cellvit_type(type_cellvit, prior)
+        for type_cellvit, prior in zip(
+            df.get("type_cellvit", pd.Series(index=df.index, dtype=int)),
+            df.get("type_cellvit_prior", pd.Series(index=df.index, dtype=object)),
+            strict=False,
+        )
+    ]
     df["final_margin"] = _final_margin(df)
     df["confidence_score"] = (
         df["cell_type_confidence"].astype(str).str.lower().map(CONFIDENCE_SCORES).fillna(0)
