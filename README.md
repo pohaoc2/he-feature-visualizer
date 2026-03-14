@@ -72,6 +72,9 @@ Stage 4: python -m stages.multiplex_layers
 conda create -n he-multiplex python=3.13
 conda activate he-multiplex
 pip install -r requirements.txt
+
+# Optional: enable Astir classifier support without CUDA
+pip install -r requirements-astir-cpu.txt
 ```
 
 ### Directory layout
@@ -394,6 +397,49 @@ python -m tools.visualize_pipeline \
 ```
 
 Panels shown per patch: original location · H&E · multiplex channel · cell segmentation · cell type · cell state.
+
+---
+
+### Scientific-Vis Figure: MX + CellViT + Type/State
+
+For a publication-style patch figure (H&E, MX marker channel, CellViT contours, inferred
+cell type, inferred cell state), run Stage 3 in auto-feature mode and render with
+`tools.scientific_vis_cellvit_mx`.
+
+```bash
+# 1) Stage 3: auto-extract CellViT+MX features and assign type/state
+python -m stages.assign_cells \
+  --cellvit-dir processed_crc33_crop/cellvit/ \
+  --multiplex-dir processed_crc33_crop/multiplex/ \
+  --index processed_crc33_crop/index.json \
+  --out processed_crc33_crop_demo/ \
+  --classifier astir \
+  --allow-astir-fallback
+
+# 2) Render one patch with an immune marker channel (CD45)
+python -m tools.scientific_vis_cellvit_mx \
+  --processed processed_crc33_crop_demo/ \
+  --patch 256_256 \
+  --mx-marker CD45 \
+  --out-prefix processed_crc33_crop_demo/scivis_patch_256_256_cd45 \
+  --formats png,pdf
+
+# 3) Render one patch with a state marker channel (Ki67)
+python -m tools.scientific_vis_cellvit_mx \
+  --processed processed_crc33_crop_demo/ \
+  --patch 256_256 \
+  --mx-marker Ki67 \
+  --out-prefix processed_crc33_crop_demo/scivis_patch_256_256_ki67 \
+  --formats png,pdf
+```
+
+Output figure panels:
+- A: H&E patch
+- B: Selected MX channel (marker-resolved from `index.json`)
+- C: CellViT contours on H&E
+- D: Inferred cell type overlay (`cancer`/`immune`/`healthy`)
+- E: Inferred cell state overlay (`proliferative`/`quiescent`/`dead`)
+- F: Legend
 
 ---
 

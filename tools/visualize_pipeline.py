@@ -263,8 +263,9 @@ def build_cellseg_panel(
                 pass  # already (N, 1, 2) or similar
             else:
                 continue
+            yellow = (255, 255, 0)
             cv2.polylines(
-                overlay, [pts], isClosed=True, color=(255, 255, 255), thickness=1
+                overlay, [pts], isClosed=True, color=(255, 255, 255), thickness=2
             )
 
     return overlay, True
