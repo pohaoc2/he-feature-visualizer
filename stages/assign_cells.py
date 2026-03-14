@@ -1,19 +1,22 @@
 """
 assign_cells.py — Stage 3 of the histopathology pipeline.
 
-Matches CellViT-segmented cells (from per-patch JSON files) to the nearest
-row in CRC02.csv using a KD-tree on image pixel coordinates. Assigns each cell
-a type (tumor/immune/stromal/other) and state
-(proliferating/emt/other) from the matched row's marker intensities.
-Rasterizes the cell contours as filled RGBA PNG images saved to
-processed/cell_types/ and processed/cell_states/.
+Astir-first cell typing (cancer/immune/healthy) with CellViT prior fusion,
+plus state assignment (dead/proliferative/quiescent).
+
+Dual mode:
+  1) Existing mode: read --features-csv directly.
+  2) CellViT+MX mode: when --features-csv is omitted, build it from
+     CellViT contours + per-patch multiplex arrays, then continue with the
+     same CSV-driven assignment path.
 """
+
+from __future__ import annotations
 
 import argparse
 import json
 import logging
 import pathlib
-import warnings
 from collections import Counter
 
 import cv2
@@ -22,40 +25,67 @@ import pandas as pd
 import scipy.spatial
 from PIL import Image
 
+from stages.extract_cell_features import extract_cell_features_to_csv
+from utils.astir_adapter import AstirUnavailableError, predict_cell_type_probabilities
+from utils.marker_aliases import marker_candidates, resolve_first_present_column
+
 # ---------------------------------------------------------------------------
-# Color maps
+# Labels and colors
 # ---------------------------------------------------------------------------
 
+CELL_TYPES: tuple[str, str, str] = ("cancer", "immune", "healthy")
+
 CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "tumor": (220, 50, 50, 200),  # red
-    "immune": (50, 100, 220, 200),  # blue
-    "stromal": (50, 180, 50, 200),  # green
-    "other": (150, 150, 150, 150),  # gray
+    "cancer": (220, 50, 50, 200),
+    "immune": (50, 100, 220, 200),
+    "healthy": (50, 180, 50, 200),
+    "other": (150, 150, 150, 150),
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferating": (0, 255, 0, 200),  # green   — Ki67/PCNA high
-    "emt": (255, 165, 0, 200),  # orange  — Vimentin high + E-cad low
-    "apoptotic": (139, 0, 139, 200),  # purple  — CellViT Dead (type 4)
-    "quiescent": (100, 149, 237, 200),  # blue    — Keratin+ resting tumor
-    "healthy": (144, 238, 144, 200),  # lime    — E-cad high, non-tumor, non-dividing
-    "other": (80, 80, 80, 150),  # dark gray (visible on black background)
-}
-
-CELLVIT_TYPE_MAP: dict[int, str] = {
-    0: "other",  # Unknown
-    1: "tumor",  # Neoplastic
-    2: "immune",  # Inflammatory
-    3: "stromal",  # Connective
-    4: "other",  # Dead — state assignment handles apoptotic
-    5: "tumor",  # Epithelial → tumor in CRC context
+    "proliferative": (0, 255, 0, 200),
+    "quiescent": (100, 149, 237, 200),
+    "dead": (139, 0, 139, 200),
+    "other": (80, 80, 80, 150),
 }
 
 # ---------------------------------------------------------------------------
-# Marker lists
+# CellViT priors and marker config
 # ---------------------------------------------------------------------------
 
-TYPE_MARKERS: dict[str, list[str]] = {
+CELLVIT_TYPE_PRIORS: dict[int, dict[str, float]] = {
+    0: {"cancer": 1 / 3, "immune": 1 / 3, "healthy": 1 / 3},  # background/unknown
+    1: {"cancer": 1.0, "immune": 0.0, "healthy": 0.0},  # Neoplastic
+    2: {"cancer": 0.0, "immune": 1.0, "healthy": 0.0},  # Inflammatory
+    3: {"cancer": 0.0, "immune": 0.0, "healthy": 1.0},  # Connective
+    4: {"cancer": 1 / 3, "immune": 1 / 3, "healthy": 1 / 3},  # Dead (state override)
+    5: {"cancer": 0.5, "immune": 0.0, "healthy": 0.5},  # Epithelial split prior
+}
+
+ASTIR_TYPE_MARKERS: dict[str, list[str]] = {
+    "cancer": ["PanCK", "Ecadherin"],
+    "immune": [
+        "CD45",
+        "CD3e",
+        "CD4",
+        "CD8a",
+        "CD20",
+        "CD68",
+        "CD163",
+        "FOXP3",
+        "CD45RO",
+        "PD1",
+    ],
+    "healthy": ["SMA", "CD31"],
+}
+
+NON_TYPING_MARKERS: tuple[str, ...] = ("Hoechst", "AF1", "Argo550", "PD-L1")
+
+CONFIDENCE_THRESHOLDS: tuple[float, float] = (0.25, 0.12)
+DEFAULT_ASTIR_WEIGHT = 0.85
+
+# Legacy compatibility surfaces kept for older tests/tools.
+LEGACY_TYPE_MARKERS: dict[str, list[str]] = {
     "tumor": ["Keratin", "NaKATPase", "CDX2"],
     "immune": [
         "CD45",
@@ -69,142 +99,299 @@ TYPE_MARKERS: dict[str, list[str]] = {
         "FOXP3",
         "PD1",
     ],
-    "stromal": ["aSMA", "CD31", "Desmin", "Collagen"],
+    "stromal": ["SMA", "CD31", "Desmin", "Collagen"],
 }
 
+
 # ---------------------------------------------------------------------------
-# Module-level functions
+# Helper functions
 # ---------------------------------------------------------------------------
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _argmax_label(score_map: dict[str, float]) -> str:
+    # Stable tie-breaking by CELL_TYPES order.
+    return max(CELL_TYPES, key=lambda k: (score_map.get(k, 0.0), -CELL_TYPES.index(k)))
+
+
+def _mean_available(series_list: list[pd.Series]) -> pd.Series:
+    if not series_list:
+        raise ValueError("_mean_available called with empty list")
+    if len(series_list) == 1:
+        return series_list[0]
+    return pd.concat(series_list, axis=1).mean(axis=1)
+
+
+def _get_marker_value(row: pd.Series, marker: str) -> float:
+    """Return marker value from row using canonical name + aliases."""
+    for candidate in marker_candidates(marker):
+        try:
+            value = row.get(candidate, None) if hasattr(row, "get") else None
+            if value is None and hasattr(row, candidate):
+                value = getattr(row, candidate)
+            if value is None:
+                continue
+            return _safe_float(value, default=0.0)
+        except Exception:
+            continue
+    return 0.0
+
+
+def _percentile_rank(series: pd.Series) -> pd.Series:
+    """Return percentile-rank normalized values in [0,1]."""
+    vals = pd.to_numeric(series, errors="coerce")
+    if vals.notna().sum() <= 1:
+        return pd.Series(0.5, index=series.index, dtype=float)
+    ranks = vals.rank(method="average", pct=True)
+    return ranks.fillna(0.0).astype(float)
+
+
+def _normalized_marker_series(df: pd.DataFrame, marker: str) -> pd.Series:
+    col = resolve_first_present_column(df.columns, marker)
+    if col is None:
+        return pd.Series(0.0, index=df.index, dtype=float)
+    return _percentile_rank(df[col])
+
+
+def _compute_rule_probabilities(df: pd.DataFrame) -> pd.DataFrame:
+    """Rule-based fallback probabilities over (cancer, immune, healthy)."""
+    cd45 = _normalized_marker_series(df, "CD45")
+    panck = _normalized_marker_series(df, "PanCK")
+    ecad = _normalized_marker_series(df, "Ecadherin")
+    cd31 = _normalized_marker_series(df, "CD31")
+    sma = _normalized_marker_series(df, "SMA")
+
+    immune_t_markers = ["CD3e", "CD4", "CD8a", "CD45RO", "FOXP3", "PD1"]
+    immune_mb_markers = ["CD20", "CD68", "CD163"]
+
+    immune_t = _mean_available([_normalized_marker_series(df, m) for m in immune_t_markers])
+    immune_mb = _mean_available(
+        [_normalized_marker_series(df, m) for m in immune_mb_markers]
+    )
+
+    immune_score = 0.55 * cd45 + 0.30 * immune_t + 0.15 * immune_mb
+    cancer_score = 0.55 * panck + 0.25 * ecad + 0.20 * (1.0 - cd45)
+    healthy_score = 0.60 * _mean_available([sma, cd31]) + 0.40 * _mean_available(
+        [1.0 - panck, 1.0 - cd45]
+    )
+
+    probs = pd.DataFrame(
+        {
+            "cancer": cancer_score.clip(lower=0.0),
+            "immune": immune_score.clip(lower=0.0),
+            "healthy": healthy_score.clip(lower=0.0),
+        },
+        index=df.index,
+    )
+    denom = probs.sum(axis=1).replace(0.0, 1.0)
+    return probs.div(denom, axis=0)
+
+
+def _build_astir_input(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, dict[str, object]]]:
+    """Build Astir marker matrix and return marker coverage metadata."""
+    required = sorted({m for markers in ASTIR_TYPE_MARKERS.values() for m in markers})
+    data: dict[str, pd.Series] = {}
+    coverage: dict[str, dict[str, object]] = {}
+
+    for marker in required:
+        resolved = resolve_first_present_column(df.columns, marker)
+        if resolved is None:
+            data[marker] = pd.Series(0.0, index=df.index, dtype=float)
+            coverage[marker] = {"available": False, "source_column": None}
+        else:
+            data[marker] = pd.to_numeric(df[resolved], errors="coerce").fillna(0.0)
+            coverage[marker] = {"available": True, "source_column": resolved}
+
+    return pd.DataFrame(data, index=df.index), coverage
+
+
+def compute_type_probabilities(
+    df: pd.DataFrame,
+    classifier: str,
+    allow_astir_fallback: bool,
+    log: logging.Logger,
+) -> tuple[pd.DataFrame, str, dict[str, dict[str, object]]]:
+    """Return model probabilities and runtime classifier mode."""
+    expr_df, coverage = _build_astir_input(df)
+
+    if classifier == "rule":
+        return _compute_rule_probabilities(df), "rule", coverage
+
+    try:
+        probs = predict_cell_type_probabilities(
+            expr_df,
+            marker_dict=ASTIR_TYPE_MARKERS,
+            logger=log,
+        )
+        return probs.reindex(columns=list(CELL_TYPES), fill_value=0.0), "astir", coverage
+    except AstirUnavailableError as exc:
+        if allow_astir_fallback:
+            log.warning("Astir unavailable (%s). Falling back to rule classifier.", exc)
+            return _compute_rule_probabilities(df), "rule_fallback", coverage
+        raise
 
 
 def build_csv_index(df: pd.DataFrame, x_col: str, y_col: str) -> scipy.spatial.KDTree:
-    """Build a KDTree from the cell coordinate columns of a DataFrame (global pixel space)."""
+    """Build a KDTree from the cell coordinate columns of a DataFrame."""
     coords = df[[x_col, y_col]].to_numpy(dtype=float)
     return scipy.spatial.KDTree(coords)
 
 
-def assign_type(row: pd.Series, thresholds: dict[str, float]) -> str:
-    """Assign cell type using grouped any-positive rule. Priority: tumor > immune > stromal > other.
+def compute_state_thresholds(
+    df: pd.DataFrame,
+    state_percentile: float = 75.0,
+) -> dict[str, float]:
+    """Compute state thresholds from feature table."""
+    out: dict[str, float] = {}
+    ki67_col = resolve_first_present_column(df.columns, "Ki67")
+    if ki67_col is None:
+        out["Ki67"] = float("inf")
+    else:
+        out["Ki67"] = float(np.nanpercentile(df[ki67_col].to_numpy(dtype=float), state_percentile))
+    return out
 
-    For each group in TYPE_MARKERS, returns that type if ANY marker in the group
-    exceeds its individual threshold. Missing markers treated as 0. Never raises."""
 
-    def _get(key: str) -> float:
-        try:
-            val = row.get(key, 0) if hasattr(row, "get") else getattr(row, key, 0)
-            return float(val) if val is not None else 0.0
-        except Exception:
-            return 0.0
+def assign_type(row: pd.Series, thresholds: dict[str, float] | None) -> str:
+    """Legacy type assignment kept for compatibility with older tests/tools."""
+    def _get(marker: str) -> float:
+        return _get_marker_value(row, marker)
 
     try:
-        for type_name, markers in TYPE_MARKERS.items():
+        for type_name, markers in LEGACY_TYPE_MARKERS.items():
             for marker in markers:
-                if _get(marker) >= thresholds.get(marker, float("inf")):
+                if _get(marker) >= thresholds.get(marker, float("inf")):  # type: ignore[union-attr]
                     return type_name
     except Exception:
-        pass
-
+        return "other"
     return "other"
 
 
-def assign_state(
-    row: pd.Series, thresholds: dict[str, float], type_cellvit: int = 0
-) -> str:
-    """Assign cell state from marker intensities and CellViT morphology type.
+def compute_thresholds(
+    df: pd.DataFrame,
+    default_state_percentile: float = 95.0,
+    ecad_low_percentile: float = 25.0,
+    ecad_high_percentile: float = 50.0,
+) -> dict[str, float]:
+    """Legacy threshold helper retained for compatibility.
 
-    Priority order:
-      apoptotic     if type_cellvit == 4 (CellViT 'Dead' class — H&E morphology)
-      proliferating if Ki67 >= thresholds['Ki67'] OR PCNA >= thresholds['PCNA']
-      emt           if Vimentin >= thresholds['Vimentin'] AND Ecadherin < thresholds['Ecadherin']
-      quiescent     if Keratin >= thresholds['Keratin'] AND Ecadherin >= thresholds['Ecadherin_high']
-                    (resting tumor cell — Keratin+ but not dividing, epithelial junctions intact)
-      healthy       if Ecadherin >= thresholds['Ecadherin_high'] AND Keratin < thresholds['Keratin']
-                    (normal epithelial — E-cad high, not tumor marker, not dividing)
-      other         otherwise
-    Missing markers treated as 0. Never raises."""
+    New Astir-first flow uses `compute_state_thresholds`.
+    """
+    out: dict[str, float] = {}
 
-    # 1. Apoptotic: CellViT morphology (Dead cell, type ID 4)
-    if type_cellvit == 4:
-        return "apoptotic"
+    for marker in ("Ki67", "PCNA", "Vimentin", "Keratin"):
+        col = resolve_first_present_column(df.columns, marker)
+        if col is None:
+            out[marker] = float("inf")
+        else:
+            vals = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
+            out[marker] = float(np.nanpercentile(vals, default_state_percentile))
 
-    def _get(key):
-        try:
-            return float(
-                row.get(key, 0) if hasattr(row, "get") else getattr(row, key, 0)
-            )
-        except Exception:
-            return 0.0
+    ecad_col = resolve_first_present_column(df.columns, "Ecadherin")
+    if ecad_col is None:
+        out["Ecadherin"] = float("-inf")
+        out["Ecadherin_high"] = float("inf")
+    else:
+        vals = pd.to_numeric(df[ecad_col], errors="coerce").to_numpy(dtype=float)
+        out["Ecadherin"] = float(np.nanpercentile(vals, ecad_low_percentile))
+        out["Ecadherin_high"] = float(np.nanpercentile(vals, ecad_high_percentile))
+
+    return out
+
+
+def assign_state(row: pd.Series, thresholds: dict[str, float] | None, type_cellvit: int = 0) -> str:
+    """State assignment with Astir-first mode and legacy compatibility mode."""
+    legacy_mode = bool(
+        isinstance(thresholds, dict)
+        and any(k in thresholds for k in ("PCNA", "Vimentin", "Ecadherin_high", "Keratin"))
+    )
 
     try:
-        ki67 = _get("Ki67")
-        pcna = _get("PCNA")
-        vimentin = _get("Vimentin")
-        ecad = _get("Ecadherin")
-        keratin = _get("Keratin")
+        if int(type_cellvit) == 4:
+            return "apoptotic" if legacy_mode else "dead"
+
+        if thresholds is None:
+            return "other"
+
+        if legacy_mode:
+            ki67 = _get_marker_value(row, "Ki67")
+            pcna = _get_marker_value(row, "PCNA")
+            vimentin = _get_marker_value(row, "Vimentin")
+            ecad = _get_marker_value(row, "Ecadherin")
+            keratin = _get_marker_value(row, "Keratin")
+
+            if ki67 >= thresholds.get("Ki67", float("inf")) or pcna >= thresholds.get(
+                "PCNA", float("inf")
+            ):
+                return "proliferative"
+            if vimentin >= thresholds.get("Vimentin", float("inf")) and ecad < thresholds.get(
+                "Ecadherin", float("-inf")
+            ):
+                return "emt"
+            if keratin >= thresholds.get("Keratin", float("inf")) and ecad >= thresholds.get(
+                "Ecadherin_high", float("inf")
+            ):
+                return "quiescent"
+            if ecad >= thresholds.get("Ecadherin_high", float("inf")) and keratin < thresholds.get(
+                "Keratin", float("inf")
+            ):
+                return "healthy"
+            return "other"
+
+        ki67 = _get_marker_value(row, "Ki67")
+        if ki67 >= thresholds.get("Ki67", float("inf")):
+            return "proliferative"
+        return "quiescent"
     except Exception:
         return "other"
 
-    try:
-        # 2. Proliferating: active division markers
-        if ki67 >= thresholds.get("Ki67", float("inf")) or pcna >= thresholds.get(
-            "PCNA", float("inf")
-        ):
-            return "proliferating"
 
-        # 3. EMT: migratory — Vimentin high + E-cadherin lost
-        if vimentin >= thresholds.get(
-            "Vimentin", float("inf")
-        ) and ecad < thresholds.get("Ecadherin", float("-inf")):
-            return "emt"
+def cellvit_prior_probs(type_cellvit: int) -> dict[str, float]:
+    return CELLVIT_TYPE_PRIORS.get(
+        int(type_cellvit),
+        {"cancer": 1 / 3, "immune": 1 / 3, "healthy": 1 / 3},
+    )
 
-        # 4. Quiescent tumor: Keratin+ resting cell with intact epithelial junctions
-        if keratin >= thresholds.get(
-            "Keratin", float("inf")
-        ) and ecad >= thresholds.get("Ecadherin_high", float("inf")):
-            return "quiescent"
 
-        # 5. Healthy epithelial: E-cad high, no tumor marker, not dividing
-        if ecad >= thresholds.get(
-            "Ecadherin_high", float("inf")
-        ) and keratin < thresholds.get("Keratin", float("inf")):
-            return "healthy"
+def confidence_from_probs(fused_probs: dict[str, float], mismatch: bool) -> str:
+    vals = sorted((float(v) for v in fused_probs.values()), reverse=True)
+    margin = vals[0] - vals[1] if len(vals) >= 2 else vals[0]
 
-    except Exception:
-        pass
+    high_th, med_th = CONFIDENCE_THRESHOLDS
+    if margin >= high_th:
+        conf = "high"
+    elif margin >= med_th:
+        conf = "medium"
+    else:
+        conf = "low"
 
-    return "other"
+    if mismatch and conf != "low":
+        conf = "medium" if conf == "high" else "low"
+    return conf
 
 
 def match_cells(
     cells: list[dict],
     kdtree,
     df: pd.DataFrame,
-    thresholds: dict[str, float],
+    state_thresholds: dict[str, float],
     x0: int,
     y0: int,
     max_dist: float = 15.0,
     coord_scale: float = 1.0,
+    model_weight: float = DEFAULT_ASTIR_WEIGHT,
 ) -> list[dict]:
-    """Match each cell to the nearest CSV row within max_dist pixels (CSV coordinate space).
+    """Assign cell type/state by nearest-row lookup + probabilistic fusion."""
+    model_weight = float(np.clip(model_weight, 0.0, 1.0))
+    prior_weight = 1.0 - model_weight
 
-    Local centroid [lx, ly] is converted to global H&E coordinates, then scaled by
-    coord_scale to match the CSV coordinate space:
-        gx_csv = (x0 + lx) * coord_scale
-        gy_csv = (y0 + ly) * coord_scale
-
-    For CRC02: H&E is 0.325 µm/px, CSV coordinates are in multiplex space (0.650 µm/px),
-    so coord_scale = 0.325 / 0.650 = 0.5.
-
-    Matched cells (dist <= max_dist):
-      - cell_type from expanded marker panel (authoritative)
-      - cell_type_confidence = 'high' if marker_type == cellvit_type, else 'low'
-      - cell_state from assign_state()
-
-    No-match cells (dist > max_dist):
-      - cell_type from CELLVIT_TYPE_MAP[type_cellvit]
-      - cell_type_confidence = 'low' (no marker validation)
-      - cell_state = 'other' (state requires marker data)
-    """
     for cell in cells:
         try:
             centroid = cell.get("centroid", [0, 0])
@@ -215,24 +402,53 @@ def match_cells(
 
             dist, idx = kdtree.query([gx, gy])
             type_cellvit = int(cell.get("type_cellvit", 0))
-            cellvit_type = CELLVIT_TYPE_MAP.get(type_cellvit, "other")
+            prior_probs = cellvit_prior_probs(type_cellvit)
+            prior_type = _argmax_label(prior_probs)
 
             if dist <= max_dist:
-                matched_row = df.iloc[idx]
-                marker_type = assign_type(matched_row, thresholds)
-                cell["cell_type"] = marker_type
-                cell["cell_type_confidence"] = (
-                    "high" if marker_type == cellvit_type else "low"
-                )
-                cell["cell_state"] = assign_state(matched_row, thresholds, type_cellvit)
+                row = df.iloc[idx]
+                model_probs = {c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES}
+                model_type = _argmax_label(model_probs)
+                fused_probs = {
+                    c: model_weight * model_probs[c] + prior_weight * prior_probs[c]
+                    for c in CELL_TYPES
+                }
+                final_type = _argmax_label(fused_probs)
+                mismatch = model_type != prior_type
+                confidence = confidence_from_probs(fused_probs, mismatch)
+                state = assign_state(row, state_thresholds, type_cellvit)
             else:
-                cell["cell_type"] = cellvit_type
-                cell["cell_type_confidence"] = "low"
-                cell["cell_state"] = "other"
+                model_probs = {c: 0.0 for c in CELL_TYPES}
+                model_type = "unmatched"
+                fused_probs = prior_probs.copy()
+                final_type = prior_type
+                mismatch = False
+                confidence = "low"
+                state = "dead" if type_cellvit == 4 else "quiescent"
+
+            cell["cell_type"] = final_type
+            cell["cell_type_confidence"] = confidence
+            cell["cell_state"] = state
+            cell["type_astir"] = model_type
+            cell["type_cellvit_prior"] = prior_type
+            cell["is_mismatch"] = mismatch
+            for cls in CELL_TYPES:
+                cell[f"p_final_{cls}"] = float(fused_probs[cls])
+                cell[f"p_model_{cls}"] = float(model_probs[cls])
+
         except Exception:
-            cell["cell_type"] = "other"
+            type_cellvit = int(cell.get("type_cellvit", 0))
+            prior_probs = cellvit_prior_probs(type_cellvit)
+            prior_type = _argmax_label(prior_probs)
+            cell["cell_type"] = prior_type
             cell["cell_type_confidence"] = "low"
-            cell["cell_state"] = "other"
+            cell["cell_state"] = "dead" if type_cellvit == 4 else "quiescent"
+            cell["type_astir"] = "error"
+            cell["type_cellvit_prior"] = prior_type
+            cell["is_mismatch"] = False
+            for cls in CELL_TYPES:
+                cell[f"p_final_{cls}"] = float(prior_probs[cls])
+                cell[f"p_model_{cls}"] = 0.0
 
     return cells
 
@@ -243,11 +459,7 @@ def rasterize_cells(
     color_key: str,
     color_map: dict[str, tuple[int, int, int, int]],
 ) -> np.ndarray:
-    """Draw filled cell contours into a (patch_size, patch_size, 4) uint8 RGBA array.
-    For each cell: look up color from color_map[cell[color_key]].
-    Draw filled polygon from cell['contour'] (list of [x,y] pairs) using cv2.fillPoly.
-    Returns zeros (fully transparent) where no cell.
-    Skip cells whose contour has fewer than 3 points."""
+    """Draw filled cell contours into a uint8 RGBA image."""
     canvas = np.zeros((patch_size, patch_size, 4), dtype=np.uint8)
 
     for cell in cells:
@@ -255,88 +467,13 @@ def rasterize_cells(
         if len(contour) < 3:
             continue
 
-        label = cell.get(color_key, "other")
+        label = str(cell.get(color_key, "other"))
         rgba = color_map.get(label, color_map.get("other", (150, 150, 150, 150)))
 
         pts = np.array(contour, dtype=np.int32).reshape((-1, 1, 2))
         cv2.fillPoly(canvas, [pts], rgba)
 
     return canvas
-
-
-def compute_thresholds(
-    df: pd.DataFrame,
-    default_type_percentile: float = 95,
-    default_state_percentile: float = 75,
-    config_overrides: dict[str, float] | None = None,
-) -> dict[str, float]:
-    """Compute per-marker thresholds from the full CSV.
-
-    Type markers: each marker in TYPE_MARKERS groups uses default_type_percentile
-    unless overridden in config_overrides.
-
-    State markers:
-      Ki67, PCNA, Vimentin: default_state_percentile (default 75)
-      Ecadherin low (EMT):  25th percentile
-      Ecadherin high:       50th percentile
-
-    config_overrides: dict mapping marker name to percentile to use instead of default.
-    Missing columns get threshold=inf (silently skipped).
-    """
-    if config_overrides is None:
-        config_overrides = {}
-
-    thresholds: dict[str, float] = {}
-
-    # All type markers (flattened from groups)
-    all_type_markers = [m for markers in TYPE_MARKERS.values() for m in markers]
-    for marker in all_type_markers:
-        percentile = config_overrides.get(marker, default_type_percentile)
-        if marker in df.columns:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                thresholds[marker] = float(
-                    np.nanpercentile(df[marker].to_numpy(dtype=float), percentile)
-                )
-        else:
-            logging.warning(
-                "Marker '%s' not found in CSV; threshold set to inf.", marker
-            )
-            thresholds[marker] = float("inf")
-
-    # State markers — must not overlap with TYPE_MARKERS groups (would overwrite type threshold).
-    # Ki67, PCNA, Vimentin are currently state-only; Keratin/CD45/etc. are type-only.
-    for marker in ["Ki67", "PCNA", "Vimentin"]:
-        percentile = config_overrides.get(marker, default_state_percentile)
-        if marker in df.columns:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                thresholds[marker] = float(
-                    np.nanpercentile(df[marker].to_numpy(dtype=float), percentile)
-                )
-        else:
-            logging.warning(
-                "Marker '%s' not found in CSV; threshold set to inf.", marker
-            )
-            thresholds[marker] = float("inf")
-
-    # Ecadherin: 25th pct = low (EMT); 50th pct = high (intact junctions)
-    ecad_low_pct = config_overrides.get("Ecadherin", 25)
-    ecad_high_pct = config_overrides.get("Ecadherin_high", 50)
-    if "Ecadherin" in df.columns:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            vals = df["Ecadherin"].to_numpy(dtype=float)
-            thresholds["Ecadherin"] = float(np.nanpercentile(vals, ecad_low_pct))
-            thresholds["Ecadherin_high"] = float(np.nanpercentile(vals, ecad_high_pct))
-    else:
-        logging.warning(
-            "Marker 'Ecadherin' not found in CSV; thresholds set to extremes."
-        )
-        thresholds["Ecadherin"] = float("-inf")
-        thresholds["Ecadherin_high"] = float("inf")
-
-    return thresholds
 
 
 # ---------------------------------------------------------------------------
@@ -365,15 +502,54 @@ def main() -> None:
     log = logging.getLogger(__name__)
 
     parser = argparse.ArgumentParser(
-        description="Stage 3: assign cell types/states and rasterize contours."
+        description="Stage 3: Astir-first type/state assignment and contour rasterization."
     )
     parser.add_argument(
         "--cellvit-dir",
         required=True,
-        help="Directory of {i}_{j}.json files from CellViT.",
+        help="Directory of {x0}_{y0}.json files from CellViT.",
     )
     parser.add_argument(
-        "--features-csv", required=True, help="CRC02.csv with Xt, Yt, marker columns."
+        "--features-csv",
+        default=None,
+        help=(
+            "Optional precomputed features CSV with Xt/Yt + marker columns. "
+            "If omitted, features are extracted from CellViT + --multiplex-dir."
+        ),
+    )
+    parser.add_argument(
+        "--multiplex-dir",
+        default=None,
+        help=(
+            "Directory of {x0}_{y0}.npy multiplex patches (C,H,W). Required when "
+            "--features-csv is omitted."
+        ),
+    )
+    parser.add_argument(
+        "--auto-features-csv",
+        default=None,
+        help=(
+            "Output path for auto-extracted CellViT+MX features CSV. "
+            "Default: <out>/cellvit_mx_features.csv."
+        ),
+    )
+    parser.add_argument(
+        "--channels",
+        nargs="+",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Optional channel names in multiplex patch order for auto-extraction. "
+            "If omitted, uses index.json channels."
+        ),
+    )
+    parser.add_argument(
+        "--metadata-csv",
+        default=None,
+        help=(
+            "Optional channel metadata CSV used only if --channels and index.json "
+            "channels are unavailable during auto-extraction."
+        ),
     )
     parser.add_argument(
         "--index", required=True, help="processed/index.json (patch grid)."
@@ -391,44 +567,64 @@ def main() -> None:
         "--coord-scale",
         type=float,
         default=1.0,
-        help="Scale factor applied to H&E global coordinates before KDTree query. "
-        "Set to he_mpp/mx_mpp (e.g. 0.5 when H&E is 0.325 µm/px and MX is 0.65 µm/px).",
+        help="Scale applied to H&E global coordinates before KDTree query.",
     )
     parser.add_argument(
         "--csv-mpp",
         type=float,
         default=0.65,
-        help="µm/px of the CSV coordinate space. Divides Xt/Yt by this value to "
-        "convert from µm to MX px (default: 0.65 for WD-76845-097).",
+        help="Only used for external --features-csv: convert µm coordinates to px via divide.",
     )
     parser.add_argument(
-        "--type-percentile",
+        "--classifier",
+        choices=["astir", "rule"],
+        default="astir",
+        help="Cell-type classifier: astir (default) or rule fallback.",
+    )
+    parser.add_argument(
+        "--allow-astir-fallback",
+        action="store_true",
+        help="If Astir is unavailable, fallback to rule classifier instead of failing.",
+    )
+    parser.add_argument(
+        "--astir-weight",
         type=float,
-        default=95.0,
-        help="Percentile for type marker thresholds (default: 95). "
-        "Per-marker overrides via --thresholds-config take precedence.",
+        default=DEFAULT_ASTIR_WEIGHT,
+        help="Weight of model probabilities in fused type score (default: 0.85).",
     )
     parser.add_argument(
         "--state-percentile",
         type=float,
         default=75.0,
-        help="Percentile for state marker thresholds Ki67/PCNA/Vimentin (default: 75).",
+        help="Percentile for Ki67 proliferative threshold (default: 75).",
+    )
+    parser.add_argument(
+        "--type-percentile",
+        type=float,
+        default=95.0,
+        help="Deprecated in Astir-first mode; accepted for CLI compatibility.",
     )
     parser.add_argument(
         "--thresholds-config",
         default=None,
-        help="Path to JSON file with per-marker percentile overrides, "
-        'e.g. {"CD3": 85, "CDX2": 90}.',
+        help="Deprecated in Astir-first mode; accepted for CLI compatibility.",
     )
     args = parser.parse_args()
 
+    if args.thresholds_config is not None:
+        log.warning("--thresholds-config is ignored in Astir-first mode.")
+    if args.type_percentile != 95.0:
+        log.warning("--type-percentile is ignored in Astir-first mode.")
+
     cellvit_dir = pathlib.Path(args.cellvit_dir)
-    features_csv = pathlib.Path(args.features_csv)
+    features_csv: pathlib.Path | None = (
+        pathlib.Path(args.features_csv) if args.features_csv else None
+    )
     index_path = pathlib.Path(args.index)
     out_dir = pathlib.Path(args.out)
-    max_dist = args.max_dist
-    coord_scale = args.coord_scale
-    log.info("Coord scale: %.4f (H&E px → CSV px)", coord_scale)
+    max_dist = float(args.max_dist)
+    coord_scale = float(args.coord_scale)
+    astir_weight = float(np.clip(args.astir_weight, 0.0, 1.0))
 
     # Output subdirectories
     types_dir = out_dir / "cell_types"
@@ -436,8 +632,38 @@ def main() -> None:
     types_dir.mkdir(parents=True, exist_ok=True)
     states_dir.mkdir(parents=True, exist_ok=True)
 
+    auto_extracted = False
+    if features_csv is None:
+        if not args.multiplex_dir:
+            parser.error(
+                "Either --features-csv must be provided, or --multiplex-dir "
+                "must be set for CellViT+MX auto-extraction."
+            )
+        auto_extracted = True
+        features_csv = (
+            pathlib.Path(args.auto_features_csv)
+            if args.auto_features_csv
+            else out_dir / "cellvit_mx_features.csv"
+        )
+        log.info(
+            "No --features-csv provided. Extracting CellViT+MX features to: %s",
+            features_csv,
+        )
+        extract_cell_features_to_csv(
+            cellvit_dir=cellvit_dir,
+            multiplex_dir=pathlib.Path(args.multiplex_dir),
+            index_path=index_path,
+            out_csv=features_csv,
+            channels=args.channels,
+            metadata_csv=(
+                pathlib.Path(args.metadata_csv) if args.metadata_csv else None
+            ),
+            coord_scale=coord_scale,
+            logger=log,
+        )
+
     # ------------------------------------------------------------------
-    # 1. Load CSV, compute thresholds, build KDTree
+    # 1. Load feature table and compute probabilities
     # ------------------------------------------------------------------
     log.info("Loading features CSV: %s", features_csv)
     df = pd.read_csv(features_csv)
@@ -446,51 +672,46 @@ def main() -> None:
     x_col, y_col = _resolve_coord_cols(df)
     log.info("  Using coordinate columns: (%s, %s)", x_col, y_col)
 
-    config_overrides: dict[str, float] = {}
-    if args.thresholds_config:
-        config_path = pathlib.Path(args.thresholds_config)
-        with config_path.open(encoding="utf-8") as fh:
-            config_overrides = json.load(fh)
-        log.info("Loaded threshold config from %s: %s", config_path, config_overrides)
-
-    log.info(
-        "Computing per-marker thresholds (type_pct=%.0f, state_pct=%.0f) …",
-        args.type_percentile,
-        args.state_percentile,
-    )
-    thresholds = compute_thresholds(
-        df,
-        default_type_percentile=args.type_percentile,
-        default_state_percentile=args.state_percentile,
-        config_overrides=config_overrides,
-    )
-    for marker, val in thresholds.items():
-        log.info("  %-12s → %.4f", marker, val)
-
-    if args.csv_mpp != 1.0:
+    if auto_extracted and args.csv_mpp != 1.0:
+        log.warning(
+            "Ignoring --csv-mpp=%.4f for auto-extracted features (already in query space).",
+            args.csv_mpp,
+        )
+    elif args.csv_mpp != 1.0:
         log.info("  Converting CSV coords from µm to px (÷ %.4f) …", args.csv_mpp)
         df = df.copy()
         df[x_col] = df[x_col] / args.csv_mpp
         df[y_col] = df[y_col] / args.csv_mpp
 
+    probs, classifier_used, marker_coverage = compute_type_probabilities(
+        df,
+        classifier=args.classifier,
+        allow_astir_fallback=args.allow_astir_fallback,
+        log=log,
+    )
+    for cls in CELL_TYPES:
+        df[f"p_model_{cls}"] = probs[cls].to_numpy(dtype=float)
+
+    state_thresholds = compute_state_thresholds(df, state_percentile=args.state_percentile)
+    log.info("State thresholds: %s", state_thresholds)
+
+    # ------------------------------------------------------------------
+    # 2. Build KDTree and load patch index
+    # ------------------------------------------------------------------
     log.info("Building KDTree …")
     kdtree = build_csv_index(df, x_col, y_col)
     log.info("  KDTree built on %d points.", kdtree.n)
 
-    # ------------------------------------------------------------------
-    # 2. Load index.json
-    # ------------------------------------------------------------------
     log.info("Loading patch index: %s", index_path)
     with index_path.open(encoding="utf-8") as fh:
         index = json.load(fh)
-
     patches = index.get("patches", [])
     log.info("  %d patches in index.", len(patches))
 
     # ------------------------------------------------------------------
-    # 3–6. Iterate patches
+    # 3. Iterate patches
     # ------------------------------------------------------------------
-    patch_size = index.get("patch_size", 256)
+    patch_size = int(index.get("patch_size", 256))
     processed = 0
     skipped = 0
     total_cells = 0
@@ -498,12 +719,13 @@ def main() -> None:
     per_patch_summary: dict[str, dict] = {}
     global_type_counts: Counter = Counter()
     global_state_counts: Counter = Counter()
-    global_agreement_counts: Counter = Counter()
+    global_confidence_counts: Counter = Counter()
+    global_mismatch_count = 0
     global_conflict_pairs: Counter = Counter()
 
     for patch_meta in patches:
-        x0 = patch_meta["x0"]
-        y0 = patch_meta["y0"]
+        x0 = int(patch_meta["x0"])
+        y0 = int(patch_meta["y0"])
         patch_id = f"{x0}_{y0}"
 
         json_path = cellvit_dir / f"{patch_id}.json"
@@ -512,37 +734,35 @@ def main() -> None:
             skipped += 1
             continue
 
-        with json_path.open() as fh:
+        with json_path.open(encoding="utf-8") as fh:
             cells: list[dict] = json.load(fh).get("cells", [])
 
-        # 4. Match + assign
         cells = match_cells(
-            cells, kdtree, df, thresholds, x0, y0, max_dist, coord_scale
+            cells=cells,
+            kdtree=kdtree,
+            df=df,
+            state_thresholds=state_thresholds,
+            x0=x0,
+            y0=y0,
+            max_dist=max_dist,
+            coord_scale=coord_scale,
+            model_weight=astir_weight,
         )
         total_cells += len(cells)
 
-        # Accumulate agreement stats
         for c in cells:
-            conf = c.get("cell_type_confidence", "low")
-            global_agreement_counts[conf] += 1
-            # Only log conflict_pairs for matched cells where types truly conflict
-            # (not for no-match fallback cells where cell_type IS the CellViT type)
-            if conf == "low":
-                marker_t = c.get("cell_type", "other")
-                cv_t = CELLVIT_TYPE_MAP.get(int(c.get("type_cellvit", 0)), "other")
-                if marker_t != cv_t:
-                    key = f"marker={marker_t},cellvit={cv_t}"
-                    global_conflict_pairs[key] += 1
+            global_confidence_counts[c.get("cell_type_confidence", "low")] += 1
+            if bool(c.get("is_mismatch", False)):
+                global_mismatch_count += 1
+                key = f"model={c.get('type_astir')},cellvit={c.get('type_cellvit_prior')}"
+                global_conflict_pairs[key] += 1
 
-        # 5. Rasterize
         type_img = rasterize_cells(cells, patch_size, "cell_type", CELL_TYPE_COLORS)
         state_img = rasterize_cells(cells, patch_size, "cell_state", CELL_STATE_COLORS)
 
-        # 6. Save PNGs
         Image.fromarray(type_img, mode="RGBA").save(types_dir / f"{patch_id}.png")
         Image.fromarray(state_img, mode="RGBA").save(states_dir / f"{patch_id}.png")
 
-        # 7. Accumulate summary counts
         type_counts = Counter(c.get("cell_type", "other") for c in cells)
         state_counts = Counter(c.get("cell_state", "other") for c in cells)
         per_patch_summary[patch_id] = {
@@ -557,40 +777,48 @@ def main() -> None:
 
         processed += 1
         if processed % 50 == 0:
-            log.info(
-                "  Progress: %d patches processed, %d skipped …", processed, skipped
-            )
+            log.info("  Progress: %d patches processed, %d skipped …", processed, skipped)
 
     # ------------------------------------------------------------------
-    # 8. Save cell_summary.json
+    # 4. Summary
     # ------------------------------------------------------------------
+    mismatch_rate = float(global_mismatch_count / total_cells) if total_cells else 0.0
+
     summary = {
         "n_patches": processed,
         "n_cells": total_cells,
+        "feature_source": "cellvit_mx_auto" if auto_extracted else "features_csv",
+        "features_csv": str(features_csv),
+        "classifier_requested": args.classifier,
+        "classifier_used": classifier_used,
+        "astir_first": classifier_used == "astir",
+        "astir_weight": astir_weight,
         "coord_scale": coord_scale,
-        "type_percentile": args.type_percentile,
         "state_percentile": args.state_percentile,
-        "thresholds_config": args.thresholds_config,
         "cell_types": dict(global_type_counts),
         "cell_states": dict(global_state_counts),
-        "agreement": dict(global_agreement_counts),
+        "confidence": dict(global_confidence_counts),
+        "mismatch_count": int(global_mismatch_count),
+        "mismatch_rate": mismatch_rate,
         "conflict_pairs": dict(global_conflict_pairs),
+        "marker_coverage": marker_coverage,
+        "non_typing_markers": list(NON_TYPING_MARKERS),
         "per_patch": per_patch_summary,
     }
+
     summary_path = out_dir / "cell_summary.json"
-    with summary_path.open("w") as fh:
+    with summary_path.open("w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
     log.info("Summary written to %s", summary_path)
 
-    # ------------------------------------------------------------------
-    # 9. Log global summary
-    # ------------------------------------------------------------------
     log.info("Done.")
     log.info("  Patches processed : %d", processed)
     log.info("  Patches skipped   : %d", skipped)
     log.info("  Total cells       : %d", total_cells)
     log.info("  Cell types  (global): %s", dict(global_type_counts))
     log.info("  Cell states (global): %s", dict(global_state_counts))
+    log.info("  Confidence (global): %s", dict(global_confidence_counts))
+    log.info("  Mismatch rate      : %.4f", mismatch_rate)
     log.info("  Cell type PNGs    → %s", types_dir)
     log.info("  Cell state PNGs   → %s", states_dir)
 

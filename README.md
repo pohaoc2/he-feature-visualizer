@@ -21,7 +21,8 @@ Given a pair of H&E and multiplex OME-TIFF images, this pipeline:
 ```
 stages/
   patchify.py            # Stage 1: extract 256×256 H&E patches + multiplex arrays + ECC registration
-  assign_cells.py        # Stage 3: assign cell types from CellViT + multiplex markers
+  extract_cell_features.py # Stage 2.5: extract CellViT-aligned MX marker features to CSV
+  assign_cells.py        # Stage 3: assign cell types/states (CSV or auto CellViT+MX)
   multiplex_layers.py    # Stage 4: derive vasculature/signaling layers
 utils/
   normalize.py           # percentile_norm, percentile_to_uint8
@@ -225,15 +226,53 @@ Cell type IDs used by CellViT:
 
 ## Stage 3 — Cell Type Assignment
 
-Assign cell types and states using CellViT detections combined with multiplex marker features:
+Assign cell types and states using **Astir-first probabilistic typing** plus CellViT priors.
+
+Stage 3 label schema:
+- Cell type: `cancer`, `immune`, `healthy`
+- Cell state: `dead`, `proliferative`, `quiescent`
+
+CellViT `type_cellvit=4` is a dead-state override.
+
+### Mode A: Existing workflow (precomputed features CSV)
 
 ```bash
 python -m stages.assign_cells \
-  --cellvit-dir processed_wd/cellvit/ \
-  --features-csv data/WD-76845-097.csv \
-  --out processed_wd/ \
-  --index processed_wd/index.json \
-  --coord-scale 0.5
+  --cellvit-dir processed_crc33_crop/cellvit/ \
+  --features-csv processed_crc33_crop/cellvit_mx_features.csv \
+  --out processed_crc33_crop/ \
+  --index processed_crc33_crop/index.json \
+  --coord-scale 1.0 \
+  --classifier astir \
+  --allow-astir-fallback
+```
+
+### Mode B: Auto-extract features from CellViT + multiplex patches
+
+If `--features-csv` is omitted, Stage 3 can build one automatically from
+CellViT contours and `processed_wd/multiplex/{x0}_{y0}.npy`.
+
+```bash
+python -m stages.assign_cells \
+  --cellvit-dir processed_crc33_crop/cellvit/ \
+  --multiplex-dir processed_crc33_crop/multiplex/ \
+  --index processed_crc33_crop/index.json \
+  --out processed_crc33_crop/ \
+  --classifier astir \
+  --allow-astir-fallback
+```
+
+This writes `processed_crc33_crop/cellvit_mx_features.csv` and then uses it for
+assignment.
+
+### Optional standalone extraction
+
+```bash
+python -m stages.extract_cell_features \
+  --cellvit-dir processed_crc33_crop/cellvit/ \
+  --multiplex-dir processed_crc33_crop/multiplex/ \
+  --index processed_crc33_crop/index.json \
+  --out-csv processed_crc33_crop/cellvit_mx_features.csv
 ```
 
 ---
@@ -247,7 +286,7 @@ Outputs per patch:
 - `processed_wd/vasculature/{x0}_{y0}.png` (RGBA vessel overlay)
 - `processed_wd/vasculature_mask/{x0}_{y0}.npy` (bool vessel mask)
 - `processed_wd/oxygen/{x0}_{y0}.png` (oxygen proxy)
-- `processed_wd/glucose/{x0}_{y0}.png` (glucose proxy)
+- `processed_wd/glucose/{x0}_{y0}.png` (glucose proxy)f
 
 ### Legacy-compatible run (default models)
 
@@ -360,7 +399,7 @@ Panels shown per patch: original location · H&E · multiplex channel · cell se
 
 ### Overlay modes
 
-- **All Cells** — colored by inferred type (tumor / immune / stromal / other)
+- **All Cells** — colored by inferred type (`cancer` / `immune` / `healthy`)
 - **Vasculature** — CD31⁺ endothelial cells in red
 - **Immune** — CD45⁺ cells colored by subtype (CD8a, CD68, FOXP3, CD4, CD20)
 
@@ -368,20 +407,12 @@ At low zoom a kernel-density heatmap is shown; zoom past level 3 for individual 
 
 ### Cell type assignment
 
-Thresholds are the **95th percentile** of each marker across all cells.
+Stage 3 now uses an **Astir-first probabilistic classifier** (with optional rule fallback):
 
-
-| Mode        | Marker        | Color  |
-| ----------- | ------------- | ------ |
-| Tumor       | Keratin > p95 | Pink   |
-| Immune      | CD45 > p95    | Green  |
-| Stromal     | aSMA > p95    | Orange |
-| Vasculature | CD31 > p95    | Red    |
-| CD8a        | CD8a > p95    | Blue   |
-| CD68        | CD68 > p95    | Green  |
-| FOXP3       | FOXP3 > p95   | Purple |
-| CD4         | CD4 > p95     | Yellow |
-| CD20        | CD20 > p95    | Cyan   |
+- Type labels: `cancer`, `immune`, `healthy`
+- State labels: `dead`, `proliferative`, `quiescent`
+- Fusion: `P_final = 0.85 * P_model + 0.15 * P_cellvit_prior`
+- Dead-state override: `type_cellvit == 4 -> dead`
 
 
 ---

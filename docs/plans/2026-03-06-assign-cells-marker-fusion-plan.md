@@ -1,6 +1,9 @@
 # Assign Cells Marker-CellViT Fusion — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Update (2026-03-14):** Stage 3 now also supports dual mode with
+> auto-extracted CellViT+MX features CSV when `--features-csv` is omitted.
+> This document still describes the original CSV-matching implementation path.
 
 **Goal:** Expand the cell type marker panel, add CellViT-based fallback for no-match cells, and track agreement confidence between marker and morphology signals.
 
