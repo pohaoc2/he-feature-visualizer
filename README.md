@@ -268,6 +268,13 @@ python -m stages.assign_cells \
 This writes `processed_crc33_crop/cellvit_mx_features.csv` and then uses it for
 assignment.
 
+Stage 3 outputs now include:
+
+- `cell_types/{x0}_{y0}.png`
+- `cell_states/{x0}_{y0}.png`
+- `cell_summary.json`
+- `cell_assignments.csv` with one row per matched cell for downstream reporting
+
 ### Optional standalone extraction
 
 ```bash
@@ -400,11 +407,11 @@ Panels shown per patch: original location · H&E · multiplex channel · cell se
 
 ---
 
-### Scientific-Vis Figure: MX + CellViT + Type/State
+### Scientific-Vis Figure: CellViT vs Astir Patch Comparison
 
-For a publication-style patch figure (H&E, MX marker channel, CellViT contours, inferred
-cell type, inferred cell state), run Stage 3 in auto-feature mode and render with
-`tools.scientific_vis_cellvit_mx`.
+For a publication-style patch comparison figure (H&E, MX marker channel, CellViT
+contours, mapped CellViT type, Astir type, final fused type, cell state, and
+evidence summary), run Stage 3 and render with `tools.scientific_vis_cellvit_mx`.
 
 ```bash
 # 1) Stage 3: auto-extract CellViT+MX features and assign type/state
@@ -416,18 +423,19 @@ python -m stages.assign_cells \
   --classifier astir \
   --allow-astir-fallback
 
-# 2) Render one patch with an immune marker channel (CD45)
+# 2) Render one patch using the auto-selected evidence marker
 python -m tools.scientific_vis_cellvit_mx \
   --processed processed_crc33_crop_demo/ \
   --patch 256_256 \
-  --mx-marker CD45 \
+  --assignments-csv processed_crc33_crop_demo/cell_assignments.csv \
   --out-prefix processed_crc33_crop_demo/scivis_patch_256_256_cd45 \
   --formats png,pdf
 
-# 3) Render one patch with a state marker channel (Ki67)
+# 3) Override the marker if you want a specific channel
 python -m tools.scientific_vis_cellvit_mx \
   --processed processed_crc33_crop_demo/ \
   --patch 256_256 \
+  --assignments-csv processed_crc33_crop_demo/cell_assignments.csv \
   --mx-marker Ki67 \
   --out-prefix processed_crc33_crop_demo/scivis_patch_256_256_ki67 \
   --formats png,pdf
@@ -435,11 +443,36 @@ python -m tools.scientific_vis_cellvit_mx \
 
 Output figure panels:
 - A: H&E patch
-- B: Selected MX channel (marker-resolved from `index.json`)
+- B: Selected MX marker (auto-selected from `cell_assignments.csv` unless overridden)
 - C: CellViT contours on H&E
-- D: Inferred cell type overlay (`cancer`/`immune`/`healthy`)
-- E: Inferred cell state overlay (`proliferative`/`quiescent`/`dead`)
-- F: Legend
+- D: CellViT mapped 3-class overlay (`cancer`/`immune`/`healthy`)
+- E: Astir top-class overlay
+- F: Final fused type overlay
+- G: Inferred cell state overlay (`proliferative`/`quiescent`/`dead`)
+- H: Compact evidence panel with mismatch and confidence summary
+
+### Scientific-Vis Figure: Sample-Level Astir Evidence Report
+
+Use `tools.scientific_vis_astir_report` to generate a sample-level report with:
+
+- mapped CellViT vs Astir vs final class counts
+- CellViT/Astir mismatch heatmap
+- Astir or rule-fallback probability distributions
+- marker evidence grouped by final class
+- representative example cells for each final class
+
+```bash
+python -m tools.scientific_vis_astir_report \
+  --processed processed_crc33_crop_demo/ \
+  --assignments-csv processed_crc33_crop_demo/cell_assignments.csv \
+  --summary-json processed_crc33_crop_demo/cell_summary.json \
+  --out-prefix processed_crc33_crop_demo/astir_report \
+  --formats png,pdf
+```
+
+If Stage 3 ran with `--allow-astir-fallback` and Astir was unavailable, the
+report is labeled `rule_fallback` and the probability panels are explicitly
+described as rule-based outputs rather than true Astir predictions.
 
 ---
 
