@@ -320,12 +320,41 @@ def test_cli_rule_mode_creates_outputs_and_summary(tmp_path):
 
     assert (out_dir / "cell_types" / "0_0.png").exists()
     assert (out_dir / "cell_states" / "0_0.png").exists()
+    assignments_csv = out_dir / "cell_assignments.csv"
+    assert assignments_csv.exists()
 
     summary = json.loads((out_dir / "cell_summary.json").read_text())
     assert summary["classifier_requested"] == "rule"
     assert summary["classifier_used"] == "rule"
     assert summary["cell_types"].get("cancer", 0) >= 1
     assert "confidence" in summary
+    assert summary["cell_assignments_csv"] == str(assignments_csv)
+
+    assignments = pd.read_csv(assignments_csv)
+    expected_columns = {
+        "patch_id",
+        "type_cellvit",
+        "type_cellvit_prior",
+        "type_astir",
+        "cell_type",
+        "cell_state",
+        "cell_type_confidence",
+        "is_mismatch",
+        "p_model_cancer",
+        "p_model_immune",
+        "p_model_healthy",
+        "p_final_cancer",
+        "p_final_immune",
+        "p_final_healthy",
+        "Pan-CK",
+        "E-cadherin",
+        "CD45",
+        "Ki67",
+    }
+    assert expected_columns.issubset(assignments.columns)
+    assert assignments.loc[0, "patch_id"] == "0_0"
+    assert assignments.loc[0, "cell_type"] == "cancer"
+    assert assignments.loc[0, "type_cellvit_prior"] == "cancer"
 
 
 def test_cli_auto_extract_mode_rule_generates_feature_csv(tmp_path):

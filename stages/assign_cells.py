@@ -399,6 +399,10 @@ def match_cells(
             ly = float(centroid[1])
             gx = (x0 + lx) * coord_scale
             gy = (y0 + ly) * coord_scale
+            cell["centroid_x_local"] = lx
+            cell["centroid_y_local"] = ly
+            cell["centroid_x_global"] = gx
+            cell["centroid_y_global"] = gy
 
             dist, idx = kdtree.query([gx, gy])
             type_cellvit = int(cell.get("type_cellvit", 0))
@@ -417,6 +421,7 @@ def match_cells(
                 mismatch = model_type != prior_type
                 confidence = confidence_from_probs(fused_probs, mismatch)
                 state = assign_state(row, state_thresholds, type_cellvit)
+                matched_row_idx: int | None = int(idx)
             else:
                 model_probs = {c: 0.0 for c in CELL_TYPES}
                 model_type = "unmatched"
@@ -425,6 +430,7 @@ def match_cells(
                 mismatch = False
                 confidence = "low"
                 state = "dead" if type_cellvit == 4 else "quiescent"
+                matched_row_idx = None
 
             cell["cell_type"] = final_type
             cell["cell_type_confidence"] = confidence
@@ -432,6 +438,8 @@ def match_cells(
             cell["type_astir"] = model_type
             cell["type_cellvit_prior"] = prior_type
             cell["is_mismatch"] = mismatch
+            cell["matched_row_idx"] = matched_row_idx
+            cell["match_distance"] = float(dist)
             for cls in CELL_TYPES:
                 cell[f"p_final_{cls}"] = float(fused_probs[cls])
                 cell[f"p_model_{cls}"] = float(model_probs[cls])
@@ -446,11 +454,47 @@ def match_cells(
             cell["type_astir"] = "error"
             cell["type_cellvit_prior"] = prior_type
             cell["is_mismatch"] = False
+            cell["matched_row_idx"] = None
+            cell["match_distance"] = float("inf")
             for cls in CELL_TYPES:
                 cell[f"p_final_{cls}"] = float(prior_probs[cls])
                 cell[f"p_model_{cls}"] = 0.0
 
     return cells
+
+
+def build_assignment_record(
+    patch_id: str,
+    x0: int,
+    y0: int,
+    cell: dict,
+    row: pd.Series,
+) -> dict[str, object]:
+    """Build one analysis-ready row for downstream visualization tools."""
+    record = {str(k): row[k] for k in row.index}
+    record.update(
+        {
+            "patch_id": patch_id,
+            "patch_x0": int(x0),
+            "patch_y0": int(y0),
+            "type_cellvit": int(cell.get("type_cellvit", 0)),
+            "type_cellvit_prior": str(cell.get("type_cellvit_prior", "other")),
+            "type_astir": str(cell.get("type_astir", "other")),
+            "cell_type": str(cell.get("cell_type", "other")),
+            "cell_state": str(cell.get("cell_state", "other")),
+            "cell_type_confidence": str(cell.get("cell_type_confidence", "low")),
+            "is_mismatch": bool(cell.get("is_mismatch", False)),
+            "centroid_x_local": _safe_float(cell.get("centroid_x_local", 0.0)),
+            "centroid_y_local": _safe_float(cell.get("centroid_y_local", 0.0)),
+            "centroid_x_global": _safe_float(cell.get("centroid_x_global", 0.0)),
+            "centroid_y_global": _safe_float(cell.get("centroid_y_global", 0.0)),
+            "match_distance": _safe_float(cell.get("match_distance", float("inf"))),
+        }
+    )
+    for cls in CELL_TYPES:
+        record[f"p_model_{cls}"] = _safe_float(cell.get(f"p_model_{cls}", 0.0))
+        record[f"p_final_{cls}"] = _safe_float(cell.get(f"p_final_{cls}", 0.0))
+    return record
 
 
 def rasterize_cells(
@@ -716,6 +760,8 @@ def main() -> None:
     skipped = 0
     total_cells = 0
 
+    assignments_path = out_dir / "cell_assignments.csv"
+    assignment_records: list[dict[str, object]] = []
     per_patch_summary: dict[str, dict] = {}
     global_type_counts: Counter = Counter()
     global_state_counts: Counter = Counter()
@@ -756,6 +802,18 @@ def main() -> None:
                 global_mismatch_count += 1
                 key = f"model={c.get('type_astir')},cellvit={c.get('type_cellvit_prior')}"
                 global_conflict_pairs[key] += 1
+            matched_row_idx = c.get("matched_row_idx")
+            if matched_row_idx is None:
+                continue
+            assignment_records.append(
+                build_assignment_record(
+                    patch_id=patch_id,
+                    x0=x0,
+                    y0=y0,
+                    cell=c,
+                    row=df.iloc[int(matched_row_idx)],
+                )
+            )
 
         type_img = rasterize_cells(cells, patch_size, "cell_type", CELL_TYPE_COLORS)
         state_img = rasterize_cells(cells, patch_size, "cell_state", CELL_STATE_COLORS)
@@ -783,12 +841,41 @@ def main() -> None:
     # 4. Summary
     # ------------------------------------------------------------------
     mismatch_rate = float(global_mismatch_count / total_cells) if total_cells else 0.0
+    assignment_columns = list(
+        dict.fromkeys(
+            [
+        "patch_id",
+        "patch_x0",
+        "patch_y0",
+        "type_cellvit",
+        "type_cellvit_prior",
+        "type_astir",
+        "cell_type",
+        "cell_state",
+        "cell_type_confidence",
+        "is_mismatch",
+        "centroid_x_local",
+        "centroid_y_local",
+        "centroid_x_global",
+        "centroid_y_global",
+        "match_distance",
+        *list(df.columns),
+        *(f"p_model_{cls}" for cls in CELL_TYPES),
+        *(f"p_final_{cls}" for cls in CELL_TYPES),
+            ]
+        )
+    )
+    pd.DataFrame.from_records(assignment_records, columns=assignment_columns).to_csv(
+        assignments_path,
+        index=False,
+    )
 
     summary = {
         "n_patches": processed,
         "n_cells": total_cells,
         "feature_source": "cellvit_mx_auto" if auto_extracted else "features_csv",
         "features_csv": str(features_csv),
+        "cell_assignments_csv": str(assignments_path),
         "classifier_requested": args.classifier,
         "classifier_used": classifier_used,
         "astir_first": classifier_used == "astir",
@@ -810,6 +897,7 @@ def main() -> None:
     with summary_path.open("w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
     log.info("Summary written to %s", summary_path)
+    log.info("Assignments CSV written to %s", assignments_path)
 
     log.info("Done.")
     log.info("  Patches processed : %d", processed)
