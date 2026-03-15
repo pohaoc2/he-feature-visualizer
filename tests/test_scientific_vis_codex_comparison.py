@@ -134,3 +134,14 @@ def test_example_selection_agree_medium_disagree() -> None:
     disagree = examples.get("disagree")
     assert disagree is not None
     assert abs(float(disagree["codex_margin"]) - 0.70) < 1e-6
+
+
+def test_placeholder_when_disagree_bucket_empty() -> None:
+    """When all rows are non-mismatch, disagree bucket returns None."""
+    df = _selection_df().copy()
+    df["is_mismatch"] = False   # no mismatches
+    examples = comp._select_examples(df)
+    assert examples["disagree"] is None
+    # agree and medium still selected
+    assert examples["agree"] is not None
+    assert examples["medium"] is not None
