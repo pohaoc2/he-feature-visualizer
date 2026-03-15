@@ -248,3 +248,85 @@ def _plot_summary_panel(
     ax.text(0.05, 0.95, "\n".join(lines), transform=ax.transAxes,
             va="top", ha="left", fontsize=10, family="monospace",
             linespacing=1.6)
+
+
+def _plot_triptych(
+    fig: plt.Figure,
+    subplot_spec,
+    df_class: pd.DataFrame,
+    class_name: str,
+    panel_label: str,
+    processed_dir: Path,
+    norm_vals: dict[str, np.ndarray],
+    markers: dict[str, str],
+    all_indices: pd.Index,
+) -> None:
+    """Render one class triptych (header + 3 H&E crops + 3 marker bars).
+
+    all_indices: index of the full filtered assignments_df, used to map
+    selected row's integer position back to norm_vals array index.
+    """
+    inner = subplot_spec.subgridspec(
+        3, 3,
+        height_ratios=[0.15, 1.1, 0.85],
+        hspace=0.06,
+        wspace=0.12,
+    )
+
+    # Header row (spans all 3 cols)
+    ax_header = fig.add_subplot(inner[0, :])
+    ax_header.axis("off")
+    ax_header.text(
+        0.02, 0.5,
+        f"{panel_label}   {class_name.capitalize()}",
+        transform=ax_header.transAxes,
+        va="center", fontsize=11, fontweight="bold",
+        color=TYPE_COLORS.get(class_name, "#333333"),
+    )
+
+    # Select examples
+    examples = _select_examples(df_class)
+    spine_color = TYPE_COLORS.get(class_name, "#333333")
+
+    for col, bucket in enumerate(("agree", "medium", "disagree")):
+        row_data = examples.get(bucket)
+
+        # H&E crop (inner row 1)
+        ax_he = fig.add_subplot(inner[1, col])
+        ax_he.set_title(BUCKET_LABELS[bucket], fontsize=9, pad=2)
+        for spine in ax_he.spines.values():
+            spine.set_edgecolor(spine_color)
+            spine.set_linewidth(1.8)
+        ax_he.set_xticks([])
+        ax_he.set_yticks([])
+
+        if row_data is not None:
+            crop = _load_he_crop(
+                processed_dir,
+                str(row_data["patch_id"]),
+                float(row_data["centroid_x_local"]),
+                float(row_data["centroid_y_local"]),
+            )
+            if crop is not None:
+                ax_he.imshow(crop)
+            else:
+                ax_he.set_facecolor("#dddddd")
+                ax_he.text(0.5, 0.5, "image\nnot found",
+                           ha="center", va="center", fontsize=7, color="#555555",
+                           transform=ax_he.transAxes)
+        else:
+            ax_he.set_facecolor("#eeeeee")
+            ax_he.text(0.5, 0.5, "no example\navailable",
+                       ha="center", va="center", fontsize=7, color="#777777",
+                       transform=ax_he.transAxes)
+
+        # Marker bar (inner row 2)
+        ax_bar = fig.add_subplot(inner[2, col])
+        if row_data is not None:
+            # Map DataFrame index label to positional index in all_indices
+            row_pos = all_indices.get_loc(row_data.name)
+            _plot_marker_bar(ax_bar, row_data, norm_vals, markers, row_index=row_pos)
+        else:
+            ax_bar.axis("off")
+            ax_bar.text(0.5, 0.5, "—", ha="center", va="center",
+                        fontsize=10, color="#aaaaaa", transform=ax_bar.transAxes)
