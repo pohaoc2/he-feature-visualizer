@@ -170,3 +170,69 @@ def test_missing_canonical_marker_renders_placeholder() -> None:
     # should not raise
     comp._plot_marker_bar(ax, row, norm_vals, markers, row_index=0)
     plt.close(fig)
+
+
+def _make_processed_codex(tmp_path: Path) -> tuple[Path, Path]:
+    """Create minimal processed dir + CSV for codex comparison smoke test."""
+    processed = tmp_path / "proc"
+    (processed / "he").mkdir(parents=True)
+
+    patch_id = "0_0"
+    # H&E patch
+    Image.fromarray(np.full((64, 64, 3), 200, dtype=np.uint8), "RGB").save(
+        processed / "he" / f"{patch_id}.png"
+    )
+
+    rows = []
+    for i, (ct, cvit, astir, mismatch) in enumerate([
+        ("cancer",  "cancer",  "cancer",  False),
+        ("cancer",  "immune",  "cancer",  True),
+        ("immune",  "immune",  "immune",  False),
+        ("immune",  "cancer",  "immune",  True),
+        ("healthy", "healthy", "healthy", False),
+        ("healthy", "cancer",  "healthy", True),
+    ]):
+        rows.append({
+            "patch_id": patch_id,
+            "cell_type": ct,
+            "cellvit_mapped_type": cvit,
+            "type_astir": astir,
+            "is_mismatch": mismatch,
+            "type_cellvit": 1,
+            "cell_type_confidence": "high",
+            "centroid_x_local": float(10 + i * 8),
+            "centroid_y_local": float(10 + i * 8),
+            "p_model_cancer":  0.80 if ct == "cancer" else 0.05,
+            "p_model_immune":  0.80 if ct == "immune" else 0.05,
+            "p_model_healthy": 0.80 if ct == "healthy" else 0.10,
+            "p_final_cancer":  0.80 if ct == "cancer" else 0.05,
+            "p_final_immune":  0.80 if ct == "immune" else 0.05,
+            "p_final_healthy": 0.80 if ct == "healthy" else 0.10,
+            "Pan-CK": float(3000 if ct == "cancer" else 100),
+            "CD45":   float(2000 if ct == "immune" else 50),
+            "SMA":    float(1500 if ct == "healthy" else 30),
+        })
+
+    csv_path = processed / "cell_assignments.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    return processed, csv_path
+
+
+def test_codex_comparison_smoke(tmp_path: Path) -> None:
+    """Full CLI run: exit code 0 and output PNG exists."""
+    processed, csv_path = _make_processed_codex(tmp_path)
+    out_prefix = processed / "codex_comparison"
+    cmd = [
+        sys.executable, "-m", "tools.scientific_vis_codex_comparison",
+        "--processed", str(processed),
+        "--assignments-csv", str(csv_path),
+        "--out-prefix", str(out_prefix),
+        "--formats", "png",
+        "--dpi", "72",
+        "--cancer-marker", "Pan-CK",
+        "--immune-marker", "CD45",
+        "--healthy-marker", "SMA",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, result.stderr
+    assert out_prefix.with_suffix(".png").exists()

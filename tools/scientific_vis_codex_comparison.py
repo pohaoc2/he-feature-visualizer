@@ -330,3 +330,114 @@ def _plot_triptych(
             ax_bar.axis("off")
             ax_bar.text(0.5, 0.5, "—", ha="center", va="center",
                         fontsize=10, color="#aaaaaa", transform=ax_bar.transAxes)
+
+
+def build_report_figure(
+    assignments_df: pd.DataFrame,
+    processed_dir: Path,
+    *,
+    markers: dict[str, str] | None = None,
+) -> plt.Figure:
+    """Build the 16×16 CellViT vs CODEX comparison figure."""
+    if markers is None:
+        markers = {
+            "cancer_marker": "Pan-CK",
+            "immune_marker": "CD45",
+            "healthy_marker": "SMA",
+        }
+
+    # Pre-filter to canonical classes only
+    df = _filter_assignable(assignments_df).copy()
+    df["codex_margin"] = _compute_codex_margin(df)
+
+    # Global percentile normalization for all canonical markers (once, across all rows)
+    norm_vals: dict[str, np.ndarray] = {}
+    for col_name in markers.values():
+        if col_name in df.columns:
+            norm_vals[col_name] = percentile_norm(df[col_name].values.astype(np.float32))
+        # if absent from CSV, omit — _plot_marker_bar renders n/a
+
+    # Outer gridspec: 4 rows × 1 col
+    # Do NOT pass hspace — constrained_layout=True manages spacing automatically.
+    fig = plt.figure(figsize=(16, 16), constrained_layout=True)
+    outer = fig.add_gridspec(4, 1, height_ratios=[1.5, 1.0, 1.0, 1.0])
+
+    # Row 0: top row (confusion + summary)
+    top_inner = outer[0].subgridspec(1, 2, width_ratios=[1.2, 0.8])
+    ax_cm = fig.add_subplot(top_inner[0, 0])
+    ax_summary = fig.add_subplot(top_inner[0, 1])
+
+    _plot_confusion_heatmap(ax_cm, df)
+    _plot_summary_panel(ax_summary, df, markers)
+
+    # Rows 1-3: per-class triptychs (B=cancer, C=immune, D=healthy)
+    panel_labels = ["B", "C", "D"]
+    for row_idx, class_name in enumerate(CELL_TYPES):
+        df_class = df[df["cell_type"] == class_name].copy()
+        _plot_triptych(
+            fig,
+            outer[row_idx + 1],
+            df_class,
+            class_name,
+            panel_labels[row_idx],
+            processed_dir,
+            norm_vals,
+            markers,
+            df.index,
+        )
+
+    return fig
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="CellViT vs CODEX cell type comparison figure."
+    )
+    parser.add_argument("--processed", required=True,
+                        help="Processed directory (for he/ patches).")
+    parser.add_argument("--assignments-csv", default=None,
+                        help="Path to cell_assignments.csv. Default: <processed>/cell_assignments.csv")
+    parser.add_argument("--out-prefix", default=None,
+                        help="Output path prefix. Default: <processed>/codex_comparison")
+    parser.add_argument("--formats", default="pdf,png",
+                        help="Comma-separated output formats (default: pdf,png).")
+    parser.add_argument("--dpi", type=int, default=300, help="Raster DPI.")
+    parser.add_argument("--cancer-marker", default="Pan-CK")
+    parser.add_argument("--immune-marker", default="CD45")
+    parser.add_argument("--healthy-marker", default="SMA")
+    args = parser.parse_args()
+
+    processed_dir = Path(args.processed)
+    assignments_path = (
+        Path(args.assignments_csv) if args.assignments_csv
+        else processed_dir / "cell_assignments.csv"
+    )
+    out_prefix = (
+        Path(args.out_prefix) if args.out_prefix
+        else processed_dir / "codex_comparison"
+    )
+    out_prefix.parent.mkdir(parents=True, exist_ok=True)
+
+    if not assignments_path.exists():
+        raise FileNotFoundError(f"Missing assignments CSV: {assignments_path}")
+
+    markers = {
+        "cancer_marker": args.cancer_marker,
+        "immune_marker": args.immune_marker,
+        "healthy_marker": args.healthy_marker,
+    }
+
+    assignments_df = load_cell_assignments(assignments_path)
+    fig = build_report_figure(assignments_df, processed_dir, markers=markers)
+
+    formats = [f.strip() for f in str(args.formats).split(",") if f.strip()] or ["png"]
+    for fmt in formats:
+        out_path = out_prefix.with_suffix(f".{fmt}")
+        fig.savefig(out_path, dpi=int(args.dpi), bbox_inches="tight")
+        print(f"Saved: {out_path}")
+
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    main()
