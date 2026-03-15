@@ -68,7 +68,7 @@ def _select_examples(df: pd.DataFrame) -> dict[str, pd.Series | None]:
     df must already have a 'codex_margin' column.
     Returns dict with keys 'agree', 'medium', 'disagree' (value is None if bucket empty).
     """
-    used: set[int] = set()
+    used: set[object] = set()
     results: dict[str, pd.Series | None] = {}
 
     # agree: is_mismatch=False, highest codex_margin
@@ -81,8 +81,9 @@ def _select_examples(df: pd.DataFrame) -> dict[str, pd.Series | None]:
             break
 
     # medium: is_mismatch=False, lowest codex_margin (least confident agreement), not already used
+    # Reverse the descending-sorted slice rather than re-sorting ascending.
     results["medium"] = None
-    for idx, row in non_mismatch.sort_values("codex_margin", ascending=True).iterrows():
+    for idx, row in non_mismatch.iloc[::-1].iterrows():
         if idx not in used:
             used.add(idx)
             results["medium"] = row
