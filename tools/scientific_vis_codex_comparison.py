@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import warnings
 from pathlib import Path
 
 if "MPLCONFIGDIR" not in os.environ:
@@ -18,7 +17,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from utils.cell_assignment_reports import load_cell_assignments, model_display_name
+from utils.cell_assignment_reports import load_cell_assignments
 from utils.normalize import percentile_norm
 
 CELL_TYPES: tuple[str, str, str] = ("cancer", "immune", "healthy")
