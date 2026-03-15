@@ -60,3 +60,40 @@ def _compute_codex_margin(df: pd.DataFrame) -> pd.Series:
         ]
         margins.append(winner - max(others))
     return pd.Series(margins, index=df.index, dtype=float)
+
+
+def _select_examples(df: pd.DataFrame) -> dict[str, pd.Series | None]:
+    """Select one cell per bucket (agree, medium, disagree) with de-duplication.
+
+    df must already have a 'codex_margin' column.
+    Returns dict with keys 'agree', 'medium', 'disagree' (value is None if bucket empty).
+    """
+    used: set[int] = set()
+    results: dict[str, pd.Series | None] = {}
+
+    # agree: is_mismatch=False, highest codex_margin
+    non_mismatch = df[~df["is_mismatch"]].sort_values("codex_margin", ascending=False)
+    results["agree"] = None
+    for idx, row in non_mismatch.iterrows():
+        if idx not in used:
+            used.add(idx)
+            results["agree"] = row
+            break
+
+    # medium: is_mismatch=False, lowest codex_margin (least confident agreement), not already used
+    results["medium"] = None
+    for idx, row in non_mismatch.sort_values("codex_margin", ascending=True).iterrows():
+        if idx not in used:
+            used.add(idx)
+            results["medium"] = row
+            break
+
+    # disagree: is_mismatch=True, highest codex_margin
+    results["disagree"] = None
+    for idx, row in df[df["is_mismatch"]].sort_values("codex_margin", ascending=False).iterrows():
+        if idx not in used:
+            used.add(idx)
+            results["disagree"] = row
+            break
+
+    return results

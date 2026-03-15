@@ -92,3 +92,45 @@ def test_codex_margin_excludes_other_cell_type() -> None:
     filtered = comp._filter_assignable(df)
     assert "other" not in filtered["cell_type"].values
     assert len(filtered) == 3
+
+
+def _selection_df() -> pd.DataFrame:
+    """DataFrame for one class with known margins and mismatch flags."""
+    return pd.DataFrame([
+        # agree candidates (is_mismatch=False): margin 0.60 and 0.20
+        {"cell_type": "cancer", "cellvit_mapped_type": "cancer", "type_astir": "cancer",
+         "is_mismatch": False, "codex_margin": 0.60,
+         "patch_id": "p0", "centroid_x_local": 10.0, "centroid_y_local": 10.0},
+        {"cell_type": "cancer", "cellvit_mapped_type": "cancer", "type_astir": "cancer",
+         "is_mismatch": False, "codex_margin": 0.20,
+         "patch_id": "p0", "centroid_x_local": 20.0, "centroid_y_local": 20.0},
+        # disagree candidates (is_mismatch=True): margin 0.70 and 0.40
+        {"cell_type": "cancer", "cellvit_mapped_type": "immune", "type_astir": "cancer",
+         "is_mismatch": True, "codex_margin": 0.70,
+         "patch_id": "p0", "centroid_x_local": 30.0, "centroid_y_local": 30.0},
+        {"cell_type": "cancer", "cellvit_mapped_type": "immune", "type_astir": "cancer",
+         "is_mismatch": True, "codex_margin": 0.40,
+         "patch_id": "p0", "centroid_x_local": 40.0, "centroid_y_local": 40.0},
+    ])
+
+
+def test_example_selection_agree_medium_disagree() -> None:
+    df = _selection_df()
+    examples = comp._select_examples(df)
+
+    # agree: highest-margin non-mismatch cell (margin 0.60)
+    agree = examples.get("agree")
+    assert agree is not None
+    assert abs(float(agree["codex_margin"]) - 0.60) < 1e-6
+
+    # medium: lowest-margin non-mismatch, not same as agree (margin 0.20)
+    medium = examples.get("medium")
+    assert medium is not None
+    assert abs(float(medium["codex_margin"]) - 0.20) < 1e-6
+    # must not be the same row as agree
+    assert medium["centroid_x_local"] != agree["centroid_x_local"]
+
+    # disagree: highest-margin mismatch cell (margin 0.70, not 0.40)
+    disagree = examples.get("disagree")
+    assert disagree is not None
+    assert abs(float(disagree["codex_margin"]) - 0.70) < 1e-6
