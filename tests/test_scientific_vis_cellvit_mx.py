@@ -7,7 +7,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from PIL import Image
+
+import tools.scientific_vis_cellvit_mx as patch_vis
 
 
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -22,6 +25,34 @@ def _rgba_overlay(shape: tuple[int, int], rgb: tuple[int, int, int]) -> np.ndarr
     out[8:24, 8:24, :3] = np.array(rgb, dtype=np.uint8)
     out[8:24, 8:24, 3] = 180
     return out
+
+
+def test_add_state_legend_contains_expected_labels() -> None:
+    fig, ax = plt.subplots()
+    patch_vis._add_state_legend(ax)
+
+    legend = ax.get_legend()
+    assert legend is not None
+    labels = [text.get_text() for text in legend.get_texts()]
+    assert labels == ["proliferative", "quiescent", "dead"]
+
+    plt.close(fig)
+
+
+def test_state_palette_is_distinct_from_type_palette() -> None:
+    assert patch_vis.CELL_STATE_COLORS["proliferative"][:3] != patch_vis.CELL_TYPE_COLORS["healthy"][:3]
+    assert patch_vis.CELL_STATE_COLORS["quiescent"][:3] != patch_vis.CELL_TYPE_COLORS["immune"][:3]
+    assert patch_vis.CELL_STATE_COLORS["dead"][:3] != patch_vis.MODEL_FINE_COLORS["treg"][:3]
+
+
+def test_state_colors_cover_all_states() -> None:
+    for state in ("proliferative", "quiescent", "dead", "other"):
+        assert state in patch_vis.CELL_STATE_COLORS, f"missing state: {state}"
+        r, g, b, a = patch_vis.CELL_STATE_COLORS[state]
+        assert 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255
+    # All four non-other states should be unique RGB triplets
+    non_other = {k: v[:3] for k, v in patch_vis.CELL_STATE_COLORS.items() if k != "other"}
+    assert len(set(non_other.values())) == len(non_other), "duplicate state colors"
 
 
 def test_patch_comparison_figure_smoke(tmp_path: Path) -> None:

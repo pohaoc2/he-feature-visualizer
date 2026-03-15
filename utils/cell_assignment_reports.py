@@ -20,6 +20,11 @@ MODEL_DISPLAY_NAMES = {
     "rule": "Rule",
     "rule_fallback": "Rule",
 }
+FINAL_COLLAPSE_GROUPS: dict[str, list[str]] = {
+    "cancer": ["epithelial"],
+    "immune": ["cd4_t", "cd8_t", "treg", "b_cell", "macrophage"],
+    "healthy": ["endothelial", "sma_stromal"],
+}
 
 
 def map_cellvit_type(type_cellvit: object, type_cellvit_prior: object | None = None) -> str:
@@ -58,6 +63,15 @@ def model_label_column(
     if "type_astir" in df.columns:
         return "type_astir"
     return "cell_type"
+
+
+def collapse_display_lines(model_col: str) -> list[str]:
+    if model_col != "type_astir_fine":
+        return []
+    return [
+        f"{final_label} <- {', '.join(subtypes)}"
+        for final_label, subtypes in FINAL_COLLAPSE_GROUPS.items()
+    ]
 
 
 def _coerce_is_mismatch(series: pd.Series) -> pd.Series:

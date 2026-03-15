@@ -173,9 +173,18 @@ def test_build_report_figure_uses_codex_fine_labels(tmp_path: Path) -> None:
     fig, _ = report.build_report_figure(assignments, summary, processed)
 
     assert "mode=codex" in fig._suptitle.get_text()
-    assert fig.axes[3].get_title() == "CODEX subtype distribution"
-    cancer_panel_text = "\n".join(text.get_text() for text in fig.axes[4].texts)
-    assert "CODEX=epithelial" in cancer_panel_text
+    titles = [ax.get_title() for ax in fig.axes]
+    assert "CellViT vs CODEX" in titles
+    assert "Cancer examples" in titles
+    assert "Immune examples" in titles
+    assert "Healthy examples" in titles
+    assert titles.count("Match") == 3
+
+    all_text = "\n".join(text.get_text() for ax in fig.axes for text in ax.texts)
+    assert "CODEX: epithelial" in all_text
+    assert "Fine -> final collapse:" in all_text
+    assert "immune <-" in all_text
+    assert "macrophage" in all_text
 
 
 def test_astir_report_cli_smoke(tmp_path: Path) -> None:

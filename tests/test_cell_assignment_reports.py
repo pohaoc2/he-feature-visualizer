@@ -188,3 +188,11 @@ def test_model_label_column_prefers_fine_labels_for_codex() -> None:
     assert reports.model_display_name("codex") == "CODEX"
     assert reports.model_label_column(df, "codex", prefer_fine=True) == "type_astir_fine"
     assert reports.model_label_column(df, "astir", prefer_fine=True) == "type_astir"
+
+
+def test_collapse_display_lines_for_fine_model_labels() -> None:
+    lines = reports.collapse_display_lines("type_astir_fine")
+
+    assert "cancer <- epithelial" in lines
+    assert "healthy <- endothelial, sma_stromal" in lines
+    assert reports.collapse_display_lines("type_astir") == []

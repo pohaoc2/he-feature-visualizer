@@ -43,9 +43,9 @@ CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferative": (0, 255, 0, 200),
-    "quiescent": (100, 149, 237, 200),
-    "dead": (139, 0, 139, 200),
+    "proliferative": (240, 190, 0, 200),
+    "quiescent": (120, 120, 120, 200),
+    "dead": (110, 60, 20, 200),
     "other": (80, 80, 80, 150),
 }
 

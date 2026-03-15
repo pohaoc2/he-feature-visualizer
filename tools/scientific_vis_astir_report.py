@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+import textwrap
 from pathlib import Path
 
 if "MPLCONFIGDIR" not in os.environ:
@@ -20,6 +21,7 @@ import pandas as pd
 from PIL import Image
 
 from utils.cell_assignment_reports import (
+    collapse_display_lines,
     load_cell_assignments,
     model_display_name,
     model_label_column,
@@ -37,6 +39,8 @@ TYPE_COLORS = {
     "immune": "#3264dc",
     "healthy": "#32b432",
 }
+
+EXAMPLE_KINDS: tuple[str, str, str] = ("match", "ambiguous", "disagreement")
 
 
 def _scientific_style(sci_vis_root: Path):
@@ -66,6 +70,41 @@ def _panel_label(ax: plt.Axes, label: str) -> None:
         fontweight="bold",
         va="bottom",
     )
+
+
+def _wrapped_lines(text: str, width: int) -> list[str]:
+    wrapped = textwrap.fill(text, width=width)
+    return wrapped.splitlines() if wrapped else [""]
+
+
+def _draw_wrapped_block(
+    ax: plt.Axes,
+    x: float,
+    y: float,
+    lines: list[str],
+    *,
+    width: int,
+    fontsize: float = 8,
+    line_step: float = 0.06,
+    paragraph_gap: float = 0.03,
+    fontweight: str | None = None,
+) -> float:
+    current_y = y
+    for raw_line in lines:
+        wrapped = _wrapped_lines(raw_line, width) if raw_line else [""]
+        for line in wrapped:
+            ax.text(
+                x,
+                current_y,
+                line,
+                va="top",
+                fontsize=fontsize,
+                fontweight=fontweight,
+                transform=ax.transAxes,
+            )
+            current_y -= line_step
+        current_y -= paragraph_gap
+    return current_y
 
 
 def _load_summary(path: Path) -> dict:
@@ -98,6 +137,7 @@ def _plot_class_counts(
     ax.set_xticklabels(CELL_TYPES)
     ax.set_ylabel("Cells")
     ax.set_title("Assignment counts")
+    ax.tick_params(axis="both", labelsize=8)
     ax.legend(frameon=False, fontsize=7)
 
 
@@ -113,15 +153,16 @@ def _plot_confusion_heatmap(
     ).reindex(index=CELL_TYPES, columns=CELL_TYPES, fill_value=0)
     image = ax.imshow(matrix.to_numpy(dtype=float), cmap="Blues")
     ax.set_xticks(np.arange(len(CELL_TYPES)))
-    ax.set_xticklabels(CELL_TYPES, rotation=30, ha="right")
+    ax.set_xticklabels(CELL_TYPES, rotation=30, ha="right", fontsize=13)
     ax.set_yticks(np.arange(len(CELL_TYPES)))
-    ax.set_yticklabels(CELL_TYPES)
-    ax.set_title(f"CellViT vs {model_name}")
-    ax.set_xlabel(model_name)
-    ax.set_ylabel("CellViT")
+    ax.set_yticklabels(CELL_TYPES, fontsize=13)
+    ax.set_title(f"CellViT vs {model_name}", fontsize=15, pad=10)
+    ax.set_xlabel(model_name, fontsize=13)
+    ax.set_ylabel("CellViT", fontsize=13)
+    ax.tick_params(axis="both", labelsize=13)
     for row in range(matrix.shape[0]):
         for col in range(matrix.shape[1]):
-            ax.text(col, row, int(matrix.iat[row, col]), ha="center", va="center", fontsize=8)
+            ax.text(col, row, int(matrix.iat[row, col]), ha="center", va="center", fontsize=14, fontweight="bold")
     plt.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
 
 
@@ -152,6 +193,7 @@ def _plot_probability_distributions(
     title = f"{model_name} probability distributions"
     ax.set_title(title)
     ax.set_ylabel("Probability")
+    ax.tick_params(axis="both", labelsize=8)
 
 
 def _plot_model_subtype_counts(
@@ -174,6 +216,7 @@ def _plot_model_subtype_counts(
     ax.set_xticks(np.arange(len(labels)))
     ax.set_xticklabels(labels, rotation=30, ha="right")
     ax.set_ylabel("Cells")
+    ax.tick_params(axis="both", labelsize=8)
     title = f"{model_name} subtype distribution" if column == "type_astir_fine" else f"{model_name} class distribution"
     ax.set_title(title)
 
@@ -195,99 +238,147 @@ def _load_he_crop(processed_dir: Path | None, row: pd.Series, crop_size: int = 2
     return image[y0:y1, x0:x1]
 
 
-def _plot_examples_for_class(
+def _placeholder_crop(size: int = 40) -> np.ndarray:
+    return np.full((size, size, 3), 235, dtype=np.uint8)
+
+
+def _plot_summary_panel(
     ax: plt.Axes,
-    selected: pd.DataFrame,
-    class_name: str,
-    processed_dir: Path | None,
+    assignments_df: pd.DataFrame,
     classifier_used: str,
 ) -> None:
     ax.axis("off")
-    class_examples = selected[selected["cell_type"].astype(str) == class_name].copy()
-    model_name = model_display_name(classifier_used)
-    model_col = model_label_column(selected, classifier_used, prefer_fine=True)
-    ax.set_title(f"{class_name.capitalize()} examples")
-    if class_examples.empty:
-        ax.text(0.5, 0.5, "No examples", ha="center", va="center")
-        return
-
-    preview = _load_he_crop(processed_dir, class_examples.iloc[0])
-    if preview is not None and preview.size > 0:
-        inset = ax.inset_axes([0.62, 0.52, 0.33, 0.38])
-        inset.imshow(preview)
-        inset.set_xticks([])
-        inset.set_yticks([])
-
-    y = 0.95
-    for _, row in class_examples.iterrows():
-        line = (
-            f"{row['example_kind']}: "
-            f"{model_name}={row.get(model_col, row.get('type_astir', 'other'))}, "
-            f"Final={row['cell_type']}, "
-            f"margin={float(row.get('final_margin', 0.0)):.2f}"
-        )
-        ax.text(0.0, y, line, va="top", fontsize=8, transform=ax.transAxes)
-        y -= 0.15
-        prob_line = (
-            f"P=({float(row.get('p_final_cancer', 0.0)):.2f}, "
-            f"{float(row.get('p_final_immune', 0.0)):.2f}, "
-            f"{float(row.get('p_final_healthy', 0.0)):.2f})"
-        )
-        ax.text(0.02, y, prob_line, va="top", fontsize=7, transform=ax.transAxes)
-        y -= 0.13
-
-
-def _plot_notes(ax: plt.Axes, assignments_df: pd.DataFrame, summary: dict, selected: pd.DataFrame) -> None:
-    ax.axis("off")
-    classifier_used = str(summary.get("classifier_used", "unknown"))
     model_name = model_display_name(classifier_used)
     model_col = model_label_column(assignments_df, classifier_used, prefer_fine=True)
     mismatch_rate = float(assignments_df["is_mismatch"].mean()) if not assignments_df.empty else 0.0
     marker_columns = [m for m in ("Pan-CK", "CD45", "SMA") if m in assignments_df.columns]
     lines = [
-        f"Mode: {classifier_used}",
         f"Model: {model_name}",
         f"Cells: {len(assignments_df)}",
         f"Mismatch rate: {mismatch_rate:.1%}",
         f"Markers: {', '.join(marker_columns) if marker_columns else 'n/a'}",
-        "",
-        "Selected example counts:",
     ]
-    y = 0.98
-    for line in lines:
-        ax.text(0.0, y, line, va="top", fontsize=8, transform=ax.transAxes)
-        y -= 0.08 if line else 0.04
-    counts = selected["example_kind"].value_counts().to_dict() if not selected.empty else {}
-    for kind in ("match", "ambiguous", "disagreement"):
-        ax.text(
+    y = _draw_wrapped_block(
+        ax,
+        0.0,
+        0.98,
+        lines,
+        width=30,
+        fontsize=8,
+        line_step=0.075,
+        paragraph_gap=0.02,
+    )
+    collapse_lines = collapse_display_lines(model_col)
+    if collapse_lines:
+        y = _draw_wrapped_block(
+            ax,
+            0.0,
+            y - 0.02,
+            ["Fine -> final collapse:"],
+            width=30,
+            fontsize=8,
+            line_step=0.075,
+            paragraph_gap=0.0,
+        )
+        y = _draw_wrapped_block(
+            ax,
             0.04,
             y,
-            f"{kind}: {counts.get(kind, 0)}",
-            va="top",
+            collapse_lines,
+            width=28,
             fontsize=8,
-            transform=ax.transAxes,
+            line_step=0.075,
+            paragraph_gap=0.0,
         )
-        y -= 0.07
-    subtype_counts = (
-        assignments_df[model_col].astype(str).value_counts().head(4).to_dict()
-        if model_col in assignments_df.columns
-        else {}
-    )
-    if subtype_counts:
-        y -= 0.03
-        ax.text(0.0, y, "Top model labels:", va="top", fontsize=8, transform=ax.transAxes)
-        y -= 0.07
-        for name, count in subtype_counts.items():
-            ax.text(0.04, y, f"{name}: {count}", va="top", fontsize=8, transform=ax.transAxes)
-            y -= 0.07
     if classifier_used == "rule_fallback":
-        ax.text(
+        _draw_wrapped_block(
+            ax,
             0.0,
-            y - 0.03,
-            "Astir unavailable; probability panels show rule fallback outputs.",
-            va="top",
+            y - 0.02,
+            ["Astir unavailable; probability panels show rule fallback outputs."],
+            width=30,
             fontsize=8,
-            transform=ax.transAxes,
+            line_step=0.075,
+            paragraph_gap=0.0,
+        )
+
+
+def _plot_example_triptych(
+    fig: plt.Figure,
+    subplot_spec,
+    selected: pd.DataFrame,
+    class_name: str,
+    processed_dir: Path | None,
+    classifier_used: str,
+    panel_label: str,
+) -> None:
+    class_examples = selected[selected["cell_type"].astype(str) == class_name].copy()
+    model_name = model_display_name(classifier_used)
+    model_col = model_label_column(selected, classifier_used, prefer_fine=True)
+
+    inner = subplot_spec.subgridspec(
+        3,
+        3,
+        height_ratios=[0.18, 1.05, 0.95],
+        hspace=0.08,
+        wspace=0.14,
+    )
+    header_ax = fig.add_subplot(inner[0, :])
+    header_ax.axis("off")
+    header_ax.set_title(f"{class_name.capitalize()} examples", fontsize=12, pad=2)
+    _panel_label(header_ax, panel_label)
+
+    for idx, kind in enumerate(EXAMPLE_KINDS):
+        image_ax = fig.add_subplot(inner[1, idx])
+        text_ax = fig.add_subplot(inner[2, idx])
+
+        rows = class_examples[class_examples["example_kind"].astype(str) == kind]
+        row = rows.iloc[0] if not rows.empty else None
+
+        image_ax.set_title(kind.capitalize(), fontsize=9, pad=2)
+        image_ax.set_xticks([])
+        image_ax.set_yticks([])
+        for spine in image_ax.spines.values():
+            spine.set_linewidth(1.2)
+            spine.set_color(TYPE_COLORS.get(class_name, "#666666"))
+
+        text_ax.axis("off")
+        if row is None:
+            image_ax.imshow(_placeholder_crop())
+            _draw_wrapped_block(
+                text_ax,
+                0.0,
+                1.0,
+                ["No example available"],
+                width=18,
+                fontsize=7.5,
+                line_step=0.16,
+                paragraph_gap=0.0,
+            )
+            continue
+
+        preview = _load_he_crop(processed_dir, row, crop_size=40)
+        image_ax.imshow(preview if preview is not None and preview.size > 0 else _placeholder_crop())
+        block = [
+            f"CellViT: {row.get('cellvit_mapped_type', 'other')}",
+            f"{model_name}: {row.get(model_col, row.get('type_astir', 'other'))}",
+            f"Final: {row.get('cell_type', class_name)}",
+            f"Margin: {float(row.get('final_margin', 0.0)):.2f}",
+            (
+                f"P=({float(row.get('p_final_cancer', 0.0)):.2f}, "
+                f"{float(row.get('p_final_immune', 0.0)):.2f}, "
+                f"{float(row.get('p_final_healthy', 0.0)):.2f})"
+            ),
+        ]
+        _draw_wrapped_block(
+            text_ax,
+            0.0,
+            1.0,
+            block,
+            width=18,
+            fontsize=7.3,
+            line_step=0.16,
+            paragraph_gap=0.01,
         )
 
 
@@ -300,36 +391,35 @@ def build_report_figure(
     classifier_used = str(summary.get("classifier_used", "unknown"))
     selected = select_representative_cells(assignments_df)
 
-    fig, axes = plt.subplots(2, 4, figsize=(11.0, 6.4), constrained_layout=True)
-    ax = axes.ravel()
+    # Layout: tall top row (confusion + summary) followed by one row per cell class.
+    fig = plt.figure(figsize=(16.0, 16.0), constrained_layout=True)
+    outer = fig.add_gridspec(
+        4,
+        1,
+        height_ratios=[1.5, 1.0, 1.0, 1.0],
+    )
 
-    _plot_class_counts(ax[0], assignments_df, classifier_used)
-    _panel_label(ax[0], "A")
+    # --- Row 0: confusion matrix (large, left) + summary (right) ---
+    top_row = outer[0].subgridspec(1, 2, width_ratios=[1.2, 0.8], wspace=0.25)
+    confusion_ax = fig.add_subplot(top_row[0, 0])
+    _plot_confusion_heatmap(confusion_ax, assignments_df, classifier_used)
+    _panel_label(confusion_ax, "A")
 
-    _plot_confusion_heatmap(ax[1], assignments_df, classifier_used)
-    _panel_label(ax[1], "B")
+    summary_ax = fig.add_subplot(top_row[0, 1])
+    _plot_summary_panel(summary_ax, assignments_df, classifier_used)
 
-    _plot_probability_distributions(ax[2], assignments_df, classifier_used)
-    _panel_label(ax[2], "C")
-
-    _plot_model_subtype_counts(ax[3], assignments_df, classifier_used)
-    _panel_label(ax[3], "D")
-
-    for panel_idx, class_name in enumerate(CELL_TYPES, start=4):
-        _plot_examples_for_class(ax[panel_idx], selected, class_name, processed_dir, classifier_used)
-        _panel_label(ax[panel_idx], chr(ord("A") + panel_idx))
-
-    _plot_notes(ax[7], assignments_df, summary, selected)
-    ax[7].set_title("Report notes")
-    _panel_label(ax[7], "H")
+    # --- Rows 1-3: per-class triptychs (match / ambiguous / disagreement) ---
+    _plot_example_triptych(fig, outer[1], selected, "cancer", processed_dir, classifier_used, "B")
+    _plot_example_triptych(fig, outer[2], selected, "immune", processed_dir, classifier_used, "C")
+    _plot_example_triptych(fig, outer[3], selected, "healthy", processed_dir, classifier_used, "D")
 
     fig.suptitle(
         (
             f"Model evidence report (mode={classifier_used}, "
             f"n={len(assignments_df)}, mismatch={float(assignments_df['is_mismatch'].mean()):.1%})"
         ),
-        fontsize=10,
-        y=1.02,
+        fontsize=12,
+        y=1.0,
     )
     return fig, selected
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publication-style patch report comparing CellViT, model, and final labels."""
+"""Publication-style patch report: H&E, MX marker, CellViT type, model type, final type, cell state, vasculature (CD31/SMA)."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Patch
 from PIL import Image
 
 from utils.cell_assignment_reports import (
@@ -44,10 +45,10 @@ CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferative": (0, 255, 0, 200),
-    "quiescent": (100, 149, 237, 200),
-    "dead": (139, 0, 139, 200),
-    "other": (80, 80, 80, 150),
+    "proliferative": (230, 50, 180, 200),   # magenta — distinct from red/blue/green types
+    "quiescent": (240, 140, 30, 200),        # amber/orange
+    "dead": (110, 40, 160, 200),             # purple
+    "other": (160, 160, 160, 120),
 }
 
 MODEL_FINE_COLORS: dict[str, tuple[int, int, int, int]] = {
@@ -92,16 +93,6 @@ def _composite_rgba_on_rgb(base_rgb: np.ndarray, overlay_rgba: np.ndarray) -> np
     out = (alpha * ov + (1.0 - alpha) * base).clip(0, 255).astype(np.uint8)
     return out
 
-
-def _draw_cellvit_contours(he_rgb: np.ndarray, cells: list[dict]) -> np.ndarray:
-    out = he_rgb.copy()
-    for cell in cells:
-        contour = cell.get("contour", [])
-        if not isinstance(contour, list) or len(contour) < 3:
-            continue
-        pts = np.asarray(contour, dtype=np.int32).reshape((-1, 1, 2))
-        cv2.polylines(out, [pts], isClosed=True, color=(0, 255, 0), thickness=1)
-    return out
 
 
 def _resolve_mx_channel(
@@ -231,89 +222,100 @@ def _render_overlay(
     return canvas
 
 
-def _build_evidence_panel(
-    ax: plt.Axes,
-    assignments_patch: pd.DataFrame,
-    mx_name: str,
-    classifier_used: str,
-) -> None:
-    ax.axis("off")
-    if assignments_patch.empty:
-        ax.text(0.0, 1.0, "No matched cells", va="top")
-        return
-
-    mismatch_rate = float(assignments_patch["is_mismatch"].mean())
-    confidence_counts = (
-        assignments_patch["cell_type_confidence"]
-        .astype(str)
-        .str.lower()
-        .value_counts()
-        .to_dict()
-    )
-    model_name = model_display_name(classifier_used)
-    model_col = model_label_column(assignments_patch, classifier_used, prefer_fine=True)
-    lines = [
-        f"Mode: {classifier_used}",
-        f"Model: {model_name}",
-        f"Cells: {len(assignments_patch)}",
-        f"Mismatch: {mismatch_rate:.1%}",
-        (
-            "Confidence: "
-            f"H={confidence_counts.get('high', 0)} "
-            f"M={confidence_counts.get('medium', 0)} "
-            f"L={confidence_counts.get('low', 0)}"
-        ),
-        f"MX marker: {mx_name}",
-        "",
-        "Counts",
-    ]
-    y = 0.98
-    for line in lines:
-        ax.text(0.0, y, line, va="top", fontsize=8, transform=ax.transAxes)
-        y -= 0.08 if line else 0.04
-
-    count_specs = [
-        ("CellViT", "cellvit_mapped_type", ["cancer", "immune", "healthy"], CELL_TYPE_COLORS),
-        (
-            model_name,
-            model_col,
-            (
-                assignments_patch[model_col].astype(str).value_counts().head(4).index.tolist()
-                if model_col == "type_astir_fine"
-                else ["cancer", "immune", "healthy"]
-            ),
-            MODEL_FINE_COLORS if model_col == "type_astir_fine" else CELL_TYPE_COLORS,
-        ),
-        ("Final", "cell_type", ["cancer", "immune", "healthy"], CELL_TYPE_COLORS),
-    ]
-    for label, column, classes, color_map in count_specs:
-        counts = (
-            assignments_patch[column]
-            .astype(str)
-            .value_counts()
-            .reindex(classes, fill_value=0)
+def _add_type_legend(ax: plt.Axes, color_map: dict[str, tuple[int, int, int, int]], title: str = "Type") -> None:
+    labels = [k for k in color_map if k != "other"]
+    handles = [
+        Patch(
+            facecolor=np.array(color_map[label][:3], dtype=float) / 255.0,
+            edgecolor="none",
+            label=label,
         )
-        ax.text(0.0, y, f"{label}:", va="top", fontsize=8, fontweight="bold", transform=ax.transAxes)
-        y -= 0.07
-        for cls in classes:
-            ax.text(
-                0.04,
-                y,
-                f"{cls}={int(counts[cls])}",
-                va="top",
-                fontsize=8,
-                color=np.array(color_map.get(cls, color_map["other"])[:3], dtype=float) / 255.0,
-                transform=ax.transAxes,
-            )
-            y -= 0.06
+        for label in labels
+    ]
+    ax.legend(
+        handles=handles,
+        loc="lower left",
+        bbox_to_anchor=(0.02, 0.02),
+        frameon=True,
+        framealpha=0.85,
+        fontsize=7,
+        title=title,
+        title_fontsize=7,
+    )
+
+
+def _add_state_legend(ax: plt.Axes) -> None:
+    handles = [
+        Patch(
+            facecolor=np.array(CELL_STATE_COLORS[label][:3], dtype=float) / 255.0,
+            edgecolor="none",
+            label=label,
+        )
+        for label in ("proliferative", "quiescent", "dead")
+    ]
+    ax.legend(
+        handles=handles,
+        loc="lower left",
+        bbox_to_anchor=(0.02, 0.02),
+        frameon=True,
+        framealpha=0.85,
+        fontsize=7,
+        title="State",
+        title_fontsize=7,
+    )
+
+
+def _try_resolve_marker(
+    index_json: Path,
+    mx_arr: np.ndarray,
+    marker: str,
+) -> tuple[np.ndarray, str] | tuple[None, str]:
+    """Return (normed_float32_image, name) or (None, marker) if not in panel."""
+    try:
+        idx, name = _resolve_mx_channel(index_json, 0, marker)
+        if idx < 0 or idx >= mx_arr.shape[0]:
+            return None, marker
+        return percentile_norm(mx_arr[idx].astype(np.float32)), name
+    except (ValueError, IndexError):
+        return None, marker
+
+
+def _make_vasc_rgb(
+    cd31: np.ndarray | None,
+    sma: np.ndarray | None,
+    shape: tuple[int, int],
+) -> np.ndarray:
+    """R=CD31, G=SMA, B=0.  Yellow pixels = co-localised (larger vessels)."""
+    r = (cd31 * 255).clip(0, 255).astype(np.uint8) if cd31 is not None else np.zeros(shape, np.uint8)
+    g = (sma * 255).clip(0, 255).astype(np.uint8) if sma is not None else np.zeros(shape, np.uint8)
+    b = np.zeros(shape, np.uint8)
+    return np.stack([r, g, b], axis=-1)
+
+
+def _show_channel_or_placeholder(
+    ax: plt.Axes,
+    img: np.ndarray | None,
+    shape: tuple[int, int],
+    cmap: str,
+    unavailable_label: str,
+) -> None:
+    if img is not None:
+        ax.imshow(img, cmap=cmap, vmin=0.0, vmax=1.0)
+    else:
+        ax.imshow(np.full((*shape, 3), 220, dtype=np.uint8))
+        ax.text(
+            0.5, 0.5, f"{unavailable_label}\nnot in panel",
+            ha="center", va="center", fontsize=8, color="#555555",
+            transform=ax.transAxes,
+        )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Create publication-style figure for one patch showing "
-            "H&E, MX marker, CellViT contours, CellViT mapped type, "
-            "model type, final type, and state."
+            "H&E, MX marker, CellViT mapped type, model type, final type, cell state, "
+            "and vasculature (CD31 channel + CD31/SMA composite)."
         )
     )
     parser.add_argument("--processed", required=True, help="Processed directory.")
@@ -359,6 +361,16 @@ def main() -> None:
         help="Comma-separated formats (e.g. pdf,png).",
     )
     parser.add_argument("--dpi", type=int, default=300, help="Raster DPI.")
+    parser.add_argument(
+        "--vasc-cd31",
+        default="CD31",
+        help="Marker name for endothelial channel (default: CD31). Skipped if not in panel.",
+    )
+    parser.add_argument(
+        "--vasc-sma",
+        default="SMA",
+        help="Marker name for smooth-muscle channel (default: SMA). Skipped if not in panel.",
+    )
     args = parser.parse_args()
 
     processed_dir = Path(args.processed)
@@ -420,11 +432,16 @@ def main() -> None:
         )
     mx_img = percentile_norm(mx_arr[mx_idx].astype(np.float32))
 
+    # Vasculature channels — graceful fallback if not present in this panel.
+    patch_shape_hw = tuple(mx_arr.shape[1:3])
+    vasc_cd31_img, cd31_name = _try_resolve_marker(index_path, mx_arr, args.vasc_cd31)
+    vasc_sma_img, sma_name = _try_resolve_marker(index_path, mx_arr, args.vasc_sma)
+    vasc_rgb = _make_vasc_rgb(vasc_cd31_img, vasc_sma_img, patch_shape_hw)
+
     cells = _load_patch_json(cellvit_path)
     cell_pairs = _match_assignments_to_cells(cells, assignments_patch)
     patch_shape = he_rgb.shape[:2]
 
-    contour_img = _draw_cellvit_contours(he_rgb, cells)
     cellvit_overlay = _render_overlay(
         cell_pairs,
         patch_shape,
@@ -463,7 +480,8 @@ def main() -> None:
     if style_warning:
         print(f"Warning: {style_warning}")
 
-    fig, axes = plt.subplots(2, 4, figsize=(9.6, 5.2), constrained_layout=True)
+    # 2×4 grid: [H&E | MX marker | Cell state | CD31] / [Model type | Final type | CellViT type | CD31+SMA]
+    fig, axes = plt.subplots(2, 4, figsize=(11.2, 5.6), constrained_layout=True)
     ax = axes.ravel()
 
     ax[0].imshow(he_rgb)
@@ -476,43 +494,54 @@ def main() -> None:
     ax[1].axis("off")
     _panel_label(ax[1], "B")
 
-    ax[2].imshow(contour_img)
-    ax[2].set_title(f"CellViT contours (n={len(cells)})")
+    ax[2].imshow(state_on_he)
+    ax[2].set_title("Cell state")
     ax[2].axis("off")
+    _add_state_legend(ax[2])
     _panel_label(ax[2], "C")
 
-    ax[3].imshow(cellvit_on_he)
-    ax[3].set_title("CellViT mapped type")
+    _show_channel_or_placeholder(ax[3], vasc_cd31_img, patch_shape_hw, "Reds", cd31_name)
+    ax[3].set_title(f"{cd31_name} (vasculature)")
     ax[3].axis("off")
     _panel_label(ax[3], "D")
 
     ax[4].imshow(model_on_he)
     ax[4].set_title(model_title)
     ax[4].axis("off")
+    _add_type_legend(ax[4], model_colors)
     _panel_label(ax[4], "E")
 
     ax[5].imshow(final_on_he)
     ax[5].set_title("Final fused type")
     ax[5].axis("off")
+    _add_type_legend(ax[5], CELL_TYPE_COLORS)
     _panel_label(ax[5], "F")
 
-    ax[6].imshow(state_on_he)
-    ax[6].set_title("Cell state")
+    ax[6].imshow(cellvit_on_he)
+    ax[6].set_title(f"CellViT mapped type (n={len(cells)})")
     ax[6].axis("off")
+    _add_type_legend(ax[6], CELL_TYPE_COLORS)
     _panel_label(ax[6], "G")
 
-    _build_evidence_panel(ax[7], assignments_patch, mx_name, classifier_used)
-    _panel_label(ax[7], "H")
-
-    mismatch_rate = float(assignments_patch["is_mismatch"].mean())
-    fig.suptitle(
-        (
-            f"Patch {patch}: CellViT vs {model_name} vs Final "
-            f"(n={len(assignments_patch)}, mismatch={mismatch_rate:.1%}, mode={classifier_used})"
-        ),
-        fontsize=10,
-        y=1.02,
+    ax[7].imshow(vasc_rgb)
+    ax[7].set_title(f"Vasculature: R={cd31_name} G={sma_name}")
+    ax[7].axis("off")
+    # Inline legend: red=CD31 only, green=SMA only, yellow=co-loc
+    ax[7].legend(
+        handles=[
+            Patch(facecolor=(1, 0, 0), label=cd31_name),
+            Patch(facecolor=(0, 1, 0), label=sma_name),
+            Patch(facecolor=(1, 1, 0), label="co-loc"),
+        ],
+        loc="lower left",
+        bbox_to_anchor=(0.02, 0.02),
+        frameon=True,
+        framealpha=0.85,
+        fontsize=7,
+        title="Channel",
+        title_fontsize=7,
     )
+    _panel_label(ax[7], "H")
 
     formats = [f.strip() for f in str(args.formats).split(",") if f.strip()]
     if not formats:

@@ -72,9 +72,6 @@ Stage 4: python -m stages.multiplex_layers
 conda create -n he-multiplex python=3.13
 conda activate he-multiplex
 pip install -r requirements.txt
-
-# Optional: enable Astir classifier support without CUDA
-pip install -r requirements-astir-cpu.txt
 ```
 
 ### Directory layout
@@ -229,13 +226,24 @@ Cell type IDs used by CellViT:
 
 ## Stage 3 — Cell Type Assignment
 
-Assign cell types and states using **Astir-first probabilistic typing** plus CellViT priors.
+Assign cell types and states using **CODEX-style clustering** plus CellViT priors.
 
 Stage 3 label schema:
 - Cell type: `cancer`, `immune`, `healthy`
 - Cell state: `dead`, `proliferative`, `quiescent`
 
 CellViT `type_cellvit=4` is a dead-state override.
+
+Recommended Stage 3 workflow:
+- use `--classifier codex`
+- classify fine MX subtypes first (`epithelial`, `cd4_t`, `cd8_t`, `treg`, `b_cell`, `macrophage`, `endothelial`, `sma_stromal`)
+- collapse those fine subtypes into final `cancer / immune / healthy`
+- fuse the model probabilities with the CellViT prior
+
+Current collapse map:
+- `cancer <- epithelial`
+- `immune <- cd4_t, cd8_t, treg, b_cell, macrophage`
+- `healthy <- endothelial, sma_stromal`
 
 ### Mode A: Existing workflow (precomputed features CSV)
 
@@ -246,8 +254,8 @@ python -m stages.assign_cells \
   --out processed_crc33_crop/ \
   --index processed_crc33_crop/index.json \
   --coord-scale 1.0 \
-  --classifier astir \
-  --allow-astir-fallback
+  --classifier codex \
+  --csv-mpp 1.0
 ```
 
 ### Mode B: Auto-extract features from CellViT + multiplex patches
@@ -261,8 +269,7 @@ python -m stages.assign_cells \
   --multiplex-dir processed_crc33_crop/multiplex/ \
   --index processed_crc33_crop/index.json \
   --out processed_crc33_crop/ \
-  --classifier astir \
-  --allow-astir-fallback
+  --classifier codex
 ```
 
 This writes `processed_crc33_crop/cellvit_mx_features.csv` and then uses it for
@@ -407,11 +414,50 @@ Panels shown per patch: original location · H&E · multiplex channel · cell se
 
 ---
 
-### Scientific-Vis Figure: CellViT vs Astir Patch Comparison
+### Scientific-Vis Figure: Random Patch Grid
 
-For a publication-style patch comparison figure (H&E, MX marker channel, CellViT
-contours, mapped CellViT type, Astir type, final fused type, cell state, and
-evidence summary), run Stage 3 and render with `tools.scientific_vis_cellvit_mx`.
+Use `tools.scientific_vis_patch_grid` to create a publication-style N-row × 5-column
+grid sampled randomly from available patches. Requires Stage 3 output.
+
+```bash
+python -m tools.scientific_vis_patch_grid \
+  --processed processed_crc33_crop/ \
+  --random 6 \
+  --seed 42 \
+  --assignments-csv processed_crc33_crop/cell_assignments.csv \
+  --out-prefix processed_crc33_crop/patch_grid \
+  --formats png,pdf
+```
+
+Key options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--random N` | required | Number of patches to sample |
+| `--seed` | `None` | Random seed for reproducibility |
+| `--hoechst` | `DNA` | Hoechst/DNA marker name in `index.json` |
+| `--vasc-cd31` | `CD31` | CD31 marker name in `index.json` |
+
+Column layout (one row per patch):
+
+| Col | Contents |
+|-----|----------|
+| C1 | H&E |
+| C2 | Hoechst/DNA channel (Blues colormap) |
+| C3 | CellViT segmentation mask — contours filled by 5-class type (neoplastic / inflammatory / connective / dead / epithelial) |
+| C4 | Final fused type overlay — contours matched to Stage 3 assignments (cancer / immune / healthy) |
+| C5 | CD31 channel (Reds colormap) — vasculature proxy |
+
+Patches are discovered automatically from `he/`, `cellvit/`, and `cell_assignments.csv`.
+If `--random N` exceeds the number of valid patches, it clamps silently.
+Hoechst and CD31 degrade to a "not in panel" placeholder if absent from `index.json`.
+
+---
+
+### Scientific-Vis Figure: CellViT vs Model Patch Comparison
+
+For a publication-style patch comparison figure (2×4 grid), run Stage 3 and render
+with `tools.scientific_vis_cellvit_mx`.
 
 ```bash
 # 1) Stage 3: auto-extract CellViT+MX features and assign type/state
@@ -421,61 +467,73 @@ python -m stages.assign_cells \
   --features-csv processed_crc33_crop/cellvit_mx_features.csv \
   --index processed_crc33_crop/index.json \
   --out processed_crc33_crop/ \
-  --classifier astir \
-  --allow-astir-fallback \
+  --classifier codex \
   --coord-scale 1.0 \
-  --csv-mpp 0.325
+  --csv-mpp 1.0
 
-# 2) Render one patch using the auto-selected evidence marker
+# 2) Render one patch (auto-selects evidence marker; CD31/SMA vasculature column added automatically)
 python -m tools.scientific_vis_cellvit_mx \
   --processed processed_crc33_crop/ \
   --patch 768_0 \
   --assignments-csv processed_crc33_crop/cell_assignments.csv \
-  --out-prefix processed_crc33_crop/scivis_patch_768_0_cd45 \
-  --formats png,pdf
+  --out-prefix processed_crc33_crop/patch_768_0_cd45 \
+  --formats png
 
-# 3) Override the marker if you want a specific channel
+# 3) Override the main marker and/or vasculature marker names
 python -m tools.scientific_vis_cellvit_mx \
   --processed processed_crc33_crop_demo/ \
   --patch 256_256 \
   --assignments-csv processed_crc33_crop_demo/cell_assignments.csv \
   --mx-marker Ki67 \
+  --vasc-cd31 CD31 \
+  --vasc-sma aSMA \
   --out-prefix processed_crc33_crop_demo/scivis_patch_256_256_ki67 \
   --formats png,pdf
 ```
 
-Output figure panels:
-- A: H&E patch
-- B: Selected MX marker (auto-selected from `cell_assignments.csv` unless overridden)
-- C: CellViT contours on H&E
-- D: CellViT mapped 3-class overlay (`cancer`/`immune`/`healthy`)
-- E: Astir top-class overlay
-- F: Final fused type overlay
-- G: Inferred cell state overlay (`proliferative`/`quiescent`/`dead`)
-- H: Compact evidence panel with mismatch and confidence summary
+Output figure panels (2×4, figsize 11.2×5.6 in):
 
-### Scientific-Vis Figure: Sample-Level Astir Evidence Report
+| Panel | Contents |
+|-------|----------|
+| A | H&E patch |
+| B | Selected MX marker channel (auto-selected or `--mx-marker`) |
+| C | Cell state overlay (`proliferative` / `quiescent` / `dead`) with color legend |
+| D | CD31 channel in `Reds` colormap — vasculature proxy (`--vasc-cd31`, default `CD31`) |
+| E | Model type overlay (`CODEX fine type` when `--classifier codex`) with color legend |
+| F | Final fused type overlay with color legend |
+| G | CellViT mapped 3-class overlay (`cancer` / `immune` / `healthy`) with color legend |
+| H | Vasculature composite: **R=CD31, G=SMA**, yellow=co-localized larger vessels (`--vasc-sma`, default `SMA`) |
 
-Use `tools.scientific_vis_astir_report` to generate a sample-level report with:
+Panels D and H degrade gracefully: if CD31 or SMA is absent from the multiplex panel,
+a "not in panel" placeholder renders and the figure still saves normally.
 
-- mapped CellViT vs Astir vs final class counts
-- CellViT/Astir mismatch heatmap
-- Astir or rule-fallback probability distributions
-- marker evidence grouped by final class
+**Color palettes** are designed to be non-overlapping:
+- Cell types: red (cancer), blue (immune), green (healthy)
+- Cell states: magenta (proliferative), amber (quiescent), purple (dead)
+
+### Scientific-Vis Figure: Sample-Level Model Evidence Report
+
+Use `tools.scientific_vis_model_report` to generate a sample-level report with:
+
+- mapped CellViT vs model vs final class counts
+- CellViT/model mismatch heatmap
+- model probability distributions over `cancer / immune / healthy`
+- model subtype distributions
+- fine-to-final collapse summary used by the model report
 - representative example cells for each final class
 
 ```bash
-python -m tools.scientific_vis_astir_report \
+python -m tools.scientific_vis_model_report \
   --processed processed_crc33_crop_demo/ \
   --assignments-csv processed_crc33_crop_demo/cell_assignments.csv \
   --summary-json processed_crc33_crop_demo/cell_summary.json \
-  --out-prefix processed_crc33_crop_demo/astir_report \
+  --out-prefix processed_crc33_crop_demo/model_report \
   --formats png,pdf
 ```
 
-If Stage 3 ran with `--allow-astir-fallback` and Astir was unavailable, the
-report is labeled `rule_fallback` and the probability panels are explicitly
-described as rule-based outputs rather than true Astir predictions.
+If `cell_summary.json` reports `classifier_used=rule_fallback`, the report is
+labeled accordingly and its probability panels should be interpreted as
+rule-based outputs.
 
 ---
 
@@ -489,10 +547,12 @@ At low zoom a kernel-density heatmap is shown; zoom past level 3 for individual 
 
 ### Cell type assignment
 
-Stage 3 now uses an **Astir-first probabilistic classifier** (with optional rule fallback):
+Stage 3 is documented around the **CODEX-style clustering** workflow:
 
 - Type labels: `cancer`, `immune`, `healthy`
 - State labels: `dead`, `proliferative`, `quiescent`
+- Fine model subtypes: `epithelial`, `cd4_t`, `cd8_t`, `treg`, `b_cell`, `macrophage`, `endothelial`, `sma_stromal`
+- Final collapse: immune subtypes → `immune`, endothelial/stromal → `healthy`, epithelial → `cancer`
 - Fusion: `P_final = 0.85 * P_model + 0.15 * P_cellvit_prior`
 - Dead-state override: `type_cellvit == 4 -> dead`
 
