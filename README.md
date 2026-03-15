@@ -422,11 +422,11 @@ grid sampled randomly from available patches. Requires Stage 3 output.
 ```bash
 python -m tools.scientific_vis_patch_grid \
   --processed processed_crc33_crop/ \
-  --random 6 \
+  --random 3 \
   --seed 42 \
   --assignments-csv processed_crc33_crop/cell_assignments.csv \
   --out-prefix processed_crc33_crop/patch_grid \
-  --formats png,pdf
+  --formats png
 ```
 
 Key options:
@@ -534,6 +534,49 @@ python -m tools.scientific_vis_model_report \
 If `cell_summary.json` reports `classifier_used=rule_fallback`, the report is
 labeled accordingly and its probability panels should be interpreted as
 rule-based outputs.
+
+---
+
+### Scientific-Vis Figure: CellViT vs CODEX Comparison
+
+`tools.scientific_vis_codex_comparison` — 16×16 publication figure comparing
+CellViT (morphology-based) and CODEX (multiplex marker-based) cell type assignments.
+
+**Panel layout:**
+
+| Panel | Content |
+|-------|---------|
+| A | 3×3 confusion matrix (CellViT rows × CODEX cols), raw counts + row-normalised % |
+| B | Cancer triptych: Agree / Medium / Disagree examples (H&E crop + marker bar) |
+| C | Immune triptych |
+| D | Healthy triptych |
+
+**CLI:**
+
+```bash
+python -m tools.scientific_vis_codex_comparison \
+  --processed processed_crc33_crop/ \
+  --assignments-csv processed_crc33_crop/cell_assignments.csv \
+  --out-prefix processed_crc33_crop/codex_comparison \
+  --formats png,pdf \
+  --dpi 300
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--processed` | required | Processed directory (for `he/` patches) |
+| `--assignments-csv` | `<processed>/cell_assignments.csv` | Stage 3 output |
+| `--out-prefix` | `<processed>/codex_comparison` | Output path prefix |
+| `--formats` | `pdf,png` | Comma-separated output formats |
+| `--dpi` | `300` | Raster DPI |
+| `--cancer-marker` | `Pan-CK` | Canonical cancer marker column name |
+| `--immune-marker` | `CD45` | Canonical immune marker column name |
+| `--healthy-marker` | `SMA` | Canonical healthy marker column name |
+
+**Marker bars** are percentile-normalized once across all cells in the CSV,
+so bars are comparable across examples within the figure.
+Cells with `cell_type == "other"` are excluded.
+If a canonical marker column is absent, its bar renders as "n/a".
 
 ---
 
