@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sample-level Astir evidence and assignment comparison report."""
+"""Sample-level model evidence and assignment comparison report."""
 
 from __future__ import annotations
 
@@ -19,7 +19,12 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from utils.cell_assignment_reports import load_cell_assignments, select_representative_cells
+from utils.cell_assignment_reports import (
+    load_cell_assignments,
+    model_display_name,
+    model_label_column,
+    select_representative_cells,
+)
 
 DEFAULT_SCI_VIS_ROOT = Path(
     "/home/pohaoc2/.claude/plugins/marketplaces/"
@@ -71,8 +76,12 @@ def _load_summary(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _plot_class_counts(ax: plt.Axes, assignments_df: pd.DataFrame) -> None:
-    labels = ["CellViT", "Astir", "Final"]
+def _plot_class_counts(
+    ax: plt.Axes,
+    assignments_df: pd.DataFrame,
+    classifier_used: str,
+) -> None:
+    labels = ["CellViT", model_display_name(classifier_used), "Final"]
     columns = ["cellvit_mapped_type", "type_astir", "cell_type"]
     x = np.arange(len(CELL_TYPES))
     width = 0.22
@@ -92,7 +101,12 @@ def _plot_class_counts(ax: plt.Axes, assignments_df: pd.DataFrame) -> None:
     ax.legend(frameon=False, fontsize=7)
 
 
-def _plot_confusion_heatmap(ax: plt.Axes, assignments_df: pd.DataFrame) -> None:
+def _plot_confusion_heatmap(
+    ax: plt.Axes,
+    assignments_df: pd.DataFrame,
+    classifier_used: str,
+) -> None:
+    model_name = model_display_name(classifier_used)
     matrix = pd.crosstab(
         assignments_df["cellvit_mapped_type"].astype(str),
         assignments_df["type_astir"].astype(str),
@@ -102,8 +116,8 @@ def _plot_confusion_heatmap(ax: plt.Axes, assignments_df: pd.DataFrame) -> None:
     ax.set_xticklabels(CELL_TYPES, rotation=30, ha="right")
     ax.set_yticks(np.arange(len(CELL_TYPES)))
     ax.set_yticklabels(CELL_TYPES)
-    ax.set_title("CellViT vs Astir")
-    ax.set_xlabel("Astir")
+    ax.set_title(f"CellViT vs {model_name}")
+    ax.set_xlabel(model_name)
     ax.set_ylabel("CellViT")
     for row in range(matrix.shape[0]):
         for col in range(matrix.shape[1]):
@@ -134,33 +148,34 @@ def _plot_probability_distributions(
         return
     ax.boxplot(data, tick_labels=labels)
     ax.set_ylim(0.0, 1.0)
-    title = "Rule probability distributions" if classifier_used == "rule_fallback" else "Astir probability distributions"
+    model_name = model_display_name(classifier_used)
+    title = f"{model_name} probability distributions"
     ax.set_title(title)
     ax.set_ylabel("Probability")
 
 
-def _plot_marker_panel(ax: plt.Axes, assignments_df: pd.DataFrame) -> None:
-    marker_columns = [m for m in ("Pan-CK", "CD45", "SMA") if m in assignments_df.columns]
-    if not marker_columns:
-        ax.text(0.5, 0.5, "No marker columns", ha="center", va="center")
+def _plot_model_subtype_counts(
+    ax: plt.Axes,
+    assignments_df: pd.DataFrame,
+    classifier_used: str,
+) -> None:
+    model_name = model_display_name(classifier_used)
+    column = model_label_column(assignments_df, classifier_used, prefer_fine=True)
+    counts = assignments_df[column].astype(str).value_counts()
+    if counts.empty:
+        ax.text(0.5, 0.5, "No model subtype data", ha="center", va="center")
         ax.axis("off")
         return
 
-    x = np.arange(len(CELL_TYPES))
-    width = 0.22
-    for idx, marker in enumerate(marker_columns):
-        medians = (
-            assignments_df.groupby("cell_type")[marker]
-            .median()
-            .reindex(CELL_TYPES, fill_value=0.0)
-            .to_numpy(dtype=float)
-        )
-        ax.bar(x + idx * width - width, medians, width=width, label=marker, alpha=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(CELL_TYPES)
-    ax.set_ylabel("Median intensity")
-    ax.set_title("Marker evidence by final type")
-    ax.legend(frameon=False, fontsize=7)
+    labels = counts.index.astype(str).tolist()
+    values = counts.to_numpy(dtype=float)
+    colors = [TYPE_COLORS.get(label, plt.get_cmap("tab20")(idx % 20)) for idx, label in enumerate(labels)]
+    ax.bar(np.arange(len(labels)), values, color=colors, alpha=0.85)
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels, rotation=30, ha="right")
+    ax.set_ylabel("Cells")
+    title = f"{model_name} subtype distribution" if column == "type_astir_fine" else f"{model_name} class distribution"
+    ax.set_title(title)
 
 
 def _load_he_crop(processed_dir: Path | None, row: pd.Series, crop_size: int = 24) -> np.ndarray | None:
@@ -185,9 +200,12 @@ def _plot_examples_for_class(
     selected: pd.DataFrame,
     class_name: str,
     processed_dir: Path | None,
+    classifier_used: str,
 ) -> None:
     ax.axis("off")
     class_examples = selected[selected["cell_type"].astype(str) == class_name].copy()
+    model_name = model_display_name(classifier_used)
+    model_col = model_label_column(selected, classifier_used, prefer_fine=True)
     ax.set_title(f"{class_name.capitalize()} examples")
     if class_examples.empty:
         ax.text(0.5, 0.5, "No examples", ha="center", va="center")
@@ -204,7 +222,8 @@ def _plot_examples_for_class(
     for _, row in class_examples.iterrows():
         line = (
             f"{row['example_kind']}: "
-            f"Astir={row['type_astir']}, Final={row['cell_type']}, "
+            f"{model_name}={row.get(model_col, row.get('type_astir', 'other'))}, "
+            f"Final={row['cell_type']}, "
             f"margin={float(row.get('final_margin', 0.0)):.2f}"
         )
         ax.text(0.0, y, line, va="top", fontsize=8, transform=ax.transAxes)
@@ -221,10 +240,13 @@ def _plot_examples_for_class(
 def _plot_notes(ax: plt.Axes, assignments_df: pd.DataFrame, summary: dict, selected: pd.DataFrame) -> None:
     ax.axis("off")
     classifier_used = str(summary.get("classifier_used", "unknown"))
+    model_name = model_display_name(classifier_used)
+    model_col = model_label_column(assignments_df, classifier_used, prefer_fine=True)
     mismatch_rate = float(assignments_df["is_mismatch"].mean()) if not assignments_df.empty else 0.0
     marker_columns = [m for m in ("Pan-CK", "CD45", "SMA") if m in assignments_df.columns]
     lines = [
         f"Mode: {classifier_used}",
+        f"Model: {model_name}",
         f"Cells: {len(assignments_df)}",
         f"Mismatch rate: {mismatch_rate:.1%}",
         f"Markers: {', '.join(marker_columns) if marker_columns else 'n/a'}",
@@ -246,6 +268,18 @@ def _plot_notes(ax: plt.Axes, assignments_df: pd.DataFrame, summary: dict, selec
             transform=ax.transAxes,
         )
         y -= 0.07
+    subtype_counts = (
+        assignments_df[model_col].astype(str).value_counts().head(4).to_dict()
+        if model_col in assignments_df.columns
+        else {}
+    )
+    if subtype_counts:
+        y -= 0.03
+        ax.text(0.0, y, "Top model labels:", va="top", fontsize=8, transform=ax.transAxes)
+        y -= 0.07
+        for name, count in subtype_counts.items():
+            ax.text(0.04, y, f"{name}: {count}", va="top", fontsize=8, transform=ax.transAxes)
+            y -= 0.07
     if classifier_used == "rule_fallback":
         ax.text(
             0.0,
@@ -269,20 +303,20 @@ def build_report_figure(
     fig, axes = plt.subplots(2, 4, figsize=(11.0, 6.4), constrained_layout=True)
     ax = axes.ravel()
 
-    _plot_class_counts(ax[0], assignments_df)
+    _plot_class_counts(ax[0], assignments_df, classifier_used)
     _panel_label(ax[0], "A")
 
-    _plot_confusion_heatmap(ax[1], assignments_df)
+    _plot_confusion_heatmap(ax[1], assignments_df, classifier_used)
     _panel_label(ax[1], "B")
 
     _plot_probability_distributions(ax[2], assignments_df, classifier_used)
     _panel_label(ax[2], "C")
 
-    _plot_marker_panel(ax[3], assignments_df)
+    _plot_model_subtype_counts(ax[3], assignments_df, classifier_used)
     _panel_label(ax[3], "D")
 
     for panel_idx, class_name in enumerate(CELL_TYPES, start=4):
-        _plot_examples_for_class(ax[panel_idx], selected, class_name, processed_dir)
+        _plot_examples_for_class(ax[panel_idx], selected, class_name, processed_dir, classifier_used)
         _panel_label(ax[panel_idx], chr(ord("A") + panel_idx))
 
     _plot_notes(ax[7], assignments_df, summary, selected)
@@ -291,7 +325,7 @@ def build_report_figure(
 
     fig.suptitle(
         (
-            f"Astir evidence report (mode={classifier_used}, "
+            f"Model evidence report (mode={classifier_used}, "
             f"n={len(assignments_df)}, mismatch={float(assignments_df['is_mismatch'].mean()):.1%})"
         ),
         fontsize=10,
@@ -302,7 +336,7 @@ def build_report_figure(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Create a sample-level Astir evidence and assignment comparison report."
+        description="Create a sample-level model evidence and assignment comparison report."
     )
     parser.add_argument("--processed", required=True, help="Processed directory.")
     parser.add_argument(

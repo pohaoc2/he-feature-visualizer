@@ -62,27 +62,51 @@ CELLVIT_TYPE_PRIORS: dict[int, dict[str, float]] = {
     5: {"cancer": 0.5, "immune": 0.0, "healthy": 0.5},  # Epithelial split prior
 }
 
-ASTIR_TYPE_MARKERS: dict[str, list[str]] = {
-    "cancer": ["PanCK", "Ecadherin"],
-    "immune": [
-        "CD45",
-        "CD3e",
-        "CD4",
-        "CD8a",
-        "CD20",
-        "CD68",
-        "CD163",
-        "FOXP3",
-        "CD45RO",
-        "PD1",
-    ],
-    "healthy": ["SMA", "CD31"],
+ASTIR_FINE_TYPE_MARKERS: dict[str, list[str]] = {
+    "epithelial": ["PanCK", "Ecadherin"],
+    "cd4_t": ["CD45", "CD3e", "CD4", "CD45RO"],
+    "cd8_t": ["CD45", "CD3e", "CD8a", "CD45RO"],
+    "treg": ["CD45", "CD3e", "CD4", "FOXP3"],
+    "b_cell": ["CD45", "CD20"],
+    "macrophage": ["CD45", "CD68", "CD163"],
+    "endothelial": ["CD31"],
+    "sma_stromal": ["SMA"],
 }
+
+ASTIR_FINE_TO_FINAL: dict[str, str] = {
+    "epithelial": "cancer",
+    "cd4_t": "immune",
+    "cd8_t": "immune",
+    "treg": "immune",
+    "b_cell": "immune",
+    "macrophage": "immune",
+    "endothelial": "healthy",
+    "sma_stromal": "healthy",
+}
+
+CODEX_FINE_TYPE_MARKERS = ASTIR_FINE_TYPE_MARKERS
+
+CODEX_FINE_TO_FINAL_WEIGHTS: dict[str, dict[str, float]] = {
+    "epithelial": {"cancer": 1.0},
+    "cd4_t": {"immune": 1.0},
+    "cd8_t": {"immune": 1.0},
+    "treg": {"immune": 1.0},
+    "b_cell": {"immune": 1.0},
+    "macrophage": {"immune": 1.0},
+    "endothelial": {"healthy": 1.0},
+    "sma_stromal": {"healthy": 1.0},
+}
+
+# Legacy name retained for compatibility with existing tests/tools.
+ASTIR_TYPE_MARKERS = ASTIR_FINE_TYPE_MARKERS
 
 NON_TYPING_MARKERS: tuple[str, ...] = ("Hoechst", "AF1", "Argo550", "PD-L1")
 
 CONFIDENCE_THRESHOLDS: tuple[float, float] = (0.25, 0.12)
 DEFAULT_ASTIR_WEIGHT = 0.85
+CODEX_ZSCORE_EPS = 1e-6
+CODEX_CLUSTER_PENALTY = 0.35
+CODEX_CLUSTER_TEMPERATURE = 0.75
 
 # Legacy compatibility surfaces kept for older tests/tools.
 LEGACY_TYPE_MARKERS: dict[str, list[str]] = {
@@ -120,6 +144,153 @@ def _safe_float(value: object, default: float = 0.0) -> float:
 def _argmax_label(score_map: dict[str, float]) -> str:
     # Stable tie-breaking by CELL_TYPES order.
     return max(CELL_TYPES, key=lambda k: (score_map.get(k, 0.0), -CELL_TYPES.index(k)))
+
+
+def _collapse_astir_type_label(label: object) -> str:
+    key = str(label).strip()
+    if key in CELL_TYPES:
+        return key
+    return ASTIR_FINE_TO_FINAL.get(key, "other")
+
+
+def _collapse_astir_probabilities(probs: pd.DataFrame) -> pd.DataFrame:
+    """Collapse fine-grained Astir outputs into the shared 3-class ontology."""
+    collapsed = pd.DataFrame(0.0, index=probs.index, columns=list(CELL_TYPES))
+    for col in probs.columns:
+        target = _collapse_astir_type_label(col)
+        if target not in CELL_TYPES:
+            continue
+        collapsed[target] = collapsed[target] + pd.to_numeric(
+            probs[col], errors="coerce"
+        ).fillna(0.0).clip(lower=0.0)
+    return collapsed
+
+
+def _collapse_weighted_fine_probabilities(
+    probs: pd.DataFrame,
+    fine_to_final: dict[str, dict[str, float]],
+) -> pd.DataFrame:
+    """Collapse fine-grained probabilities into the shared 3-class ontology."""
+    collapsed = pd.DataFrame(0.0, index=probs.index, columns=list(CELL_TYPES))
+    for fine_type, weights in fine_to_final.items():
+        if fine_type not in probs.columns:
+            continue
+        series = pd.to_numeric(probs[fine_type], errors="coerce").fillna(0.0).clip(lower=0.0)
+        for final_type, weight in weights.items():
+            if final_type in collapsed.columns and weight != 0.0:
+                collapsed[final_type] = collapsed[final_type] + float(weight) * series
+
+    row_sum = collapsed.sum(axis=1)
+    safe_den = row_sum.where(row_sum > 0.0, 1.0)
+    return collapsed.div(safe_den, axis=0)
+
+
+def _stable_softmax(frame: pd.DataFrame, temperature: float = 1.0) -> pd.DataFrame:
+    """Return row-wise softmax probabilities for a score frame."""
+    if frame.empty:
+        return frame.copy()
+    temp = float(max(temperature, 1e-6))
+    values = frame.to_numpy(dtype=float) / temp
+    values = values - np.max(values, axis=1, keepdims=True)
+    exp = np.exp(values)
+    denom = exp.sum(axis=1, keepdims=True)
+    denom[denom <= 0.0] = 1.0
+    return pd.DataFrame(exp / denom, index=frame.index, columns=frame.columns)
+
+
+def _preprocess_codex_matrix(expr_df: pd.DataFrame) -> pd.DataFrame:
+    """Prepare per-cell multiplex features for CODEX-style clustering.
+
+    The current CODEX path follows the Frontiers benchmarking paper's
+    recommended normalization for cell-type identification: per-marker
+    Z normalization across all cells.
+    """
+    out = expr_df.apply(pd.to_numeric, errors="coerce").fillna(0.0).clip(lower=0.0)
+    if out.empty:
+        return out.astype(float)
+
+    arr = out.to_numpy(dtype=float)
+    mean = arr.mean(axis=0)
+    std = arr.std(axis=0)
+    std[std <= CODEX_ZSCORE_EPS] = 1.0
+    arr = (arr - mean) / std
+    return pd.DataFrame(arr, index=out.index, columns=out.columns)
+
+
+def _compute_codex_cluster_scores(
+    centers: pd.DataFrame,
+    fine_type_markers: dict[str, list[str]],
+) -> pd.DataFrame:
+    """Score cluster centers against fine cell-type signatures."""
+    positive = centers.clip(lower=0.0)
+    scores = pd.DataFrame(index=centers.index, columns=list(fine_type_markers), dtype=float)
+
+    for fine_type, markers in fine_type_markers.items():
+        present = [marker for marker in markers if marker in centers.columns]
+        if not present:
+            scores[fine_type] = 0.0
+            continue
+        signal = centers[present].mean(axis=1)
+        other_markers = [marker for marker in centers.columns if marker not in present]
+        if other_markers:
+            penalty = positive[other_markers].mean(axis=1)
+        else:
+            penalty = pd.Series(0.0, index=centers.index, dtype=float)
+        scores[fine_type] = signal - CODEX_CLUSTER_PENALTY * penalty
+
+    return scores.fillna(0.0)
+
+
+def _compute_codex_probabilities(
+    expr_df: pd.DataFrame,
+    logger: logging.Logger,
+) -> pd.DataFrame:
+    """Cluster multiplex features and annotate clusters into fine cell types."""
+    if expr_df.empty:
+        out = pd.DataFrame(0.0, index=expr_df.index, columns=list(CELL_TYPES))
+        out.attrs["model_fine_probs"] = pd.DataFrame(index=expr_df.index)
+        out.attrs["model_fine_top"] = pd.Series(dtype=object, index=expr_df.index)
+        return out
+
+    normalized = _preprocess_codex_matrix(expr_df)
+    n_cells = len(normalized)
+    n_clusters = min(max(1, len(CODEX_FINE_TYPE_MARKERS)), n_cells)
+
+    if n_clusters == 1:
+        cluster_ids = np.zeros(n_cells, dtype=int)
+        centers = pd.DataFrame([normalized.mean(axis=0)], columns=normalized.columns)
+    else:
+        try:
+            from sklearn.cluster import KMeans
+        except Exception as exc:  # pragma: no cover - sklearn is expected via astir deps
+            raise RuntimeError("CODEX classifier requires scikit-learn.") from exc
+
+        km = KMeans(n_clusters=n_clusters, random_state=0, n_init=20)
+        cluster_ids = km.fit_predict(normalized.to_numpy(dtype=float))
+        centers = pd.DataFrame(km.cluster_centers_, columns=normalized.columns)
+
+    centers.index = pd.Index(range(len(centers)), name="cluster_id")
+    cluster_scores = _compute_codex_cluster_scores(centers, CODEX_FINE_TYPE_MARKERS)
+    cluster_probs = _stable_softmax(cluster_scores, temperature=CODEX_CLUSTER_TEMPERATURE)
+
+    cell_cluster_ids = pd.Series(cluster_ids, index=expr_df.index, name="cluster_id")
+    fine_probs = cluster_probs.loc[cell_cluster_ids.to_numpy()].set_index(expr_df.index)
+    fine_top = fine_probs.idxmax(axis=1).astype(str)
+    final_probs = _collapse_weighted_fine_probabilities(
+        fine_probs,
+        CODEX_FINE_TO_FINAL_WEIGHTS,
+    )
+
+    logger.info(
+        "CODEX clustering assigned %d cells across %d clusters; fine types=%s",
+        n_cells,
+        n_clusters,
+        dict(fine_top.value_counts()),
+    )
+    final_probs.attrs["model_fine_probs"] = fine_probs
+    final_probs.attrs["model_fine_top"] = fine_top
+    final_probs.attrs["model_cluster_id"] = cell_cluster_ids
+    return final_probs
 
 
 def _mean_available(series_list: list[pd.Series]) -> pd.Series:
@@ -197,7 +368,7 @@ def _compute_rule_probabilities(df: pd.DataFrame) -> pd.DataFrame:
 
 def _build_astir_input(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, dict[str, object]]]:
     """Build Astir marker matrix and return marker coverage metadata."""
-    required = sorted({m for markers in ASTIR_TYPE_MARKERS.values() for m in markers})
+    required = sorted({m for markers in ASTIR_FINE_TYPE_MARKERS.values() for m in markers})
     data: dict[str, pd.Series] = {}
     coverage: dict[str, dict[str, object]] = {}
 
@@ -224,14 +395,24 @@ def compute_type_probabilities(
 
     if classifier == "rule":
         return _compute_rule_probabilities(df), "rule", coverage
+    if classifier == "codex":
+        return _compute_codex_probabilities(expr_df, log), "codex", coverage
 
     try:
-        probs = predict_cell_type_probabilities(
+        fine_probs = predict_cell_type_probabilities(
             expr_df,
-            marker_dict=ASTIR_TYPE_MARKERS,
+            marker_dict=ASTIR_FINE_TYPE_MARKERS,
             logger=log,
         )
-        return probs.reindex(columns=list(CELL_TYPES), fill_value=0.0), "astir", coverage
+        probs = _collapse_astir_probabilities(fine_probs)
+        fine_top = (
+            fine_probs.idxmax(axis=1).astype(str)
+            if len(fine_probs.columns) > 0
+            else pd.Series("other", index=fine_probs.index, dtype=object)
+        )
+        probs.attrs["model_fine_probs"] = fine_probs
+        probs.attrs["model_fine_top"] = fine_top
+        return probs, "astir", coverage
     except AstirUnavailableError as exc:
         if allow_astir_fallback:
             log.warning("Astir unavailable (%s). Falling back to rule classifier.", exc)
@@ -413,6 +594,7 @@ def match_cells(
                 row = df.iloc[idx]
                 model_probs = {c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES}
                 model_type = _argmax_label(model_probs)
+                model_type_fine = str(row.get("type_astir_fine", model_type))
                 fused_probs = {
                     c: model_weight * model_probs[c] + prior_weight * prior_probs[c]
                     for c in CELL_TYPES
@@ -425,6 +607,7 @@ def match_cells(
             else:
                 model_probs = {c: 0.0 for c in CELL_TYPES}
                 model_type = "unmatched"
+                model_type_fine = "unmatched"
                 fused_probs = prior_probs.copy()
                 final_type = prior_type
                 mismatch = False
@@ -436,6 +619,7 @@ def match_cells(
             cell["cell_type_confidence"] = confidence
             cell["cell_state"] = state
             cell["type_astir"] = model_type
+            cell["type_astir_fine"] = model_type_fine
             cell["type_cellvit_prior"] = prior_type
             cell["is_mismatch"] = mismatch
             cell["matched_row_idx"] = matched_row_idx
@@ -452,6 +636,7 @@ def match_cells(
             cell["cell_type_confidence"] = "low"
             cell["cell_state"] = "dead" if type_cellvit == 4 else "quiescent"
             cell["type_astir"] = "error"
+            cell["type_astir_fine"] = "error"
             cell["type_cellvit_prior"] = prior_type
             cell["is_mismatch"] = False
             cell["matched_row_idx"] = None
@@ -480,6 +665,7 @@ def build_assignment_record(
             "type_cellvit": int(cell.get("type_cellvit", 0)),
             "type_cellvit_prior": str(cell.get("type_cellvit_prior", "other")),
             "type_astir": str(cell.get("type_astir", "other")),
+            "type_astir_fine": str(cell.get("type_astir_fine", cell.get("type_astir", "other"))),
             "cell_type": str(cell.get("cell_type", "other")),
             "cell_state": str(cell.get("cell_state", "other")),
             "cell_type_confidence": str(cell.get("cell_type_confidence", "low")),
@@ -621,9 +807,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--classifier",
-        choices=["astir", "rule"],
+        choices=["astir", "codex", "rule"],
         default="astir",
-        help="Cell-type classifier: astir (default) or rule fallback.",
+        help="Cell-type classifier: astir (default), codex clustering, or rule fallback.",
     )
     parser.add_argument(
         "--allow-astir-fallback",
@@ -733,6 +919,15 @@ def main() -> None:
         allow_astir_fallback=args.allow_astir_fallback,
         log=log,
     )
+    fine_probs = probs.attrs.get("model_fine_probs")
+    fine_top = probs.attrs.get("model_fine_top")
+    if isinstance(fine_probs, pd.DataFrame):
+        for fine_type in fine_probs.columns:
+            df[f"p_model_{fine_type}"] = fine_probs[fine_type].to_numpy(dtype=float)
+    if isinstance(fine_top, pd.Series):
+        df["type_astir_fine"] = fine_top.astype(str).to_numpy()
+    elif "type_astir_fine" not in df.columns:
+        df["type_astir_fine"] = probs.idxmax(axis=1).astype(str).to_numpy()
     for cls in CELL_TYPES:
         df[f"p_model_{cls}"] = probs[cls].to_numpy(dtype=float)
 
@@ -850,6 +1045,7 @@ def main() -> None:
         "type_cellvit",
         "type_cellvit_prior",
         "type_astir",
+        "type_astir_fine",
         "cell_type",
         "cell_state",
         "cell_type_confidence",

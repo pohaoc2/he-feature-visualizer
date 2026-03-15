@@ -14,6 +14,12 @@ FINAL_PROB_COLUMNS: tuple[str, str, str] = (
 )
 
 CONFIDENCE_SCORES = {"low": 0, "medium": 1, "high": 2}
+MODEL_DISPLAY_NAMES = {
+    "astir": "Astir",
+    "codex": "CODEX",
+    "rule": "Rule",
+    "rule_fallback": "Rule",
+}
 
 
 def map_cellvit_type(type_cellvit: object, type_cellvit_prior: object | None = None) -> str:
@@ -31,6 +37,27 @@ def map_cellvit_type(type_cellvit: object, type_cellvit_prior: object | None = N
     if value == 5 and isinstance(type_cellvit_prior, str):
         return type_cellvit_prior if type_cellvit_prior in {"cancer", "immune", "healthy"} else "other"
     return "other"
+
+
+def model_display_name(classifier_used: object) -> str:
+    key = str(classifier_used).strip().lower()
+    if key in MODEL_DISPLAY_NAMES:
+        return MODEL_DISPLAY_NAMES[key]
+    return str(classifier_used).strip() or "Model"
+
+
+def model_label_column(
+    df: pd.DataFrame,
+    classifier_used: object,
+    *,
+    prefer_fine: bool = True,
+) -> str:
+    key = str(classifier_used).strip().lower()
+    if prefer_fine and key == "codex" and "type_astir_fine" in df.columns:
+        return "type_astir_fine"
+    if "type_astir" in df.columns:
+        return "type_astir"
+    return "cell_type"
 
 
 def _coerce_is_mismatch(series: pd.Series) -> pd.Series:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publication-style patch report comparing CellViT, Astir, and final labels."""
+"""Publication-style patch report comparing CellViT, model, and final labels."""
 
 from __future__ import annotations
 
@@ -25,6 +25,8 @@ from utils.cell_assignment_reports import (
     choose_marker_for_patch,
     load_cell_assignments,
     map_cellvit_type,
+    model_display_name,
+    model_label_column,
 )
 from utils.marker_aliases import canonicalize_marker_name, normalize_marker_name
 from utils.normalize import percentile_norm
@@ -46,6 +48,18 @@ CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "quiescent": (100, 149, 237, 200),
     "dead": (139, 0, 139, 200),
     "other": (80, 80, 80, 150),
+}
+
+MODEL_FINE_COLORS: dict[str, tuple[int, int, int, int]] = {
+    "epithelial": (220, 50, 50, 200),
+    "cd4_t": (70, 120, 220, 200),
+    "cd8_t": (30, 80, 200, 200),
+    "treg": (145, 90, 205, 200),
+    "b_cell": (70, 180, 235, 200),
+    "macrophage": (255, 150, 40, 200),
+    "endothelial": (40, 170, 140, 200),
+    "sma_stromal": (80, 180, 80, 200),
+    "other": (150, 150, 150, 120),
 }
 
 
@@ -236,8 +250,11 @@ def _build_evidence_panel(
         .value_counts()
         .to_dict()
     )
+    model_name = model_display_name(classifier_used)
+    model_col = model_label_column(assignments_patch, classifier_used, prefer_fine=True)
     lines = [
         f"Mode: {classifier_used}",
+        f"Model: {model_name}",
         f"Cells: {len(assignments_patch)}",
         f"Mismatch: {mismatch_rate:.1%}",
         (
@@ -255,27 +272,37 @@ def _build_evidence_panel(
         ax.text(0.0, y, line, va="top", fontsize=8, transform=ax.transAxes)
         y -= 0.08 if line else 0.04
 
-    for label, column in (
-        ("CellViT", "cellvit_mapped_type"),
-        ("Astir", "type_astir"),
-        ("Final", "cell_type"),
-    ):
+    count_specs = [
+        ("CellViT", "cellvit_mapped_type", ["cancer", "immune", "healthy"], CELL_TYPE_COLORS),
+        (
+            model_name,
+            model_col,
+            (
+                assignments_patch[model_col].astype(str).value_counts().head(4).index.tolist()
+                if model_col == "type_astir_fine"
+                else ["cancer", "immune", "healthy"]
+            ),
+            MODEL_FINE_COLORS if model_col == "type_astir_fine" else CELL_TYPE_COLORS,
+        ),
+        ("Final", "cell_type", ["cancer", "immune", "healthy"], CELL_TYPE_COLORS),
+    ]
+    for label, column, classes, color_map in count_specs:
         counts = (
             assignments_patch[column]
             .astype(str)
             .value_counts()
-            .reindex(["cancer", "immune", "healthy"], fill_value=0)
+            .reindex(classes, fill_value=0)
         )
         ax.text(0.0, y, f"{label}:", va="top", fontsize=8, fontweight="bold", transform=ax.transAxes)
         y -= 0.07
-        for cls in ("cancer", "immune", "healthy"):
+        for cls in classes:
             ax.text(
                 0.04,
                 y,
-                f"{cls[:3]}={int(counts[cls])}",
+                f"{cls}={int(counts[cls])}",
                 va="top",
                 fontsize=8,
-                color=np.array(CELL_TYPE_COLORS[cls][:3], dtype=float) / 255.0,
+                color=np.array(color_map.get(cls, color_map["other"])[:3], dtype=float) / 255.0,
                 transform=ax.transAxes,
             )
             y -= 0.06
@@ -286,7 +313,7 @@ def main() -> None:
         description=(
             "Create publication-style figure for one patch showing "
             "H&E, MX marker, CellViT contours, CellViT mapped type, "
-            "Astir type, final type, and state."
+            "model type, final type, and state."
         )
     )
     parser.add_argument("--processed", required=True, help="Processed directory.")
@@ -365,11 +392,15 @@ def main() -> None:
 
     summary = _load_summary(summary_path)
     classifier_used = str(summary.get("classifier_used", "unknown"))
+    model_name = model_display_name(classifier_used)
 
     assignments_all = load_cell_assignments(assignments_path)
     assignments_patch = assignments_all[assignments_all["patch_id"].astype(str) == patch].copy()
     if assignments_patch.empty:
         raise ValueError(f"No assignment rows found for patch '{patch}' in {assignments_path}")
+    model_col = model_label_column(assignments_patch, classifier_used, prefer_fine=True)
+    model_colors = MODEL_FINE_COLORS if model_col == "type_astir_fine" else CELL_TYPE_COLORS
+    model_title = f"{model_name} fine type" if model_col == "type_astir_fine" else f"{model_name} top class"
 
     index_data = json.loads(index_path.read_text(encoding="utf-8"))
     channels = [str(x) for x in index_data.get("channels", [])]
@@ -404,11 +435,11 @@ def main() -> None:
         ),
         CELL_TYPE_COLORS,
     )
-    astir_overlay = _render_overlay(
+    model_overlay = _render_overlay(
         cell_pairs,
         patch_shape,
-        lambda _cell, row: row.get("type_astir", "other") if row is not None else "other",
-        CELL_TYPE_COLORS,
+        lambda _cell, row: row.get(model_col, "other") if row is not None else "other",
+        model_colors,
     )
     final_overlay = _render_overlay(
         cell_pairs,
@@ -424,7 +455,7 @@ def main() -> None:
     )
 
     cellvit_on_he = _composite_rgba_on_rgb(he_rgb, cellvit_overlay)
-    astir_on_he = _composite_rgba_on_rgb(he_rgb, astir_overlay)
+    model_on_he = _composite_rgba_on_rgb(he_rgb, model_overlay)
     final_on_he = _composite_rgba_on_rgb(he_rgb, final_overlay)
     state_on_he = _composite_rgba_on_rgb(he_rgb, state_overlay)
 
@@ -455,8 +486,8 @@ def main() -> None:
     ax[3].axis("off")
     _panel_label(ax[3], "D")
 
-    ax[4].imshow(astir_on_he)
-    ax[4].set_title("Astir top class")
+    ax[4].imshow(model_on_he)
+    ax[4].set_title(model_title)
     ax[4].axis("off")
     _panel_label(ax[4], "E")
 
@@ -476,7 +507,7 @@ def main() -> None:
     mismatch_rate = float(assignments_patch["is_mismatch"].mean())
     fig.suptitle(
         (
-            f"Patch {patch}: CellViT vs Astir vs Final "
+            f"Patch {patch}: CellViT vs {model_name} vs Final "
             f"(n={len(assignments_patch)}, mismatch={mismatch_rate:.1%}, mode={classifier_used})"
         ),
         fontsize=10,

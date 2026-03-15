@@ -15,6 +15,7 @@ def _make_assignments_df() -> pd.DataFrame:
                 "patch_id": "p_bad",
                 "cell_type": "cancer",
                 "type_astir": "cancer",
+                "type_astir_fine": "epithelial",
                 "type_cellvit_prior": "cancer",
                 "cell_type_confidence": "high",
                 "is_mismatch": False,
@@ -33,6 +34,7 @@ def _make_assignments_df() -> pd.DataFrame:
                 "patch_id": "p_bad",
                 "cell_type": "cancer",
                 "type_astir": "cancer",
+                "type_astir_fine": "epithelial",
                 "type_cellvit_prior": "cancer",
                 "cell_type_confidence": "low",
                 "is_mismatch": False,
@@ -51,6 +53,7 @@ def _make_assignments_df() -> pd.DataFrame:
                 "patch_id": "p_bad",
                 "cell_type": "cancer",
                 "type_astir": "immune",
+                "type_astir_fine": "b_cell",
                 "type_cellvit_prior": "cancer",
                 "cell_type_confidence": "medium",
                 "is_mismatch": True,
@@ -69,6 +72,7 @@ def _make_assignments_df() -> pd.DataFrame:
                 "patch_id": "p_bad",
                 "cell_type": "immune",
                 "type_astir": "immune",
+                "type_astir_fine": "cd4_t",
                 "type_cellvit_prior": "immune",
                 "cell_type_confidence": "high",
                 "is_mismatch": False,
@@ -87,6 +91,7 @@ def _make_assignments_df() -> pd.DataFrame:
                 "patch_id": "p_good",
                 "cell_type": "healthy",
                 "type_astir": "healthy",
+                "type_astir_fine": "sma_stromal",
                 "type_cellvit_prior": "healthy",
                 "cell_type_confidence": "high",
                 "is_mismatch": False,
@@ -105,6 +110,7 @@ def _make_assignments_df() -> pd.DataFrame:
                 "patch_id": "p_good",
                 "cell_type": "healthy",
                 "type_astir": "healthy",
+                "type_astir_fine": "endothelial",
                 "type_cellvit_prior": "healthy",
                 "cell_type_confidence": "low",
                 "is_mismatch": False,
@@ -174,3 +180,11 @@ def test_choose_marker_for_patch_prefers_most_separating_marker() -> None:
     df = _make_assignments_df()
     marker = reports.choose_marker_for_patch(df, ["Pan-CK", "CD45", "SMA"])
     assert marker == "CD45"
+
+
+def test_model_label_column_prefers_fine_labels_for_codex() -> None:
+    df = _make_assignments_df()
+
+    assert reports.model_display_name("codex") == "CODEX"
+    assert reports.model_label_column(df, "codex", prefer_fine=True) == "type_astir_fine"
+    assert reports.model_label_column(df, "astir", prefer_fine=True) == "type_astir"

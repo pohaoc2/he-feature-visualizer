@@ -104,6 +104,29 @@ def test_compute_type_probabilities_rule_prefers_expected_classes():
     assert top[2] == "healthy"
 
 
+def test_collapse_astir_probabilities_groups_fine_types():
+    from stages.assign_cells import _collapse_astir_probabilities
+
+    fine = pd.DataFrame(
+        {
+            "epithelial": [0.50, 0.10],
+            "cd4_t": [0.20, 0.20],
+            "b_cell": [0.10, 0.30],
+            "macrophage": [0.05, 0.05],
+            "endothelial": [0.15, 0.35],
+        },
+        index=["a", "b"],
+    )
+
+    collapsed = _collapse_astir_probabilities(fine)
+    assert collapsed.loc["a", "cancer"] == pytest.approx(0.50)
+    assert collapsed.loc["a", "immune"] == pytest.approx(0.35)
+    assert collapsed.loc["a", "healthy"] == pytest.approx(0.15)
+    assert collapsed.loc["b", "cancer"] == pytest.approx(0.10)
+    assert collapsed.loc["b", "immune"] == pytest.approx(0.55)
+    assert collapsed.loc["b", "healthy"] == pytest.approx(0.35)
+
+
 def test_compute_type_probabilities_astir_mock(monkeypatch):
     import stages.assign_cells as mod
 
@@ -129,6 +152,42 @@ def test_compute_type_probabilities_astir_mock(monkeypatch):
     )
     assert used == "astir"
     assert probs.iloc[0]["cancer"] == pytest.approx(0.7)
+
+
+def test_compute_type_probabilities_codex_prefers_expected_classes():
+    from stages.assign_cells import compute_type_probabilities
+
+    df = _make_features_df()
+    probs, used, _ = compute_type_probabilities(
+        df,
+        classifier="codex",
+        allow_astir_fallback=False,
+        log=logging.getLogger("test-codex"),
+    )
+    assert used == "codex"
+    top = probs.idxmax(axis=1).tolist()
+    assert top[0] == "cancer"
+    assert top[1] == "immune"
+    assert top[2] == "healthy"
+    fine_top = probs.attrs["model_fine_top"].tolist()
+    assert fine_top[0] == "epithelial"
+
+
+def test_preprocess_codex_matrix_matches_per_marker_zscore():
+    from stages.assign_cells import _preprocess_codex_matrix
+
+    df = pd.DataFrame(
+        {
+            "marker_a": [0.0, 10.0, 1000.0],
+            "marker_b": [5.0, 5.0, 5.0],
+        }
+    )
+
+    normalized = _preprocess_codex_matrix(df)
+    expected_a = (df["marker_a"] - df["marker_a"].mean()) / df["marker_a"].std(ddof=0)
+
+    assert normalized["marker_a"].to_numpy() == pytest.approx(expected_a.to_numpy())
+    assert normalized["marker_b"].to_numpy() == pytest.approx([0.0, 0.0, 0.0])
 
 
 def test_compute_type_probabilities_astir_fallback(monkeypatch):
@@ -336,6 +395,7 @@ def test_cli_rule_mode_creates_outputs_and_summary(tmp_path):
         "type_cellvit",
         "type_cellvit_prior",
         "type_astir",
+        "type_astir_fine",
         "cell_type",
         "cell_state",
         "cell_type_confidence",

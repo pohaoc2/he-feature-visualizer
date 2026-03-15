@@ -418,17 +418,20 @@ evidence summary), run Stage 3 and render with `tools.scientific_vis_cellvit_mx`
 python -m stages.assign_cells \
   --cellvit-dir processed_crc33_crop/cellvit/ \
   --multiplex-dir processed_crc33_crop/multiplex/ \
+  --features-csv processed_crc33_crop/cellvit_mx_features.csv \
   --index processed_crc33_crop/index.json \
-  --out processed_crc33_crop_demo/ \
+  --out processed_crc33_crop/ \
   --classifier astir \
-  --allow-astir-fallback
+  --allow-astir-fallback \
+  --coord-scale 1.0 \
+  --csv-mpp 0.325
 
 # 2) Render one patch using the auto-selected evidence marker
 python -m tools.scientific_vis_cellvit_mx \
-  --processed processed_crc33_crop_demo/ \
-  --patch 256_256 \
-  --assignments-csv processed_crc33_crop_demo/cell_assignments.csv \
-  --out-prefix processed_crc33_crop_demo/scivis_patch_256_256_cd45 \
+  --processed processed_crc33_crop/ \
+  --patch 768_0 \
+  --assignments-csv processed_crc33_crop/cell_assignments.csv \
+  --out-prefix processed_crc33_crop/scivis_patch_768_0_cd45 \
   --formats png,pdf
 
 # 3) Override the marker if you want a specific channel

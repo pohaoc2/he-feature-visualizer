@@ -28,6 +28,7 @@ def _make_assignments() -> pd.DataFrame:
                 "type_cellvit": 1,
                 "type_cellvit_prior": "cancer",
                 "type_astir": "cancer",
+                "type_astir_fine": "epithelial",
                 "cell_type": "cancer",
                 "cell_state": "quiescent",
                 "cell_type_confidence": "high",
@@ -49,6 +50,7 @@ def _make_assignments() -> pd.DataFrame:
                 "type_cellvit": 1,
                 "type_cellvit_prior": "cancer",
                 "type_astir": "immune",
+                "type_astir_fine": "b_cell",
                 "cell_type": "cancer",
                 "cell_state": "quiescent",
                 "cell_type_confidence": "low",
@@ -70,6 +72,7 @@ def _make_assignments() -> pd.DataFrame:
                 "type_cellvit": 2,
                 "type_cellvit_prior": "immune",
                 "type_astir": "immune",
+                "type_astir_fine": "cd4_t",
                 "cell_type": "immune",
                 "cell_state": "proliferative",
                 "cell_type_confidence": "high",
@@ -91,6 +94,7 @@ def _make_assignments() -> pd.DataFrame:
                 "type_cellvit": 3,
                 "type_cellvit_prior": "healthy",
                 "type_astir": "healthy",
+                "type_astir_fine": "sma_stromal",
                 "cell_type": "healthy",
                 "cell_state": "quiescent",
                 "cell_type_confidence": "high",
@@ -112,6 +116,7 @@ def _make_assignments() -> pd.DataFrame:
                 "type_cellvit": 3,
                 "type_cellvit_prior": "healthy",
                 "type_astir": "healthy",
+                "type_astir_fine": "endothelial",
                 "cell_type": "healthy",
                 "cell_state": "quiescent",
                 "cell_type_confidence": "low",
@@ -152,6 +157,27 @@ def test_build_report_figure_marks_fallback_and_omits_missing_buckets(tmp_path: 
     assert set(healthy_examples["example_kind"]) == {"match", "ambiguous"}
 
 
+def test_build_report_figure_uses_codex_fine_labels(tmp_path: Path) -> None:
+    processed = tmp_path / "processed"
+    (processed / "he").mkdir(parents=True, exist_ok=True)
+    for patch_id in ("0_0", "0_1", "1_0"):
+        Image.fromarray(np.full((64, 64, 3), 180, dtype=np.uint8), mode="RGB").save(
+            processed / "he" / f"{patch_id}.png"
+        )
+
+    assignments_path = processed / "cell_assignments.csv"
+    _make_assignments().to_csv(assignments_path, index=False)
+    assignments = load_cell_assignments(assignments_path)
+    summary = {"classifier_used": "codex"}
+
+    fig, _ = report.build_report_figure(assignments, summary, processed)
+
+    assert "mode=codex" in fig._suptitle.get_text()
+    assert fig.axes[3].get_title() == "CODEX subtype distribution"
+    cancer_panel_text = "\n".join(text.get_text() for text in fig.axes[4].texts)
+    assert "CODEX=epithelial" in cancer_panel_text
+
+
 def test_astir_report_cli_smoke(tmp_path: Path) -> None:
     processed = tmp_path / "processed"
     (processed / "he").mkdir(parents=True, exist_ok=True)
@@ -166,6 +192,38 @@ def test_astir_report_cli_smoke(tmp_path: Path) -> None:
     summary_path.write_text(json.dumps({"classifier_used": "astir"}), encoding="utf-8")
 
     out_prefix = processed / "astir_report"
+    cmd = [
+        *_tool_cmd(),
+        "--processed",
+        str(processed),
+        "--assignments-csv",
+        str(assignments_path),
+        "--summary-json",
+        str(summary_path),
+        "--formats",
+        "png",
+        "--out-prefix",
+        str(out_prefix),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
+    assert result.returncode == 0, result.stderr
+    assert out_prefix.with_suffix(".png").exists()
+
+
+def test_codex_report_cli_smoke(tmp_path: Path) -> None:
+    processed = tmp_path / "processed"
+    (processed / "he").mkdir(parents=True, exist_ok=True)
+    for patch_id in ("0_0", "0_1", "1_0"):
+        Image.fromarray(np.full((64, 64, 3), 180, dtype=np.uint8), mode="RGB").save(
+            processed / "he" / f"{patch_id}.png"
+        )
+
+    assignments_path = processed / "cell_assignments.csv"
+    _make_assignments().to_csv(assignments_path, index=False)
+    summary_path = processed / "cell_summary.json"
+    summary_path.write_text(json.dumps({"classifier_used": "codex"}), encoding="utf-8")
+
+    out_prefix = processed / "codex_report"
     cmd = [
         *_tool_cmd(),
         "--processed",
