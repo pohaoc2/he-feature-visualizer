@@ -108,7 +108,7 @@ def _load_he_crop(
     cx: float,
     cy: float,
 ) -> np.ndarray | None:
-    """Load H&E patch and return 40×40 px crop centered at (cx, cy), clamped to bounds."""
+    """Load H&E patch and return up to 40×40 px crop centered at (cx, cy), clamped to bounds."""
     he_path = processed_dir / "he" / f"{patch_id}.png"
     if not he_path.exists():
         return None
@@ -152,7 +152,7 @@ def _plot_marker_bar(
         if marker_name in norm_vals:
             val = float(norm_vals[marker_name][row_index])
             ax.barh(bar_y, val, height=bar_h, color=color, align="center", left=0)
-            ax.text(val + 0.02, bar_y, f"{val:.2f}", va="center", fontsize=6)
+            ax.text(min(val + 0.02, 0.97), bar_y, f"{val:.2f}", va="center", fontsize=6)
         else:
             ax.text(0.5, bar_y, "n/a", va="center", ha="center",
                     fontsize=7, color="#888888")
