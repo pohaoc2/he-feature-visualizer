@@ -1,7 +1,7 @@
 """
 assign_cells.py — Stage 3 of the histopathology pipeline.
 
-Astir-first cell typing (cancer/immune/healthy) with CellViT prior fusion,
+CODEX-based cell typing (cancer/immune/healthy) with CellViT prior fusion,
 plus state assignment (dead/proliferative/quiescent).
 
 Dual mode:
@@ -26,7 +26,6 @@ import scipy.spatial
 from PIL import Image
 
 from stages.extract_cell_features import extract_cell_features_to_csv
-from utils.astir_adapter import AstirUnavailableError, predict_cell_type_probabilities
 from utils.marker_aliases import marker_candidates, resolve_first_present_column
 
 # ---------------------------------------------------------------------------
@@ -62,7 +61,7 @@ CELLVIT_TYPE_PRIORS: dict[int, dict[str, float]] = {
     5: {"cancer": 0.5, "immune": 0.0, "healthy": 0.5},  # Epithelial split prior
 }
 
-ASTIR_FINE_TYPE_MARKERS: dict[str, list[str]] = {
+CODEX_FINE_TYPE_MARKERS: dict[str, list[str]] = {
     "epithelial": ["PanCK", "Ecadherin"],
     "cd4_t": ["CD45", "CD3e", "CD4", "CD45RO"],
     "cd8_t": ["CD45", "CD3e", "CD8a", "CD45RO"],
@@ -72,19 +71,6 @@ ASTIR_FINE_TYPE_MARKERS: dict[str, list[str]] = {
     "endothelial": ["CD31"],
     "sma_stromal": ["SMA"],
 }
-
-ASTIR_FINE_TO_FINAL: dict[str, str] = {
-    "epithelial": "cancer",
-    "cd4_t": "immune",
-    "cd8_t": "immune",
-    "treg": "immune",
-    "b_cell": "immune",
-    "macrophage": "immune",
-    "endothelial": "healthy",
-    "sma_stromal": "healthy",
-}
-
-CODEX_FINE_TYPE_MARKERS = ASTIR_FINE_TYPE_MARKERS
 
 CODEX_FINE_TO_FINAL_WEIGHTS: dict[str, dict[str, float]] = {
     "epithelial": {"cancer": 1.0},
@@ -97,13 +83,10 @@ CODEX_FINE_TO_FINAL_WEIGHTS: dict[str, dict[str, float]] = {
     "sma_stromal": {"healthy": 1.0},
 }
 
-# Legacy name retained for compatibility with existing tests/tools.
-ASTIR_TYPE_MARKERS = ASTIR_FINE_TYPE_MARKERS
-
 NON_TYPING_MARKERS: tuple[str, ...] = ("Hoechst", "AF1", "Argo550", "PD-L1")
 
 CONFIDENCE_THRESHOLDS: tuple[float, float] = (0.25, 0.12)
-DEFAULT_ASTIR_WEIGHT = 0.85
+DEFAULT_MODEL_WEIGHT = 0.85
 CODEX_ZSCORE_EPS = 1e-6
 CODEX_CLUSTER_PENALTY = 0.35
 CODEX_CLUSTER_TEMPERATURE = 0.75
@@ -144,26 +127,6 @@ def _safe_float(value: object, default: float = 0.0) -> float:
 def _argmax_label(score_map: dict[str, float]) -> str:
     # Stable tie-breaking by CELL_TYPES order.
     return max(CELL_TYPES, key=lambda k: (score_map.get(k, 0.0), -CELL_TYPES.index(k)))
-
-
-def _collapse_astir_type_label(label: object) -> str:
-    key = str(label).strip()
-    if key in CELL_TYPES:
-        return key
-    return ASTIR_FINE_TO_FINAL.get(key, "other")
-
-
-def _collapse_astir_probabilities(probs: pd.DataFrame) -> pd.DataFrame:
-    """Collapse fine-grained Astir outputs into the shared 3-class ontology."""
-    collapsed = pd.DataFrame(0.0, index=probs.index, columns=list(CELL_TYPES))
-    for col in probs.columns:
-        target = _collapse_astir_type_label(col)
-        if target not in CELL_TYPES:
-            continue
-        collapsed[target] = collapsed[target] + pd.to_numeric(
-            probs[col], errors="coerce"
-        ).fillna(0.0).clip(lower=0.0)
-    return collapsed
 
 
 def _collapse_weighted_fine_probabilities(
@@ -366,9 +329,9 @@ def _compute_rule_probabilities(df: pd.DataFrame) -> pd.DataFrame:
     return probs.div(denom, axis=0)
 
 
-def _build_astir_input(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, dict[str, object]]]:
-    """Build Astir marker matrix and return marker coverage metadata."""
-    required = sorted({m for markers in ASTIR_FINE_TYPE_MARKERS.values() for m in markers})
+def _build_marker_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, dict[str, object]]]:
+    """Build marker matrix and return marker coverage metadata."""
+    required = sorted({m for markers in CODEX_FINE_TYPE_MARKERS.values() for m in markers})
     data: dict[str, pd.Series] = {}
     coverage: dict[str, dict[str, object]] = {}
 
@@ -387,37 +350,17 @@ def _build_astir_input(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, dict[s
 def compute_type_probabilities(
     df: pd.DataFrame,
     classifier: str,
-    allow_astir_fallback: bool,
     log: logging.Logger,
 ) -> tuple[pd.DataFrame, str, dict[str, dict[str, object]]]:
-    """Return model probabilities and runtime classifier mode."""
-    expr_df, coverage = _build_astir_input(df)
+    """Return model probabilities and runtime classifier mode.
+
+    Supported classifiers: "codex" (default) and "rule".
+    """
+    expr_df, coverage = _build_marker_matrix(df)
 
     if classifier == "rule":
         return _compute_rule_probabilities(df), "rule", coverage
-    if classifier == "codex":
-        return _compute_codex_probabilities(expr_df, log), "codex", coverage
-
-    try:
-        fine_probs = predict_cell_type_probabilities(
-            expr_df,
-            marker_dict=ASTIR_FINE_TYPE_MARKERS,
-            logger=log,
-        )
-        probs = _collapse_astir_probabilities(fine_probs)
-        fine_top = (
-            fine_probs.idxmax(axis=1).astype(str)
-            if len(fine_probs.columns) > 0
-            else pd.Series("other", index=fine_probs.index, dtype=object)
-        )
-        probs.attrs["model_fine_probs"] = fine_probs
-        probs.attrs["model_fine_top"] = fine_top
-        return probs, "astir", coverage
-    except AstirUnavailableError as exc:
-        if allow_astir_fallback:
-            log.warning("Astir unavailable (%s). Falling back to rule classifier.", exc)
-            return _compute_rule_probabilities(df), "rule_fallback", coverage
-        raise
+    return _compute_codex_probabilities(expr_df, log), "codex", coverage
 
 
 def build_csv_index(df: pd.DataFrame, x_col: str, y_col: str) -> scipy.spatial.KDTree:
@@ -567,7 +510,7 @@ def match_cells(
     y0: int,
     max_dist: float = 15.0,
     coord_scale: float = 1.0,
-    model_weight: float = DEFAULT_ASTIR_WEIGHT,
+    model_weight: float = DEFAULT_MODEL_WEIGHT,
 ) -> list[dict]:
     """Assign cell type/state by nearest-row lookup + probabilistic fusion."""
     model_weight = float(np.clip(model_weight, 0.0, 1.0))
@@ -594,7 +537,7 @@ def match_cells(
                 row = df.iloc[idx]
                 model_probs = {c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES}
                 model_type = _argmax_label(model_probs)
-                model_type_fine = str(row.get("type_astir_fine", model_type))
+                model_type_fine = str(row.get("type_codex_fine", model_type))
                 fused_probs = {
                     c: model_weight * model_probs[c] + prior_weight * prior_probs[c]
                     for c in CELL_TYPES
@@ -618,8 +561,8 @@ def match_cells(
             cell["cell_type"] = final_type
             cell["cell_type_confidence"] = confidence
             cell["cell_state"] = state
-            cell["type_astir"] = model_type
-            cell["type_astir_fine"] = model_type_fine
+            cell["type_codex"] = model_type
+            cell["type_codex_fine"] = model_type_fine
             cell["type_cellvit_prior"] = prior_type
             cell["is_mismatch"] = mismatch
             cell["matched_row_idx"] = matched_row_idx
@@ -635,8 +578,8 @@ def match_cells(
             cell["cell_type"] = prior_type
             cell["cell_type_confidence"] = "low"
             cell["cell_state"] = "dead" if type_cellvit == 4 else "quiescent"
-            cell["type_astir"] = "error"
-            cell["type_astir_fine"] = "error"
+            cell["type_codex"] = "error"
+            cell["type_codex_fine"] = "error"
             cell["type_cellvit_prior"] = prior_type
             cell["is_mismatch"] = False
             cell["matched_row_idx"] = None
@@ -664,8 +607,8 @@ def build_assignment_record(
             "patch_y0": int(y0),
             "type_cellvit": int(cell.get("type_cellvit", 0)),
             "type_cellvit_prior": str(cell.get("type_cellvit_prior", "other")),
-            "type_astir": str(cell.get("type_astir", "other")),
-            "type_astir_fine": str(cell.get("type_astir_fine", cell.get("type_astir", "other"))),
+            "type_codex": str(cell.get("type_codex", "other")),
+            "type_codex_fine": str(cell.get("type_codex_fine", cell.get("type_codex", "other"))),
             "cell_type": str(cell.get("cell_type", "other")),
             "cell_state": str(cell.get("cell_state", "other")),
             "cell_type_confidence": str(cell.get("cell_type_confidence", "low")),
@@ -732,7 +675,7 @@ def main() -> None:
     log = logging.getLogger(__name__)
 
     parser = argparse.ArgumentParser(
-        description="Stage 3: Astir-first type/state assignment and contour rasterization."
+        description="Stage 3: CODEX-based cell type/state assignment and contour rasterization."
     )
     parser.add_argument(
         "--cellvit-dir",
@@ -807,19 +750,14 @@ def main() -> None:
     )
     parser.add_argument(
         "--classifier",
-        choices=["astir", "codex", "rule"],
-        default="astir",
-        help="Cell-type classifier: astir (default), codex clustering, or rule fallback.",
+        choices=["codex", "rule"],
+        default="codex",
+        help="Cell-type classifier: codex (default) or rule fallback.",
     )
     parser.add_argument(
-        "--allow-astir-fallback",
-        action="store_true",
-        help="If Astir is unavailable, fallback to rule classifier instead of failing.",
-    )
-    parser.add_argument(
-        "--astir-weight",
+        "--model-weight",
         type=float,
-        default=DEFAULT_ASTIR_WEIGHT,
+        default=DEFAULT_MODEL_WEIGHT,
         help="Weight of model probabilities in fused type score (default: 0.85).",
     )
     parser.add_argument(
@@ -832,19 +770,19 @@ def main() -> None:
         "--type-percentile",
         type=float,
         default=95.0,
-        help="Deprecated in Astir-first mode; accepted for CLI compatibility.",
+        help="Deprecated; accepted for CLI compatibility.",
     )
     parser.add_argument(
         "--thresholds-config",
         default=None,
-        help="Deprecated in Astir-first mode; accepted for CLI compatibility.",
+        help="Deprecated; accepted for CLI compatibility.",
     )
     args = parser.parse_args()
 
     if args.thresholds_config is not None:
-        log.warning("--thresholds-config is ignored in Astir-first mode.")
+        log.warning("--thresholds-config is ignored in CODEX-based mode.")
     if args.type_percentile != 95.0:
-        log.warning("--type-percentile is ignored in Astir-first mode.")
+        log.warning("--type-percentile is ignored in CODEX-based mode.")
 
     cellvit_dir = pathlib.Path(args.cellvit_dir)
     features_csv: pathlib.Path | None = (
@@ -854,7 +792,7 @@ def main() -> None:
     out_dir = pathlib.Path(args.out)
     max_dist = float(args.max_dist)
     coord_scale = float(args.coord_scale)
-    astir_weight = float(np.clip(args.astir_weight, 0.0, 1.0))
+    model_weight = float(np.clip(args.model_weight, 0.0, 1.0))
 
     # Output subdirectories
     types_dir = out_dir / "cell_types"
@@ -916,7 +854,6 @@ def main() -> None:
     probs, classifier_used, marker_coverage = compute_type_probabilities(
         df,
         classifier=args.classifier,
-        allow_astir_fallback=args.allow_astir_fallback,
         log=log,
     )
     fine_probs = probs.attrs.get("model_fine_probs")
@@ -925,9 +862,9 @@ def main() -> None:
         for fine_type in fine_probs.columns:
             df[f"p_model_{fine_type}"] = fine_probs[fine_type].to_numpy(dtype=float)
     if isinstance(fine_top, pd.Series):
-        df["type_astir_fine"] = fine_top.astype(str).to_numpy()
-    elif "type_astir_fine" not in df.columns:
-        df["type_astir_fine"] = probs.idxmax(axis=1).astype(str).to_numpy()
+        df["type_codex_fine"] = fine_top.astype(str).to_numpy()
+    elif "type_codex_fine" not in df.columns:
+        df["type_codex_fine"] = probs.idxmax(axis=1).astype(str).to_numpy()
     for cls in CELL_TYPES:
         df[f"p_model_{cls}"] = probs[cls].to_numpy(dtype=float)
 
@@ -987,7 +924,7 @@ def main() -> None:
             y0=y0,
             max_dist=max_dist,
             coord_scale=coord_scale,
-            model_weight=astir_weight,
+            model_weight=model_weight,
         )
         total_cells += len(cells)
 
@@ -995,7 +932,7 @@ def main() -> None:
             global_confidence_counts[c.get("cell_type_confidence", "low")] += 1
             if bool(c.get("is_mismatch", False)):
                 global_mismatch_count += 1
-                key = f"model={c.get('type_astir')},cellvit={c.get('type_cellvit_prior')}"
+                key = f"model={c.get('type_codex')},cellvit={c.get('type_cellvit_prior')}"
                 global_conflict_pairs[key] += 1
             matched_row_idx = c.get("matched_row_idx")
             if matched_row_idx is None:
@@ -1044,8 +981,8 @@ def main() -> None:
         "patch_y0",
         "type_cellvit",
         "type_cellvit_prior",
-        "type_astir",
-        "type_astir_fine",
+        "type_codex",
+        "type_codex_fine",
         "cell_type",
         "cell_state",
         "cell_type_confidence",
@@ -1074,8 +1011,7 @@ def main() -> None:
         "cell_assignments_csv": str(assignments_path),
         "classifier_requested": args.classifier,
         "classifier_used": classifier_used,
-        "astir_first": classifier_used == "astir",
-        "astir_weight": astir_weight,
+        "model_weight": model_weight,
         "coord_scale": coord_scale,
         "state_percentile": args.state_percentile,
         "cell_types": dict(global_type_counts),

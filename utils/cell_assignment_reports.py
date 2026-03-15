@@ -15,7 +15,6 @@ FINAL_PROB_COLUMNS: tuple[str, str, str] = (
 
 CONFIDENCE_SCORES = {"low": 0, "medium": 1, "high": 2}
 MODEL_DISPLAY_NAMES = {
-    "astir": "Astir",
     "codex": "CODEX",
     "rule": "Rule",
     "rule_fallback": "Rule",
@@ -58,15 +57,19 @@ def model_label_column(
     prefer_fine: bool = True,
 ) -> str:
     key = str(classifier_used).strip().lower()
-    if prefer_fine and key == "codex" and "type_astir_fine" in df.columns:
-        return "type_astir_fine"
+    if prefer_fine and key == "codex" and (
+        "type_codex_fine" in df.columns or "type_astir_fine" in df.columns
+    ):
+        return "type_codex_fine" if "type_codex_fine" in df.columns else "type_astir_fine"
+    if "type_codex" in df.columns:
+        return "type_codex"
     if "type_astir" in df.columns:
         return "type_astir"
     return "cell_type"
 
 
 def collapse_display_lines(model_col: str) -> list[str]:
-    if model_col != "type_astir_fine":
+    if model_col not in ("type_codex_fine", "type_astir_fine"):
         return []
     return [
         f"{final_label} <- {', '.join(subtypes)}"

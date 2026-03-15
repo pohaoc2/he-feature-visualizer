@@ -1,4 +1,4 @@
-"""Tests for Astir-first assign_cells Stage 3 behavior."""
+"""Tests for CODEX-based assign_cells Stage 3 behavior."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def test_compute_type_probabilities_rule_prefers_expected_classes():
     df = _make_features_df()
     log = logging.getLogger("test-rule")
     probs, used, _ = compute_type_probabilities(
-        df, classifier="rule", allow_astir_fallback=False, log=log
+        df, classifier="rule", log=log
     )
 
     assert used == "rule"
@@ -104,56 +104,6 @@ def test_compute_type_probabilities_rule_prefers_expected_classes():
     assert top[2] == "healthy"
 
 
-def test_collapse_astir_probabilities_groups_fine_types():
-    from stages.assign_cells import _collapse_astir_probabilities
-
-    fine = pd.DataFrame(
-        {
-            "epithelial": [0.50, 0.10],
-            "cd4_t": [0.20, 0.20],
-            "b_cell": [0.10, 0.30],
-            "macrophage": [0.05, 0.05],
-            "endothelial": [0.15, 0.35],
-        },
-        index=["a", "b"],
-    )
-
-    collapsed = _collapse_astir_probabilities(fine)
-    assert collapsed.loc["a", "cancer"] == pytest.approx(0.50)
-    assert collapsed.loc["a", "immune"] == pytest.approx(0.35)
-    assert collapsed.loc["a", "healthy"] == pytest.approx(0.15)
-    assert collapsed.loc["b", "cancer"] == pytest.approx(0.10)
-    assert collapsed.loc["b", "immune"] == pytest.approx(0.55)
-    assert collapsed.loc["b", "healthy"] == pytest.approx(0.35)
-
-
-def test_compute_type_probabilities_astir_mock(monkeypatch):
-    import stages.assign_cells as mod
-
-    df = _make_features_df()
-
-    def _fake_astir(expr_df, marker_dict, logger=None):
-        return pd.DataFrame(
-            {
-                "cancer": [0.7, 0.1, 0.2],
-                "immune": [0.2, 0.8, 0.2],
-                "healthy": [0.1, 0.1, 0.6],
-            },
-            index=expr_df.index,
-        )
-
-    monkeypatch.setattr(mod, "predict_cell_type_probabilities", _fake_astir)
-
-    probs, used, _ = mod.compute_type_probabilities(
-        df,
-        classifier="astir",
-        allow_astir_fallback=False,
-        log=logging.getLogger("test-astir"),
-    )
-    assert used == "astir"
-    assert probs.iloc[0]["cancer"] == pytest.approx(0.7)
-
-
 def test_compute_type_probabilities_codex_prefers_expected_classes():
     from stages.assign_cells import compute_type_probabilities
 
@@ -161,7 +111,6 @@ def test_compute_type_probabilities_codex_prefers_expected_classes():
     probs, used, _ = compute_type_probabilities(
         df,
         classifier="codex",
-        allow_astir_fallback=False,
         log=logging.getLogger("test-codex"),
     )
     assert used == "codex"
@@ -188,45 +137,6 @@ def test_preprocess_codex_matrix_matches_per_marker_zscore():
 
     assert normalized["marker_a"].to_numpy() == pytest.approx(expected_a.to_numpy())
     assert normalized["marker_b"].to_numpy() == pytest.approx([0.0, 0.0, 0.0])
-
-
-def test_compute_type_probabilities_astir_fallback(monkeypatch):
-    import stages.assign_cells as mod
-
-    df = _make_features_df()
-
-    def _raise(*_args, **_kwargs):
-        raise mod.AstirUnavailableError("astir missing")
-
-    monkeypatch.setattr(mod, "predict_cell_type_probabilities", _raise)
-
-    probs, used, _ = mod.compute_type_probabilities(
-        df,
-        classifier="astir",
-        allow_astir_fallback=True,
-        log=logging.getLogger("test-fallback"),
-    )
-    assert used == "rule_fallback"
-    assert set(probs.columns) == {"cancer", "immune", "healthy"}
-
-
-def test_compute_type_probabilities_astir_no_fallback_raises(monkeypatch):
-    import stages.assign_cells as mod
-
-    df = _make_features_df()
-
-    def _raise(*_args, **_kwargs):
-        raise mod.AstirUnavailableError("astir missing")
-
-    monkeypatch.setattr(mod, "predict_cell_type_probabilities", _raise)
-
-    with pytest.raises(mod.AstirUnavailableError):
-        mod.compute_type_probabilities(
-            df,
-            classifier="astir",
-            allow_astir_fallback=False,
-            log=logging.getLogger("test-no-fallback"),
-        )
 
 
 def test_match_cells_mismatch_downgrades_confidence_to_medium():
@@ -394,8 +304,8 @@ def test_cli_rule_mode_creates_outputs_and_summary(tmp_path):
         "patch_id",
         "type_cellvit",
         "type_cellvit_prior",
-        "type_astir",
-        "type_astir_fine",
+        "type_codex",
+        "type_codex_fine",
         "cell_type",
         "cell_state",
         "cell_type_confidence",
@@ -476,58 +386,3 @@ def test_cli_auto_extract_mode_rule_generates_feature_csv(tmp_path):
     assert summary["classifier_used"] == "rule"
 
 
-def test_cli_astir_mode_with_fallback_runs(tmp_path):
-    cellvit_dir = tmp_path / "cellvit"
-    cellvit_dir.mkdir()
-    out_dir = tmp_path / "out"
-
-    cell_data = {
-        "patch": "0_0",
-        "cells": [
-            {
-                "centroid": [64, 64],
-                "contour": _small_rect_contour(64, 64),
-                "bbox": [[54, 54], [74, 74]],
-                "type_cellvit": 2,
-                "type_prob": 0.9,
-            }
-        ],
-    }
-    (cellvit_dir / "0_0.json").write_text(json.dumps(cell_data))
-
-    features_path = tmp_path / "features.csv"
-    features_path.write_text(
-        "Xt,Yt,Pan-CK,E-cadherin,CD45,CD3e,CD4,CD8a,CD20,CD68,CD163,FOXP3,CD45RO,PD-1,SMA,CD31,Ki67\n"
-        "64,64,10,10,3000,1000,900,900,800,700,650,600,550,500,5,5,90\n"
-    )
-
-    index_data = {
-        "patches": [{"i": 0, "j": 0, "x0": 0, "y0": 0, "x1": 256, "y1": 256}],
-        "patch_size": 256,
-    }
-    index_path = tmp_path / "index.json"
-    index_path.write_text(json.dumps(index_data))
-
-    cmd = [
-        *_assign_cells_cmd(),
-        "--cellvit-dir",
-        str(cellvit_dir),
-        "--features-csv",
-        str(features_path),
-        "--index",
-        str(index_path),
-        "--out",
-        str(out_dir),
-        "--classifier",
-        "astir",
-        "--allow-astir-fallback",
-        "--csv-mpp",
-        "1.0",
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
-    assert result.returncode == 0, result.stderr
-
-    summary = json.loads((out_dir / "cell_summary.json").read_text())
-    assert summary["classifier_requested"] == "astir"
-    assert summary["classifier_used"] in {"astir", "rule_fallback"}
-    assert "mismatch_rate" in summary

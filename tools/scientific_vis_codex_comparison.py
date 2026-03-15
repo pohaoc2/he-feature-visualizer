@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -34,7 +35,7 @@ MARKER_COLORS = {
     "healthy": "#32B432",
 }
 
-CROP_HALF = 20   # 40×40 px crop
+CROP_HALF = 28   # 56×56 px crop
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
@@ -45,8 +46,10 @@ def _filter_assignable(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_codex_margin(df: pd.DataFrame) -> pd.Series:
-    """Return per-row CODEX margin: p_model_winner - max(p_model_others).
+    """Return per-row CODEX model margin: p_model_winner - max(p_model_others).
 
+    This reflects CODEX classifier confidence only; CellViT contributes to the
+    final fused cell_type via probabilistic fusion, not to this margin.
     Caller must ensure df contains only rows where cell_type ∈ {cancer, immune, healthy}.
     """
     margins = []
@@ -107,21 +110,79 @@ def _load_he_crop(
     patch_id: str,
     cx: float,
     cy: float,
-) -> np.ndarray | None:
-    """Load H&E patch and return up to 40×40 px crop centered at (cx, cy), clamped to bounds."""
+) -> tuple[np.ndarray, float, float, float, float] | None:
+    """Load H&E patch and return (crop, cx_in_crop, cy_in_crop, x0_patch, y0_patch).
+
+    The cell centroid is always placed at the exact centre of the crop.
+    Regions outside the patch boundary are filled with white (255).
+    x0_patch / y0_patch are the crop origin in patch coordinates, used to
+    transform CellViT contour points into crop space.
+    Returns None if patch image not found.
+    """
     he_path = processed_dir / "he" / f"{patch_id}.png"
     if not he_path.exists():
         return None
     img = np.array(Image.open(he_path).convert("RGB"))
-    h, w = img.shape[:2]
-    x0 = int(max(0, min(cx - CROP_HALF, w - 2 * CROP_HALF)))
-    y0 = int(max(0, min(cy - CROP_HALF, h - 2 * CROP_HALF)))
-    x1 = min(x0 + 2 * CROP_HALF, w)
-    y1 = min(y0 + 2 * CROP_HALF, h)
-    return img[y0:y1, x0:x1]
+
+    # Pad the full patch by CROP_HALF on every side so any centroid can be
+    # centred without clamping.
+    img_padded = np.pad(
+        img,
+        ((CROP_HALF, CROP_HALF), (CROP_HALF, CROP_HALF), (0, 0)),
+        mode="constant",
+        constant_values=255,
+    )
+
+    # Centroid position in padded-image coordinates
+    cx_pad = int(round(cx)) + CROP_HALF
+    cy_pad = int(round(cy)) + CROP_HALF
+
+    x0p = cx_pad - CROP_HALF
+    y0p = cy_pad - CROP_HALF
+    crop = img_padded[y0p : y0p + 2 * CROP_HALF, x0p : x0p + 2 * CROP_HALF]
+
+    # Centroid in crop coords (sub-pixel accurate)
+    cx_crop = cx - (x0p - CROP_HALF)
+    cy_crop = cy - (y0p - CROP_HALF)
+
+    # Crop origin in original patch coordinates (may be negative near edges)
+    x0_patch = float(x0p - CROP_HALF)
+    y0_patch = float(y0p - CROP_HALF)
+
+    return crop, cx_crop, cy_crop, x0_patch, y0_patch
 
 
 BUCKET_LABELS = {"agree": "Agree", "medium": "Medium", "disagree": "Disagree"}
+
+
+def _load_cell_contour(
+    processed_dir: Path,
+    patch_id: str,
+    cell_index: int,
+    x0_crop: float,
+    y0_crop: float,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return (xs, ys) contour coordinates in crop space from CellViT JSON.
+
+    Contour points are stored as [[x, y], ...] in local patch coordinates.
+    x0_crop / y0_crop are the crop origin in patch coordinates.
+    Returns None if the JSON or cell is not found.
+    """
+    json_path = processed_dir / "cellvit" / f"{patch_id}.json"
+    if not json_path.exists():
+        return None
+    with json_path.open() as f:
+        data = json.load(f)
+    cells = data.get("cells", [])
+    if cell_index < 0 or cell_index >= len(cells):
+        return None
+    contour = cells[cell_index].get("contour", [])
+    if not contour:
+        return None
+    pts = np.array(contour, dtype=float)   # shape (N, 2): [[x, y], ...]
+    xs = pts[:, 0] - x0_crop
+    ys = pts[:, 1] - y0_crop
+    return xs, ys
 
 
 def _plot_marker_bar(
@@ -140,8 +201,8 @@ def _plot_marker_bar(
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    bar_y_positions = [0.78, 0.52, 0.26]
-    bar_h = 0.18
+    bar_y_positions = [0.88, 0.65, 0.42]
+    bar_h = 0.15
     role_keys = ["cancer_marker", "immune_marker", "healthy_marker"]
     colors = [MARKER_COLORS["cancer"], MARKER_COLORS["immune"], MARKER_COLORS["healthy"]]
 
@@ -159,29 +220,34 @@ def _plot_marker_bar(
 
         ax.text(-0.02, bar_y, label, va="center", ha="right", fontsize=6)
 
-    # vertical threshold line at 0.5
-    ax.axvline(0.5, color="#888888", linestyle="--", linewidth=0.6, alpha=0.7)
+    # x-axis label between bottom bar and text block
+    ax.text(0.5, 0.29, "norm. intensity (1–99th pct.)",
+            va="center", ha="center", fontsize=5, color="#555555",
+            transform=ax.transAxes)
 
-    # text block
+    # text block — placed at the very bottom of the axes below the bars
+    final = str(row.get("cell_type", "?"))
     cvit = str(row.get("cellvit_mapped_type", "?"))
-    codex = str(row.get("type_astir", "?"))
+    codex = str(row.get("type_codex", row.get("type_astir", "?")))
     margin = float(row.get("codex_margin", float("nan")))
-    text = f"CellViT: {cvit}\nCODEX:   {codex}\nMargin:  {margin:.2f}"
-    ax.text(0.5, 0.04, text, va="bottom", ha="center", fontsize=6,
+    # "CODEX conf." = p_winner − max(p_others): how decisively CODEX chose this class
+    text = f"Final:   {final}\nCellViT: {cvit}\nCODEX:   {codex}\nCODEX conf: {margin:.2f}"
+    ax.text(0.5, 0.01, text, va="bottom", ha="center", fontsize=6,
             family="monospace", transform=ax.transAxes)
 
 
 def _plot_confusion_heatmap(ax: plt.Axes, df: pd.DataFrame) -> None:
-    """3×3 confusion matrix: CellViT rows × CODEX (type_astir) cols.
+    """3×3 confusion matrix: CellViT rows × CODEX (type_codex) cols.
 
     Cells show raw count (bold) + row-normalised % below.
     """
     classes = list(CELL_TYPES)
+    codex_col = "type_codex" if "type_codex" in df.columns else "type_astir"
     counts = np.zeros((3, 3), dtype=int)
     for i, rv in enumerate(classes):
         for j, cv in enumerate(classes):
             counts[i, j] = int(
-                ((df["cellvit_mapped_type"] == rv) & (df["type_astir"] == cv)).sum()
+                ((df["cellvit_mapped_type"] == rv) & (df[codex_col] == cv)).sum()
             )
 
     row_totals = counts.sum(axis=1, keepdims=True)
@@ -243,6 +309,10 @@ def _plot_summary_panel(
         f"Cancer marker:  {markers.get('cancer_marker', 'Pan-CK')} -> cancer",
         f"Immune marker:  {markers.get('immune_marker', 'CD45')} -> immune",
         f"Healthy marker: {markers.get('healthy_marker', 'SMA')} -> healthy",
+        "",
+        "CODEX conf = p_winner - p_2nd_best",
+        "  (CODEX confidence only; CellViT",
+        "   contributes to Final via fusion)",
     ]
 
     ax.text(0.05, 0.95, "\n".join(lines), transform=ax.transAxes,
@@ -301,14 +371,32 @@ def _plot_triptych(
         ax_he.set_yticks([])
 
         if row_data is not None:
-            crop = _load_he_crop(
+            result = _load_he_crop(
                 processed_dir,
                 str(row_data["patch_id"]),
                 float(row_data["centroid_x_local"]),
                 float(row_data["centroid_y_local"]),
             )
-            if crop is not None:
-                ax_he.imshow(crop)
+            if result is not None:
+                crop, cx_crop, cy_crop, x0_patch, y0_patch = result
+                ax_he.imshow(crop, interpolation="nearest")
+                # Draw real CellViT contour polygon (optional — requires CellIndex column)
+                cell_index_raw = row_data.get("CellIndex")
+                if cell_index_raw is not None:
+                    try:
+                        cell_index = int(cell_index_raw)
+                        contour = _load_cell_contour(
+                            processed_dir, str(row_data["patch_id"]),
+                            cell_index, x0_patch, y0_patch,
+                        )
+                        if contour is not None:
+                            xs, ys = contour
+                            ax_he.plot(
+                                np.append(xs, xs[0]), np.append(ys, ys[0]),
+                                color=spine_color, linewidth=1.5,
+                            )
+                    except (ValueError, TypeError):
+                        pass
             else:
                 ax_he.set_facecolor("#dddddd")
                 ax_he.text(0.5, 0.5, "image\nnot found",
