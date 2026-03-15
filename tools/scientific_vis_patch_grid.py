@@ -18,6 +18,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
 from PIL import Image
 
@@ -34,7 +35,26 @@ CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "other":   (150, 150, 150, 120),
 }
 
-COL_TITLES = ["H&E", "Hoechst (ch0)", "CellViT mask", "Final type", "CD31"]
+CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
+    "proliferative": (230,  50, 180, 200),   # magenta
+    "quiescent":     (240, 140,  30, 200),   # amber
+    "dead":          (110,  40, 160, 200),   # purple
+    "other":         (160, 160, 160, 120),
+}
+
+# Hoechst 33342 fluorescence look: black background → electric blue → blue-white peak
+HOECHST_CMAP = LinearSegmentedColormap.from_list(
+    "hoechst33342",
+    [
+        (0.00, (0.00, 0.00, 0.00)),   # black background
+        (0.35, (0.04, 0.10, 0.55)),   # deep blue
+        (0.65, (0.10, 0.35, 0.90)),   # electric blue
+        (0.85, (0.35, 0.65, 1.00)),   # bright blue-cyan
+        (1.00, (0.80, 0.93, 1.00)),   # near-white peak
+    ],
+)
+
+COL_TITLES = ["H&E", "Hoechst", "Cell mask (CellViT)", "Cell type (CellViT + CODEX)", "Cell state (CODEX)", "Vasculature (CD31)"]
 
 # ── Small rendering helpers ───────────────────────────────────────────────────
 
@@ -128,6 +148,44 @@ def _draw_final_type(
         if len(contour) < 3:
             continue
         rgba = CELL_TYPE_COLORS.get(label, CELL_TYPE_COLORS["other"])
+        pts = np.asarray(contour, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(canvas, [pts], rgba)
+
+    return _composite_rgba_on_rgb(he_rgb, canvas)
+
+
+def _draw_cell_state(
+    he_rgb: np.ndarray,
+    cells: list[dict],
+    assignments_patch: pd.DataFrame,
+    max_dist: float = 6.0,
+) -> np.ndarray:
+    """Fill CellViT contours with cell-state colours, matched by centroid proximity."""
+    rows = assignments_patch.to_dict(orient="records")
+    unused = set(range(len(rows)))
+    canvas = np.zeros((*he_rgb.shape[:2], 4), dtype=np.uint8)
+
+    for cell in cells:
+        centroid = np.asarray(cell.get("centroid", [0.0, 0.0]), dtype=float)
+        best_idx, best_dist = None, float("inf")
+        for idx in unused:
+            r = rows[idx]
+            d = float(np.hypot(
+                centroid[0] - float(r.get("centroid_x_local", 0.0)),
+                centroid[1] - float(r.get("centroid_y_local", 0.0)),
+            ))
+            if d < best_dist:
+                best_dist, best_idx = d, idx
+
+        label = "other"
+        if best_idx is not None and best_dist <= max_dist:
+            unused.remove(best_idx)
+            label = str(rows[best_idx].get("cell_state", "other"))
+
+        contour = cell.get("contour", [])
+        if len(contour) < 3:
+            continue
+        rgba = CELL_STATE_COLORS.get(label, CELL_STATE_COLORS["other"])
         pts = np.asarray(contour, dtype=np.int32).reshape((-1, 1, 2))
         cv2.fillPoly(canvas, [pts], rgba)
 
@@ -230,9 +288,9 @@ def main() -> None:
     rng = random.Random(args.seed)
     selected = rng.sample(patches, n)
 
-    # Figure: n rows × 5 cols
+    # Figure: n rows × 6 cols
     col_w, row_h = 2.5, 2.5
-    fig, axes = plt.subplots(n, 5, figsize=(5 * col_w, n * row_h), constrained_layout=True)
+    fig, axes = plt.subplots(n, 6, figsize=(6 * col_w, n * row_h), constrained_layout=True)
     if n == 1:
         axes = axes[np.newaxis, :]  # ensure 2-D indexing
 
@@ -263,6 +321,7 @@ def main() -> None:
 
         mask_img = _draw_cellvit_mask(patch_shape, cells)
         final_on_he = _draw_final_type(he_rgb, cells, asgn) if not asgn.empty else he_rgb.copy()
+        state_on_he = _draw_cell_state(he_rgb, cells, asgn) if not asgn.empty else he_rgb.copy()
 
         ax_row = axes[row_idx]
 
@@ -271,7 +330,7 @@ def main() -> None:
         ax_row[0].set_ylabel(patch_id, fontsize=7, labelpad=3)
 
         # C2: Hoechst (channel 0)
-        _show_or_placeholder(ax_row[1], hoechst_img, patch_shape, "Blues", "Hoechst")
+        _show_or_placeholder(ax_row[1], hoechst_img, patch_shape, HOECHST_CMAP, "Hoechst")
 
         # C3: CellViT binary mask
         ax_row[2].imshow(mask_img, cmap="gray")
@@ -281,17 +340,17 @@ def main() -> None:
         if row_idx == n - 1:
             _add_type_legend(ax_row[3], CELL_TYPE_COLORS)
 
-        # C5: CD31
-        _show_or_placeholder(ax_row[4], cd31_img, patch_shape, "Reds", cd31_name)
+        # C5: Cell state
+        ax_row[4].imshow(state_on_he)
+        if row_idx == n - 1:
+            _add_type_legend(ax_row[4], CELL_STATE_COLORS, title="State")
+
+        # C6: CD31
+        _show_or_placeholder(ax_row[5], cd31_img, patch_shape, "Reds", cd31_name)
 
         for ax in ax_row:
             ax.set_xticks([])
             ax.set_yticks([])
-
-    fig.suptitle(
-        f"Random patch grid  (n={n}, seed={args.seed})",
-        fontsize=10, y=1.002,
-    )
 
     formats = [f.strip() for f in str(args.formats).split(",") if f.strip()] or ["png"]
     for fmt in formats:

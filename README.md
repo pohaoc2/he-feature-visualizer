@@ -558,7 +558,7 @@ python -m tools.scientific_vis_codex_comparison \
   --processed processed_crc33_crop/ \
   --assignments-csv processed_crc33_crop/cell_assignments.csv \
   --out-prefix processed_crc33_crop/codex_comparison \
-  --formats png,pdf \
+  --formats png \
   --dpi 300
 ```
 
