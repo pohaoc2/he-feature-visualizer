@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 import json
 import subprocess
@@ -145,3 +146,27 @@ def test_placeholder_when_disagree_bucket_empty() -> None:
     # agree and medium still selected
     assert examples["agree"] is not None
     assert examples["medium"] is not None
+
+
+def test_missing_canonical_marker_renders_placeholder() -> None:
+    """If SMA column absent from norm_vals, bar renders as 'n/a' without error."""
+    markers = {
+        "cancer_marker": "Pan-CK",
+        "immune_marker": "CD45",
+        "healthy_marker": "SMA",
+    }
+    # norm_vals only has Pan-CK and CD45; SMA missing
+    norm_vals: dict[str, np.ndarray] = {
+        "Pan-CK": np.array([0.8]),
+        "CD45":   np.array([0.2]),
+    }
+    row = pd.Series({
+        "cell_type": "cancer",
+        "cellvit_mapped_type": "cancer",
+        "type_astir": "cancer",
+        "codex_margin": 0.60,
+    })
+    fig, ax = plt.subplots(figsize=(3, 2))
+    # should not raise
+    comp._plot_marker_bar(ax, row, norm_vals, markers, row_index=0)
+    plt.close(fig)
