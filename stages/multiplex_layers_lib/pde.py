@@ -25,14 +25,34 @@ def build_consumption_map(
     demand_map: np.ndarray,
     base_rate: float = 0.1,
     demand_weight: float = 0.3,
+    immune_map: np.ndarray | None = None,
+    immune_weight: float = 0.1,
 ) -> np.ndarray:
-    """Build non-negative spatial consumption map k(x) from demand in [0,1]."""
+    """Build non-negative spatial consumption map k(x) from demand in [0,1].
+
+    k(x) = base_rate + demand_weight * Ki67_norm + immune_weight * CD68_norm
+
+    Following Kumar et al. (2024), proliferative (Ki67) and immune (CD68)
+    demands are additive independent terms.  *immune_map* is optional; omit
+    it when no macrophage channel is available.
+    """
     if base_rate < 0:
         raise ValueError("base_rate must be >= 0")
     if demand_weight < 0:
         raise ValueError("demand_weight must be >= 0")
+    if immune_weight < 0:
+        raise ValueError("immune_weight must be >= 0")
     demand_01 = np.clip(demand_map.astype(np.float32), 0.0, 1.0)
-    return (base_rate + demand_weight * demand_01).astype(np.float32)
+    k = (base_rate + demand_weight * demand_01).astype(np.float32)
+    if immune_map is not None:
+        if immune_map.shape != demand_map.shape:
+            raise ValueError(
+                f"immune_map shape {immune_map.shape} must match "
+                f"demand_map shape {demand_map.shape}"
+            )
+        immune_01 = np.clip(immune_map.astype(np.float32), 0.0, 1.0)
+        k = (k + immune_weight * immune_01).astype(np.float32)
+    return k
 
 
 def solve_steady_state_diffusion(
@@ -84,8 +104,15 @@ def solve_steady_state_diffusion(
     return u
 
 
-def compute_metabolic_demand_map(ki67: np.ndarray, pcna: np.ndarray) -> np.ndarray:
-    """Compute normalized proliferative demand map in [0, 1]."""
+def compute_metabolic_demand_map(
+    ki67: np.ndarray, pcna: np.ndarray | None = None
+) -> np.ndarray:
+    """Compute normalized proliferative demand map in [0, 1].
+
+    If *pcna* is None (channel absent), demand is derived from Ki67 alone.
+    """
     ki67_norm = percentile_norm(ki67.astype(np.float32))
+    if pcna is None:
+        return ki67_norm
     pcna_norm = percentile_norm(pcna.astype(np.float32))
     return np.maximum(ki67_norm, pcna_norm).astype(np.float32)

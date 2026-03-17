@@ -18,7 +18,8 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.patches import Patch
 from PIL import Image
 
@@ -54,7 +55,7 @@ HOECHST_CMAP = LinearSegmentedColormap.from_list(
     ],
 )
 
-COL_TITLES = ["H&E", "Hoechst", "Cell mask (CellViT)", "Cell type (CellViT + CODEX)", "Cell state (CODEX)", "Vasculature (CD31)"]
+COL_TITLES = ["H&E", "Hoechst", "Cell mask (CellViT)", "Cell type (CellViT + CODEX)", "Cell state (CODEX)", "Vasculature", "Oxygen (O₂)", "Glucose"]
 
 # ── Small rendering helpers ───────────────────────────────────────────────────
 
@@ -225,17 +226,23 @@ def _add_type_legend(
 
 def _available_patches(
     processed_dir: Path,
-    assignments_df: pd.DataFrame,
+    assignments_df: pd.DataFrame | None,
 ) -> list[str]:
-    """Return patch IDs that have all required files and at least one assignment row."""
+    """Return patch IDs that have H&E + CellViT JSON (assignments optional)."""
     he_dir = processed_dir / "he"
     cellvit_dir = processed_dir / "cellvit"
-    assigned_patches = set(assignments_df["patch_id"].astype(str).unique())
+    assigned_patches = (
+        set(assignments_df["patch_id"].astype(str).unique())
+        if assignments_df is not None else None
+    )
     patches = []
     for png in sorted(he_dir.glob("*.png")):
         pid = png.stem
-        if (cellvit_dir / f"{pid}.json").exists() and pid in assigned_patches:
-            patches.append(pid)
+        if not (cellvit_dir / f"{pid}.json").exists():
+            continue
+        if assigned_patches is not None and pid not in assigned_patches:
+            continue
+        patches.append(pid)
     return patches
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -276,10 +283,12 @@ def main() -> None:
     index_path = processed_dir / "index.json"
     if not index_path.exists():
         raise FileNotFoundError(f"Missing index.json: {index_path}")
-    if not assignments_path.exists():
-        raise FileNotFoundError(f"Missing assignments CSV: {assignments_path}")
 
-    assignments_df = load_cell_assignments(assignments_path)
+    if assignments_path.exists():
+        assignments_df = load_cell_assignments(assignments_path)
+    else:
+        print(f"[warn] assignments CSV not found ({assignments_path}); cell type/state cols will be blank.")
+        assignments_df = None
     patches = _available_patches(processed_dir, assignments_df)
     if not patches:
         raise RuntimeError("No patches found with all required files (he, cellvit, assignments).")
@@ -288,9 +297,10 @@ def main() -> None:
     rng = random.Random(args.seed)
     selected = rng.sample(patches, n)
 
-    # Figure: n rows × 6 cols
+    # Figure: n rows × 8 cols + extra width for two colorbars
     col_w, row_h = 2.5, 2.5
-    fig, axes = plt.subplots(n, 6, figsize=(6 * col_w, n * row_h), constrained_layout=True)
+    n_cols = len(COL_TITLES)
+    fig, axes = plt.subplots(n, n_cols, figsize=(n_cols * col_w + 1.2, n * row_h), constrained_layout=True)
     if n == 1:
         axes = axes[np.newaxis, :]  # ensure 2-D indexing
 
@@ -308,16 +318,26 @@ def main() -> None:
         mx_arr = np.load(mx_path) if mx_path.exists() else None
 
         cells = _load_patch_json(cellvit_path)
-        asgn = assignments_df[assignments_df["patch_id"].astype(str) == patch_id].copy()
+        asgn = (
+            assignments_df[assignments_df["patch_id"].astype(str) == patch_id].copy()
+            if assignments_df is not None else pd.DataFrame()
+        )
 
         # Hoechst = channel 0 of the MX array
         hoechst_img = (
             percentile_norm(mx_arr[0].astype(np.float32)) if mx_arr is not None else None
         )
-        cd31_img, cd31_name = (
-            _resolve_marker_soft(index_path, mx_arr, args.vasc_cd31)
-            if mx_arr is not None else (None, args.vasc_cd31)
-        )
+
+        # Vasculature / oxygen / glucose PNGs from Stage 4 output
+        vasc_png = processed_dir / "vasculature" / f"{patch_id}.png"
+        oxygen_png = processed_dir / "oxygen" / f"{patch_id}.png"
+        glucose_png = processed_dir / "glucose" / f"{patch_id}.png"
+        vasc_rgba = np.array(Image.open(vasc_png).convert("RGBA")) if vasc_png.exists() else None
+        oxygen_rgba = np.array(Image.open(oxygen_png).convert("RGBA")) if oxygen_png.exists() else None
+        glucose_rgba = np.array(Image.open(glucose_png).convert("RGBA")) if glucose_png.exists() else None
+
+        # Composite vasculature overlay onto H&E for display
+        vasc_on_he = _composite_rgba_on_rgb(he_rgb, vasc_rgba) if vasc_rgba is not None else he_rgb.copy()
 
         mask_img = _draw_cellvit_mask(patch_shape, cells)
         final_on_he = _draw_final_type(he_rgb, cells, asgn) if not asgn.empty else he_rgb.copy()
@@ -336,21 +356,67 @@ def main() -> None:
         ax_row[2].imshow(mask_img, cmap="gray")
 
         # C4: Final fused type
-        ax_row[3].imshow(final_on_he)
-        if row_idx == n - 1:
-            _add_type_legend(ax_row[3], CELL_TYPE_COLORS)
+        if assignments_df is not None:
+            ax_row[3].imshow(final_on_he)
+            if row_idx == n - 1:
+                _add_type_legend(ax_row[3], CELL_TYPE_COLORS)
+        else:
+            ax_row[3].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
+            ax_row[3].text(0.5, 0.5, "No assignments", ha="center", va="center",
+                           fontsize=7, color="#555555", transform=ax_row[3].transAxes)
 
         # C5: Cell state
-        ax_row[4].imshow(state_on_he)
-        if row_idx == n - 1:
-            _add_type_legend(ax_row[4], CELL_STATE_COLORS, title="State")
+        if assignments_df is not None:
+            ax_row[4].imshow(state_on_he)
+            if row_idx == n - 1:
+                _add_type_legend(ax_row[4], CELL_STATE_COLORS, title="State")
+        else:
+            ax_row[4].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
+            ax_row[4].text(0.5, 0.5, "No assignments", ha="center", va="center",
+                           fontsize=7, color="#555555", transform=ax_row[4].transAxes)
 
-        # C6: CD31
-        _show_or_placeholder(ax_row[5], cd31_img, patch_shape, "Reds", cd31_name)
+        # C6: Vasculature overlay on H&E
+        if vasc_rgba is not None:
+            ax_row[5].imshow(vasc_on_he)
+        else:
+            ax_row[5].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
+            ax_row[5].text(0.5, 0.5, "Vasculature\nnot found", ha="center", va="center",
+                           fontsize=7, color="#555555", transform=ax_row[5].transAxes)
+
+        # C7: Oxygen map (RGBA colormap image)
+        if oxygen_rgba is not None:
+            ax_row[6].imshow(oxygen_rgba)
+        else:
+            ax_row[6].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
+            ax_row[6].text(0.5, 0.5, "Oxygen\nnot found", ha="center", va="center",
+                           fontsize=7, color="#555555", transform=ax_row[6].transAxes)
+
+        # C8: Glucose map (RGBA colormap image)
+        if glucose_rgba is not None:
+            ax_row[7].imshow(glucose_rgba)
+        else:
+            ax_row[7].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
+            ax_row[7].text(0.5, 0.5, "Glucose\nnot found", ha="center", va="center",
+                           fontsize=7, color="#555555", transform=ax_row[7].transAxes)
 
         for ax in ax_row:
             ax.set_xticks([])
             ax.set_yticks([])
+
+    # Colorbars for oxygen (col 6) and glucose (col 7)
+    sm_o2 = ScalarMappable(cmap="RdYlBu", norm=Normalize(vmin=0, vmax=1))
+    sm_o2.set_array([])
+    cb_o2 = fig.colorbar(sm_o2, ax=axes[:, 6], shrink=0.6, pad=0.03, aspect=30)
+    cb_o2.set_label("O₂ proxy", fontsize=7, labelpad=4)
+    cb_o2.set_ticks([0, 0.5, 1])
+    cb_o2.set_ticklabels(["hypoxic", "0.5", "oxygenated"], fontsize=6)
+
+    sm_glc = ScalarMappable(cmap="hot", norm=Normalize(vmin=0, vmax=1))
+    sm_glc.set_array([])
+    cb_glc = fig.colorbar(sm_glc, ax=axes[:, 7], shrink=0.6, pad=0.03, aspect=30)
+    cb_glc.set_label("Glucose proxy", fontsize=7, labelpad=4)
+    cb_glc.set_ticks([0, 0.5, 1])
+    cb_glc.set_ticklabels(["depleted", "0.5", "high"], fontsize=6)
 
     formats = [f.strip() for f in str(args.formats).split(",") if f.strip()] or ["png"]
     for fmt in formats:

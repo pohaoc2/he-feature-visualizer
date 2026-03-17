@@ -88,7 +88,7 @@ def _clip_and_read(
 
     sl = []
     for ax in axes:
-        if ax == "C":
+        if ax in ("C", "I", "S"):  # I = image/channel axis in some OME-TIFFs; S = interleaved RGB
             sl.append(slice(None))
         elif ax == "Y":
             sl.append(slice(y0c, y1c))
@@ -114,7 +114,7 @@ def read_he_patch(
     )
 
     if arr.ndim == 3:
-        c_pos = axes.index("C") if "C" in axes else -1
+        c_pos = next((axes.index(a) for a in ("C", "S") if a in axes), -1)
         y_pos = axes.index("Y") if "Y" in axes else -1
         if c_pos != -1 and y_pos != -1 and c_pos < y_pos:
             arr = np.moveaxis(arr, 0, -1)
@@ -189,10 +189,11 @@ def read_multiplex_patch(
         zarr_store, axes, img_w, img_h, y0, x0, size_y, size_x
     )
 
-    active_axes = [ax for ax in axes if ax in ("C", "Y", "X")]
+    active_axes = [ax for ax in axes if ax in ("C", "I", "Y", "X")]
+    ch_ax = next((ax for ax in ("C", "I") if ax in active_axes), None)
 
-    if "C" in active_axes:
-        target = [ax for ax in ("C", "Y", "X") if ax in active_axes]
+    if ch_ax is not None:
+        target = [ax for ax in (ch_ax, "Y", "X") if ax in active_axes]
         if active_axes != target:
             perm = [active_axes.index(ax) for ax in target]
             arr = arr.transpose(perm)

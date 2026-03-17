@@ -734,7 +734,7 @@ def _make_zoom_panel(
     target_w: int,
     patch_size: int,
     title: str,
-    zoom_mult: float = 1.5,
+    zoom_mult: float = 0.5,
 ) -> np.ndarray:
     """Zoom into a panel around the selected patch ROI."""
     if not patch_id:
@@ -1055,7 +1055,7 @@ def main(args: argparse.Namespace) -> None:
         target_w=ov_w,
         patch_size=patch_size,
         title="c3r1) zoom of c2r1",
-        zoom_mult=1.05,
+        zoom_mult=0.5,
     )
     c3r2 = _make_zoom_panel(
         best_pid,
@@ -1066,7 +1066,7 @@ def main(args: argparse.Namespace) -> None:
         target_w=ov_w,
         patch_size=patch_size,
         title="c3r2) zoom of c2r2",
-        zoom_mult=1.05,
+        zoom_mult=0.5,
     )
     c3r3 = _make_zoom_panel(
         best_pid,
@@ -1077,7 +1077,7 @@ def main(args: argparse.Namespace) -> None:
         target_w=ov_w,
         patch_size=patch_size,
         title="c3r3) zoom of c2r3",
-        zoom_mult=1.05,
+        zoom_mult=0.5,
     )
 
     if best_pid:

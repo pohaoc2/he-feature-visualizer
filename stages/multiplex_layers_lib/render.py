@@ -35,10 +35,33 @@ def make_vasculature_overlay(
     return out
 
 
-def make_oxygen_map(cd31_mask: np.ndarray) -> np.ndarray:
-    """Oxygen proxy via distance transform with RdYlBu colormap."""
-    dist = scipy.ndimage.distance_transform_edt(~cd31_mask)
-    norm = percentile_norm(dist.astype(np.float32))
+def _clamped_distance_map(
+    mask: np.ndarray,
+    mpp: float,
+    max_dist_um: float,
+) -> np.ndarray:
+    """Euclidean distance from *mask* clamped at *max_dist_um*, in [0, 1].
+
+    Implements the physically-grounded normalization from Zaidi et al. (2019)
+    and Grimes et al. (2014): pixels beyond the diffusion limit are all set to
+    1.0 (fully depleted), making values cross-patch comparable.
+    """
+    dist_px = scipy.ndimage.distance_transform_edt(~mask)
+    max_dist_px = max_dist_um / mpp
+    return np.clip(dist_px / max_dist_px, 0.0, 1.0).astype(np.float32)
+
+
+def make_oxygen_map(
+    cd31_mask: np.ndarray,
+    mpp: float = 1.0,
+    max_dist_um: float = 160.0,
+) -> np.ndarray:
+    """Oxygen proxy via physically clamped distance transform.
+
+    Clamp at *max_dist_um* (default 160 µm, Grimes 2014 / Zaidi 2019).
+    RdYlBu colormap: blue = near vessel (oxygenated), red = beyond clamp (hypoxic).
+    """
+    norm = _clamped_distance_map(cd31_mask, mpp, max_dist_um)
     inverted = (1.0 - norm).astype(np.float32)
     return apply_colormap(inverted, "RdYlBu")
 
@@ -46,18 +69,26 @@ def make_oxygen_map(cd31_mask: np.ndarray) -> np.ndarray:
 def make_oxygen_map_pde(
     vessel_mask: np.ndarray,
     demand_map: np.ndarray,
+    immune_map: np.ndarray | None = None,
     diffusion: float = 1.0,
     max_iters: int = 500,
     tol: float = 1e-4,
     base_consumption: float = 0.1,
     demand_weight: float = 0.3,
+    immune_weight: float = 0.1,
 ) -> np.ndarray:
-    """Oxygen proxy via steady-state diffusion-consumption PDE."""
+    """Oxygen proxy via steady-state diffusion-consumption PDE.
+
+    *immune_map* (e.g. normalised CD68) adds a macrophage consumption term
+    following Kumar et al. (2024).
+    """
     source_map = build_vessel_source_map(vessel_mask)
     consumption_map = build_consumption_map(
         demand_map,
         base_rate=base_consumption,
         demand_weight=demand_weight,
+        immune_map=immune_map,
+        immune_weight=immune_weight,
     )
     oxygen_density = solve_steady_state_diffusion(
         source_map=source_map,
@@ -69,27 +100,55 @@ def make_oxygen_map_pde(
     return apply_colormap(oxygen_density, "RdYlBu")
 
 
-def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray) -> np.ndarray:
-    """Metabolic demand proxy via max(norm(Ki67), norm(PCNA))."""
+def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray | None = None) -> np.ndarray:
+    """Metabolic demand proxy via max(norm(Ki67), norm(PCNA)).
+
+    If *pcna* is None, Ki67 alone is used.
+    """
     metabolic = compute_metabolic_demand_map(ki67, pcna)
     return apply_colormap(metabolic, "hot")
+
+
+def make_glucose_map_distance(
+    cd31_mask: np.ndarray,
+    mpp: float = 1.0,
+    max_dist_um: float = 450.0,
+) -> np.ndarray:
+    """Glucose proxy via physically clamped distance transform.
+
+    Clamp at *max_dist_um* (default 450 µm, Grimes 2014).  Glucose diffuses
+    further than O2 (higher plasma concentration compensates for lower D),
+    so the supply zone is ~2.8× wider than the oxygen zone.
+    Hot colormap: black/red = near vessel (glucose available), white = depleted.
+    """
+    norm = _clamped_distance_map(cd31_mask, mpp, max_dist_um)
+    inverted = (1.0 - norm).astype(np.float32)
+    return apply_colormap(inverted, "hot")
 
 
 def make_glucose_map_pde(
     vessel_mask: np.ndarray,
     demand_map: np.ndarray,
+    immune_map: np.ndarray | None = None,
     diffusion: float = 1.0,
     max_iters: int = 500,
     tol: float = 1e-4,
     base_consumption: float = 0.1,
     demand_weight: float = 0.3,
+    immune_weight: float = 0.1,
 ) -> np.ndarray:
-    """Glucose proxy via steady-state diffusion-consumption PDE."""
+    """Glucose proxy via steady-state diffusion-consumption PDE.
+
+    *immune_map* (e.g. normalised CD68) adds a macrophage consumption term
+    following Kumar et al. (2024).
+    """
     source_map = build_vessel_source_map(vessel_mask)
     consumption_map = build_consumption_map(
         demand_map,
         base_rate=base_consumption,
         demand_weight=demand_weight,
+        immune_map=immune_map,
+        immune_weight=immune_weight,
     )
     glucose_density = solve_steady_state_diffusion(
         source_map=source_map,

@@ -857,7 +857,7 @@ def _clip_and_read(
 
     sl = []
     for ax in axes:
-        if ax == "C":
+        if ax in ("C", "S"):  # S = interleaved RGB sample axis
             sl.append(slice(None))
         elif ax == "Y":
             sl.append(slice(y0c, y1c))
@@ -888,8 +888,9 @@ def read_he_patch(
     )
 
     # Bring channel axis last (-> YXC) if it exists and is first
+    # Handles both C (OME-TIFF) and S (interleaved RGB sample axis)
     if arr.ndim == 3:
-        c_pos = axes.index("C") if "C" in axes else -1
+        c_pos = next((axes.index(a) for a in ("C", "S") if a in axes), -1)
         y_pos = axes.index("Y") if "Y" in axes else -1
         if c_pos != -1 and y_pos != -1 and c_pos < y_pos:
             arr = np.moveaxis(arr, 0, -1)
@@ -1475,27 +1476,30 @@ def main():
         mask = build_tissue_mask(he_store, he_axes, he_w, he_h, downsample=ds)
         print(f"  Tissue fraction: {mask.mean():.2%}")
         mx_mask = build_mx_tissue_mask(mx_store, mx_axes, mx_h, mx_w, ds)
-
         # --- Channel drift QC (MX internal, run once) ---
-        print("Computing channel drift QC ...")
-        drift_channel_indices = sorted(set([0, *channel_indices]))
-        drift_stack = np.stack(
-            [
-                _read_channel_overview(mx_store, mx_axes, mx_h, mx_w, ds, c).astype(
-                    np.float32
-                )
-                for c in drift_channel_indices
-            ],
-            axis=0,
-        )
-        ref_local = drift_channel_indices.index(0)
-        drift_metrics = compute_channel_drift_metrics(
-            drift_stack, ref_channel=ref_local
-        )
-        for row in drift_metrics["per_channel"]:
-            row["channel"] = int(drift_channel_indices[int(row["channel"])])
-        drift_metrics["evaluated_channel_indices"] = drift_channel_indices
-        drift_pass = channel_drift_passes(drift_metrics)
+        if args.register:
+            print("Computing channel drift QC ...")
+            drift_channel_indices = sorted(set([0, *channel_indices]))
+            drift_stack = np.stack(
+                [
+                    _read_channel_overview(mx_store, mx_axes, mx_h, mx_w, ds, c).astype(
+                        np.float32
+                    )
+                    for c in drift_channel_indices
+                ],
+                axis=0,
+            )
+            ref_local = drift_channel_indices.index(0)
+            drift_metrics = compute_channel_drift_metrics(
+                drift_stack, ref_channel=ref_local
+            )
+            for row in drift_metrics["per_channel"]:
+                row["channel"] = int(drift_channel_indices[int(row["channel"])])
+            drift_metrics["evaluated_channel_indices"] = drift_channel_indices
+            drift_pass = channel_drift_passes(drift_metrics)
+        else:
+            drift_metrics = None
+            drift_pass = None
 
         # --- Registration cascade A -> B -> C ---
         registration_method = "fallback_scale"
@@ -1918,7 +1922,9 @@ def main():
         with open(reg_dir / "qc_metrics.json", "w", encoding="utf-8") as f:
             json.dump(
                 {
-                    "channel_drift": {
+                    "channel_drift": None
+                    if drift_metrics is None
+                    else {
                         **drift_metrics,
                         "pass": drift_pass,
                         "thresholds": {"median_px": 1.5, "max_px": 4.0},

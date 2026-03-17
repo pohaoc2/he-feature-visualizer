@@ -87,6 +87,19 @@ NON_TYPING_MARKERS: tuple[str, ...] = ("Hoechst", "AF1", "Argo550", "PD-L1")
 
 CONFIDENCE_THRESHOLDS: tuple[float, float] = (0.25, 0.12)
 DEFAULT_MODEL_WEIGHT = 0.85
+
+# Per-CellViT-type model weights: lower = trust CellViT morphology more.
+# Neoplastic (1) and Connective (3) have strong morphological signal → lower CODEX weight.
+# Inflammatory (2) benefits from CODEX immune subtyping → higher CODEX weight.
+CELLVIT_TYPE_MODEL_WEIGHTS: dict[int, float] = {
+    0: 0.5,  # background/unknown: equal weight
+    1: 0.3,  # Neoplastic: trust H&E morphology — cancer cells stay cancer
+    2: 0.7,  # Inflammatory: trust CODEX — resolves immune subtypes
+    3: 0.4,  # Connective: mostly trust H&E — stromal cells stay stromal
+    4: 0.5,  # Dead: ambiguous
+    5: 0.5,  # Epithelial: balanced
+}
+
 CODEX_ZSCORE_EPS = 1e-6
 CODEX_CLUSTER_PENALTY = 0.35
 CODEX_CLUSTER_TEMPERATURE = 0.75
@@ -538,8 +551,9 @@ def match_cells(
                 model_probs = {c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES}
                 model_type = _argmax_label(model_probs)
                 model_type_fine = str(row.get("type_codex_fine", model_type))
+                effective_weight = CELLVIT_TYPE_MODEL_WEIGHTS.get(type_cellvit, model_weight)
                 fused_probs = {
-                    c: model_weight * model_probs[c] + prior_weight * prior_probs[c]
+                    c: effective_weight * model_probs[c] + (1.0 - effective_weight) * prior_probs[c]
                     for c in CELL_TYPES
                 }
                 final_type = _argmax_label(fused_probs)

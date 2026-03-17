@@ -296,54 +296,102 @@ python -m stages.extract_cell_features \
 
 ## Stage 4 — Multiplex Layers
 
-Derive vasculature and oxygen/glucose layers from multiplex channels.
+Derive vasculature, oxygen, and glucose proxy layers from multiplex channels.
+`mx_mpp` is read automatically from `index.json` and used to convert all physical
+distance clamps (µm) to pixels.
 
-Outputs per patch:
+### Proxy models
 
-- `processed_wd/vasculature/{x0}_{y0}.png` (RGBA vessel overlay)
-- `processed_wd/vasculature_mask/{x0}_{y0}.npy` (bool vessel mask)
-- `processed_wd/oxygen/{x0}_{y0}.png` (oxygen proxy)
-- `processed_wd/glucose/{x0}_{y0}.png` (glucose proxy)f
+| Layer | Channel(s) | Model | Method | Reference |
+|---|---|---|---|---|
+| Vasculature | CD31 (+ SMA optional) | — | Otsu threshold → binary mask | — |
+| Oxygen | CD31 | `distance` (default) | Euclidean distance transform clamped at **160 µm** | Grimes 2014, Zaidi 2019 |
+| Oxygen | CD31, Ki67, CD68 | `pde` | Steady-state `D∇²u − k(x)u + s(x) = 0`; k(x) = base + Ki67 + CD68 | Kumar 2024 |
+| Glucose | CD31 | `distance` | Same distance transform clamped at **450 µm** (wider supply zone) | Grimes 2014 |
+| Glucose | Ki67 | `max` | `percentile_norm(Ki67)` | — |
+| Glucose | CD31, Ki67, CD68 | `pde` | Same PDE solver as oxygen | Kumar 2024 |
 
-### Legacy-compatible run (default models)
+### Outputs
+
+| Path | Contents |
+|---|---|
+| `{out}/vasculature/{x0}_{y0}.png` | RGBA red vessel overlay |
+| `{out}/vasculature_mask/{x0}_{y0}.npy` | bool vessel mask for downstream |
+| `{out}/oxygen/{x0}_{y0}.png` | RdYlBu oxygenation map (blue=near vessel) |
+| `{out}/glucose/{x0}_{y0}.png` | Hot glucose-availability map |
+| `{out}/validation/ki67_vs_distance.csv` | Ki67 mean vs distance-from-vessel bins (optional, `--validate-ki67-distance`) |
+
+### Distance model run (default, Zaidi 2019 / Grimes 2014)
+
+Uses physically clamped distance transforms with separate scales for O₂ and glucose.
+MPP is read from `index.json` automatically.
 
 ```bash
 python -m stages.multiplex_layers \
-  --multiplex-dir processed_wd/multiplex/ \
-  --index processed_wd/index.json \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --out processed_wd/ \
+  --multiplex-dir processed_crc33/multiplex/ \
+  --index processed_crc33/index.json \
+  --metadata-csv data/markers.csv \
+  --out processed_crc33/ \
   --oxygen-model distance \
-  --glucose-model max
+  --oxygen-max-dist-um 160 \
+  --glucose-model distance \
+  --glucose-max-dist-um 450
 ```
 
-### PDE proxy run (oxygen + glucose)
+### PDE run with CD68 macrophage consumption (Kumar 2024)
 
 ```bash
 python -m stages.multiplex_layers \
-  --multiplex-dir processed_wd/multiplex/ \
-  --index processed_wd/index.json \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --out processed_wd/ \
+  --multiplex-dir processed_crc33/multiplex/ \
+  --index processed_crc33/index.json \
+  --metadata-csv data/markers.csv \
+  --out processed_crc33/ \
   --oxygen-model pde \
   --glucose-model pde \
+  --oxygen-pde-diffusion 1.0 \
+  --glucose-pde-diffusion 0.32 \
   --pde-max-iters 500 \
   --pde-tol 1e-4 \
-  --pde-diffusion 1.0 \
   --oxygen-consumption-base 0.1 \
   --oxygen-consumption-demand-weight 0.3 \
   --glucose-consumption-base 0.1 \
-  --glucose-consumption-demand-weight 0.3
+  --glucose-consumption-demand-weight 0.3 \
+  --cd68-consumption-weight 0.1
 ```
+
+The PDE equation structure and additive k(x) form follow Kumar et al. (2024).
+Note: Kumar 2024 fits the scalar weights data-driven from CA9 hypoxia staining.
+Since CA9 is absent from this panel, `base`, `w_ki67`, and `w_cd68` are heuristic
+defaults — not paper-derived values. Outputs reflect model structure, not fitted biology.
+
+### Ki67-vs-distance validation (Zaidi 2019)
+
+Accumulates per-pixel Ki67 intensity binned by distance from CD31 across all patches.
+Expect Ki67 to peak at ~50–100 µm from vessels and drop beyond ~150 µm (hypoxic
+quiescence), validating that the distance proxy correlates with proliferative biology.
+
+```bash
+python -m stages.multiplex_layers \
+  --multiplex-dir processed_crc33/multiplex/ \
+  --index processed_crc33/index.json \
+  --metadata-csv data/markers.csv \
+  --out processed_crc33/ \
+  --oxygen-model distance \
+  --glucose-model distance \
+  --validate-ki67-distance \
+  --validate-bin-um 10
+```
+
+Output: `{out}/validation/ki67_vs_distance.csv` with columns `distance_um`, `ki67_mean`, `pixel_count`.
 
 ### Optional vessel-mask refinement and cleanup
 
 ```bash
 python -m stages.multiplex_layers \
-  --multiplex-dir processed_wd/multiplex/ \
-  --index processed_wd/index.json \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --out processed_wd/ \
+  --multiplex-dir processed_crc33/multiplex/ \
+  --index processed_crc33/index.json \
+  --metadata-csv data/markers.csv \
+  --out processed_crc33/ \
   --vasc-sma-refine \
   --sma-adjacency-px 2 \
   --vasc-open-kernel-size 3 \
@@ -352,15 +400,25 @@ python -m stages.multiplex_layers \
   --vasc-noisy-max-fraction 0.98
 ```
 
+SMA refinement adds αSMA⁺ pixels adjacent to CD31 mask (pericyte-covered vessels
+are more likely to be functionally perfused). The noisy-fallback threshold discards
+masks with >98% coverage as artefactual.
+
 ### Suggested presets
 
-- Exploratory analysis: use PDE models and SMA-assisted vessel cleanup.
-- Strict reproducibility: set all model and cleanup flags explicitly in the command and keep them fixed across runs.
+| Use case | Oxygen model | Glucose model | Notes |
+|---|---|---|---|
+| Quick exploratory | `distance` | `distance` | Physically grounded, fast |
+| Full mechanistic | `pde` | `pde` | Add `--cd68-consumption-weight 0.1` |
+| Demand-only glucose | `distance` | `max` | Glucose = Ki67 metabolic demand |
 
 ### Interpretation caveats
 
-- Oxygen and glucose PDE maps are relative density proxies, not absolute physiological concentrations.
-- Output quality is sensitive to channel quality (especially CD31/aSMA/Ki67/PCNA) and upstream registration/segmentation quality.
+- **Distance maps** use a physically grounded clamp (160 µm O₂, 450 µm glucose per Grimes 2014)
+  making values cross-patch comparable. Pixels beyond the clamp are all set to fully depleted.
+- **PDE maps** are relative nutrient-density proxies, not absolute physiological concentrations.
+- All 2D models systematically underestimate oxygenation near out-of-plane vessels (Grimes 2016).
+- Output quality is sensitive to CD31 channel quality and upstream registration.
 
 ---
 

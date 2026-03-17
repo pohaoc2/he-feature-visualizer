@@ -105,67 +105,6 @@ def make_colors(df, mode, thresh):
     return c
 
 
-# ── Heatmap tile rendering ────────────────────────────────────────
-
-def render_tile(xs, ys, colors, lv_info, col, row,
-                tile_size=TILE_SIZE, overlap=OVERLAP, sigma=SIGMA):
-    """
-    Render one heatmap tile.
-    xs, ys: cell coordinates in full-resolution image pixels.
-    lv_info: {w, h, cols, rows} for this DZI level.
-    """
-    lw, lh = lv_info["w"], lv_info["h"]
-
-    # Tile bounds in level pixels (with overlap)
-    x0 = max(0, col * tile_size - overlap)
-    y0 = max(0, row * tile_size - overlap)
-    x1 = min(lw, (col + 1) * tile_size + overlap)
-    y1 = min(lh, (row + 1) * tile_size + overlap)
-    tw = x1 - x0;  th = y1 - y0
-
-    if tw <= 0 or th <= 0:
-        return Image.new("RGBA", (tile_size, tile_size), (0,0,0,0))
-
-    # Scale factor: full-res px → level px
-    scale_x = lw / (xs.max() - xs.min() + 1e-9) if xs.max() > xs.min() else 1
-    scale_y = lh / (ys.max() - ys.min() + 1e-9) if ys.max() > ys.min() else 1
-    # Better: scale by image dimensions stored externally — passed as global below
-    # (handled by caller passing pre-scaled coordinates)
-
-    # Filter cells within this tile (with margin)
-    margin = 3 / scale_x  # a few pixels margin in image space
-    mask = (xs >= (x0 - margin) / scale_x + xs.min()) & \
-           (xs <= (x1 + margin) / scale_x + xs.min()) & \
-           (ys >= (y0 - margin) / scale_y + ys.min()) & \
-           (ys <= (y1 + margin) / scale_y + ys.min())
-
-    if not mask.any():
-        return Image.new("RGBA", (tw, th), (0,0,0,0))
-
-    lxs = xs[mask]
-    lys = ys[mask]
-    lc  = colors[mask]
-
-    # Map image coords → tile pixel coords
-    px = ((lxs * scale_x - x0)).astype(int).clip(0, tw - 1)
-    py = ((lys * scale_y - y0)).astype(int).clip(0, th - 1)
-
-    grids = []
-    for ch in range(4):
-        g = np.zeros((th, tw), dtype=np.float32)
-        np.add.at(g, (py, px), lc[:, ch].astype(np.float32))
-        g = gaussian_filter(g, sigma=sigma)
-        grids.append(g)
-
-    alpha = grids[3]
-    if alpha.max() > 0:
-        alpha = (alpha / alpha.max() * 200).clip(0, 255)
-    grids[3] = alpha
-
-    data = np.stack(grids, axis=-1).astype(np.uint8)
-    return Image.fromarray(data, "RGBA")
-
-
 def generate_heatmap_tiles(df, thresh, img_w, img_h, out_dir,
                             modes=("cells", "vasculature", "immune")):
     levels, max_level = dzi_level_info(img_w, img_h)

@@ -49,6 +49,8 @@ import logging
 import pathlib
 
 import numpy as np
+import pandas as pd
+import scipy.ndimage
 from PIL import Image
 
 from stages.multiplex_layers_lib.channels import (
@@ -73,6 +75,7 @@ from stages.multiplex_layers_lib.pde import (
 from stages.multiplex_layers_lib.render import (
     apply_colormap,
     make_glucose_map,
+    make_glucose_map_distance,
     make_glucose_map_pde,
     make_oxygen_map,
     make_oxygen_map_pde,
@@ -107,6 +110,7 @@ __all__ = [
     "make_oxygen_map",
     "make_oxygen_map_pde",
     "make_glucose_map",
+    "make_glucose_map_distance",
     "make_glucose_map_pde",
     "main",
 ]
@@ -155,56 +159,104 @@ def main() -> None:
         "--channels",
         nargs="+",
         default=[
-            "Keratin",
-            "NaKATPase",
-            "CDX2",
-            "CD45",
-            "CD3",
-            "CD4",
-            "CD8a",
-            "CD20",
-            "CD45RO",
-            "CD68",
-            "CD163",
-            "FOXP3",
-            "PD1",
-            "aSMA",
+            "Hoechst",
+            "AF1",
             "CD31",
-            "Desmin",
-            "Collagen",
+            "CD45",
+            "CD68",
+            "Argo550",
+            "CD4",
+            "FOXP3",
+            "CD8a",
+            "CD45RO",
+            "CD20",
+            "PD-L1",
+            "CD3e",
+            "CD163",
+            "E-cadherin",
+            "PD-1",
             "Ki67",
-            "PCNA",
-            "Vimentin",
-            "Ecadherin",
+            "Pan-CK",
+            "SMA",
         ],
         metavar="NAME",
         help="Multiplex channel names present in the .npy files, in order "
         "(must match --channels passed to patchify.py). "
-        "Default: full Stage 3 marker panel, 21 channels.",
+        "Default: 19-channel panel from data/markers.csv.",
     )
     parser.add_argument(
         "--oxygen-model",
         choices=["distance", "pde"],
         default="distance",
         help=(
-            "Oxygen proxy model. 'distance' is the current CD31 distance-transform "
-            "model; 'pde' uses a steady-state diffusion-consumption solver."
+            "Oxygen proxy model. 'distance' uses a physically clamped CD31 "
+            "distance transform (Grimes 2014, Zaidi 2019); 'pde' uses a "
+            "steady-state diffusion-consumption solver (Kumar 2024)."
+        ),
+    )
+    parser.add_argument(
+        "--oxygen-max-dist-um",
+        type=float,
+        default=160.0,
+        help=(
+            "O2 diffusion clamp in microns for the distance model "
+            "(default: 160 µm, Grimes 2014 / Zaidi 2019)."
         ),
     )
     parser.add_argument(
         "--glucose-model",
-        choices=["max", "pde"],
+        choices=["max", "distance", "pde"],
         default="max",
         help=(
             "Glucose proxy model. 'max' uses max(norm(Ki67), norm(PCNA)); "
-            "'pde' uses a steady-state diffusion-consumption solver."
+            "'distance' uses a physically clamped CD31 distance transform "
+            "(default clamp 450 µm, Grimes 2014); "
+            "'pde' uses a steady-state diffusion-consumption solver (Kumar 2024)."
         ),
+    )
+    parser.add_argument(
+        "--glucose-max-dist-um",
+        type=float,
+        default=450.0,
+        help=(
+            "Glucose diffusion clamp in microns for the distance model "
+            "(default: 450 µm, Grimes 2014)."
+        ),
+    )
+    parser.add_argument(
+        "--cd68-consumption-weight",
+        type=float,
+        default=0.1,
+        help=(
+            "Weight for CD68 macrophage demand in PDE consumption map k(x) "
+            "(Kumar et al. 2024). Only used with --oxygen-model pde or "
+            "--glucose-model pde."
+        ),
+    )
+    parser.add_argument(
+        "--validate-ki67-distance",
+        action="store_true",
+        help=(
+            "Accumulate global Ki67-vs-vessel-distance statistics across all "
+            "patches and save to {out}/validation/ki67_vs_distance.csv "
+            "(Zaidi et al. 2019 validation approach)."
+        ),
+    )
+    parser.add_argument(
+        "--validate-bin-um",
+        type=float,
+        default=10.0,
+        help="Bin width in µm for Ki67-vs-distance curve (default: 10 µm).",
     )
     parser.add_argument(
         "--pde-max-iters",
         type=int,
-        default=500,
-        help="Maximum PDE solver iterations.",
+        default=2000,
+        help=(
+            "Maximum PDE solver iterations (default: 2000). With physically "
+            "calibrated D values (large), more iterations are needed for convergence "
+            "across the patch."
+        ),
     )
     parser.add_argument(
         "--pde-tol",
@@ -213,10 +265,43 @@ def main() -> None:
         help="PDE convergence tolerance (max absolute update).",
     )
     parser.add_argument(
-        "--pde-diffusion",
+        "--oxygen-pde-diffusion",
         type=float,
-        default=1.0,
-        help="Diffusion coefficient used by PDE models.",
+        default=None,
+        help=(
+            "Diffusion coefficient for the oxygen PDE. If omitted, auto-computed "
+            "from --oxygen-krogh-um and mpp so that the PDE decay length matches "
+            "the Krogh radius: D = (krogh_um / mpp)^2 * k_base."
+        ),
+    )
+    parser.add_argument(
+        "--oxygen-krogh-um",
+        type=float,
+        default=160.0,
+        help=(
+            "Krogh cylinder O2 diffusion radius in µm used to auto-calibrate "
+            "--oxygen-pde-diffusion (default: 160 µm, Grimes 2014). Ignored if "
+            "--oxygen-pde-diffusion is set explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--glucose-pde-diffusion",
+        type=float,
+        default=None,
+        help=(
+            "Diffusion coefficient for the glucose PDE. If omitted, auto-computed "
+            "from --glucose-krogh-um and mpp: D = (krogh_um / mpp)^2 * k_base."
+        ),
+    )
+    parser.add_argument(
+        "--glucose-krogh-um",
+        type=float,
+        default=450.0,
+        help=(
+            "Krogh cylinder glucose diffusion radius in µm used to auto-calibrate "
+            "--glucose-pde-diffusion (default: 450 µm, Grimes 2014). Ignored if "
+            "--glucose-pde-diffusion is set explicitly."
+        ),
     )
     parser.add_argument(
         "--oxygen-consumption-base",
@@ -250,7 +335,7 @@ def main() -> None:
     parser.add_argument(
         "--sma-channel-candidates",
         nargs="+",
-        default=["aSMA", "Aortic smooth muscle actin"],
+        default=["SMA", "aSMA", "Aortic smooth muscle actin"],
         metavar="NAME",
         help=(
             "Ordered list of channel names to try for SMA refinement. "
@@ -337,17 +422,19 @@ def main() -> None:
     # ------------------------------------------------------------------
     cd31_idx = get_channel_index(args.channels, "CD31")
     ki67_idx = get_channel_index(args.channels, "Ki67")
-    pcna_idx = get_channel_index(args.channels, "PCNA")
+    pcna_idx = get_first_matching_channel_index(args.channels, ["PCNA"])
+    cd68_idx = get_first_matching_channel_index(args.channels, ["CD68"])
     sma_idx: int | None = None
     if args.vasc_sma_refine:
         sma_idx = get_first_matching_channel_index(
             args.channels, args.sma_channel_candidates
         )
     log.info(
-        "  Channel indices — CD31: %d, Ki67: %d, PCNA: %d",
+        "  Channel indices — CD31: %d, Ki67: %d, PCNA: %s, CD68: %s",
         cd31_idx,
         ki67_idx,
-        pcna_idx,
+        pcna_idx if pcna_idx is not None else "absent (Ki67-only demand)",
+        cd68_idx if cd68_idx is not None else "absent (no immune consumption term)",
     )
     if args.vasc_sma_refine and sma_idx is None:
         log.warning(
@@ -359,14 +446,49 @@ def main() -> None:
         log.info("  SMA refinement channel index: %d", sma_idx)
 
     # ------------------------------------------------------------------
-    # 3. Load index.json, prepare output directories
+    # 3. Load index.json, read mx_mpp, prepare output directories
     # ------------------------------------------------------------------
     log.info("Loading patch index: %s", index_path)
     with index_path.open(encoding="utf-8") as fh:
         index = json.load(fh)
 
+    mpp: float = index.get("mx_mpp") or index.get("he_mpp") or 1.0
+    log.info("  Microns per pixel (mpp): %.4f", mpp)
+    if mpp == 1.0 and "mx_mpp" not in index and "he_mpp" not in index:
+        log.warning(
+            "  'mx_mpp'/'he_mpp' not found in index.json — defaulting mpp=1.0. "
+            "Distance-model clamps will be in pixels, not microns."
+        )
+
     patches = index.get("patches", [])
     log.info("  %d patches in index.", len(patches))
+
+    # Auto-calibrate PDE diffusion coefficients from Krogh radius + mpp if not set.
+    # Formula: L = sqrt(D / k_base)  →  D = L_px^2 * k_base  where L_px = krogh_um / mpp
+    if args.oxygen_model == "pde":
+        if args.oxygen_pde_diffusion is None:
+            L_o2 = args.oxygen_krogh_um / mpp
+            args.oxygen_pde_diffusion = L_o2 ** 2 * args.oxygen_consumption_base
+            log.info(
+                "  O2 PDE: auto-calibrated D=%.1f (Krogh=%.0f µm, mpp=%.4f, "
+                "L=%.1f px, k_base=%.4f)",
+                args.oxygen_pde_diffusion, args.oxygen_krogh_um, mpp,
+                L_o2, args.oxygen_consumption_base,
+            )
+        else:
+            log.info("  O2 PDE: D=%.1f (user-specified)", args.oxygen_pde_diffusion)
+    if args.glucose_model == "pde":
+        if args.glucose_pde_diffusion is None:
+            L_glc = args.glucose_krogh_um / mpp
+            args.glucose_pde_diffusion = L_glc ** 2 * args.glucose_consumption_base
+            log.info(
+                "  Glucose PDE: auto-calibrated D=%.1f (Krogh=%.0f µm, mpp=%.4f, "
+                "L=%.1f px, k_base=%.4f)",
+                args.glucose_pde_diffusion, args.glucose_krogh_um, mpp,
+                L_glc, args.glucose_consumption_base,
+            )
+        else:
+            log.info("  Glucose PDE: D=%.1f (user-specified)", args.glucose_pde_diffusion)
 
     vasc_dir = out_dir / "vasculature"
     vasc_mask_dir = out_dir / "vasculature_mask"
@@ -374,6 +496,18 @@ def main() -> None:
     glucose_dir = out_dir / "glucose"
     for d in (vasc_dir, vasc_mask_dir, oxygen_dir, glucose_dir):
         d.mkdir(parents=True, exist_ok=True)
+
+    # Ki67-vs-distance validation accumulators (Zaidi et al. 2019)
+    val_n_bins: int = 0
+    val_sum: np.ndarray | None = None
+    val_count: np.ndarray | None = None
+    if args.validate_ki67_distance:
+        if args.validate_bin_um <= 0:
+            parser.error("--validate-bin-um must be > 0")
+        val_n_bins = int(np.ceil(args.oxygen_max_dist_um / args.validate_bin_um)) + 1
+        val_sum = np.zeros(val_n_bins, dtype=np.float64)
+        val_count = np.zeros(val_n_bins, dtype=np.int64)
+        (out_dir / "validation").mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # 4–6. Process each patch
@@ -398,7 +532,8 @@ def main() -> None:
         # b. Extract individual channels
         cd31_raw = extract_channel(patch, cd31_idx)
         ki67_raw = extract_channel(patch, ki67_idx)
-        pcna_raw = extract_channel(patch, pcna_idx)
+        pcna_raw = extract_channel(patch, pcna_idx) if pcna_idx is not None else None
+        cd68_raw = extract_channel(patch, cd68_idx) if cd68_idx is not None else None
         sma_raw = extract_channel(patch, sma_idx) if sma_idx is not None else None
 
         # c. Vasculature overlay
@@ -446,36 +581,65 @@ def main() -> None:
 
         vasc_rgba = make_vasculature_overlay(vessel_mask)
         demand_map = compute_metabolic_demand_map(ki67_raw, pcna_raw)
+        immune_map = (
+            percentile_norm(cd68_raw.astype(np.float32))
+            if cd68_raw is not None
+            else None
+        )
 
         # d. Oxygen map
         if args.oxygen_model == "pde":
             oxygen_rgba = make_oxygen_map_pde(
                 vessel_mask=vessel_mask,
                 demand_map=demand_map,
-                diffusion=args.pde_diffusion,
+                immune_map=immune_map,
+                diffusion=args.oxygen_pde_diffusion,
                 max_iters=args.pde_max_iters,
                 tol=args.pde_tol,
                 base_consumption=args.oxygen_consumption_base,
                 demand_weight=args.oxygen_consumption_demand_weight,
+                immune_weight=args.cd68_consumption_weight,
             )
         else:
-            oxygen_rgba = make_oxygen_map(vessel_mask)
+            oxygen_rgba = make_oxygen_map(
+                vessel_mask, mpp=mpp, max_dist_um=args.oxygen_max_dist_um
+            )
 
         # e. Glucose / metabolic demand map
         if args.glucose_model == "pde":
             glucose_rgba = make_glucose_map_pde(
                 vessel_mask=vessel_mask,
                 demand_map=demand_map,
-                diffusion=args.pde_diffusion,
+                immune_map=immune_map,
+                diffusion=args.glucose_pde_diffusion,
                 max_iters=args.pde_max_iters,
                 tol=args.pde_tol,
                 base_consumption=args.glucose_consumption_base,
                 demand_weight=args.glucose_consumption_demand_weight,
+                immune_weight=args.cd68_consumption_weight,
+            )
+        elif args.glucose_model == "distance":
+            glucose_rgba = make_glucose_map_distance(
+                vessel_mask, mpp=mpp, max_dist_um=args.glucose_max_dist_um
             )
         else:
             glucose_rgba = make_glucose_map(ki67_raw, pcna_raw)
 
-        # f. Save outputs
+        # f. Ki67-vs-distance validation (Zaidi et al. 2019)
+        if args.validate_ki67_distance and val_sum is not None and val_count is not None:
+            dist_px = scipy.ndimage.distance_transform_edt(~vessel_mask)
+            dist_um = dist_px * mpp
+            ki67_norm_val = percentile_norm(ki67_raw.astype(np.float32))
+            bin_idx = np.clip(
+                (dist_um / args.validate_bin_um).astype(np.int64),
+                0,
+                val_n_bins - 1,
+            ).ravel()
+            ki67_flat = ki67_norm_val.ravel().astype(np.float64)
+            val_sum += np.bincount(bin_idx, weights=ki67_flat, minlength=val_n_bins)
+            val_count += np.bincount(bin_idx, minlength=val_n_bins)
+
+        # g. Save outputs
         Image.fromarray(vasc_rgba, "RGBA").save(vasc_dir / f"{patch_id}.png")
         np.save(
             vasc_mask_dir / f"{patch_id}.npy",
@@ -494,7 +658,24 @@ def main() -> None:
             )
 
     # ------------------------------------------------------------------
-    # 7. Summary
+    # 7. Ki67-vs-distance validation CSV
+    # ------------------------------------------------------------------
+    if args.validate_ki67_distance and val_sum is not None and val_count is not None:
+        bin_centers_um = (np.arange(val_n_bins) + 0.5) * args.validate_bin_um
+        mean_ki67 = np.where(val_count > 0, val_sum / val_count, np.nan)
+        val_df = pd.DataFrame(
+            {
+                "distance_um": bin_centers_um,
+                "ki67_mean": mean_ki67,
+                "pixel_count": val_count,
+            }
+        )
+        val_csv = out_dir / "validation" / "ki67_vs_distance.csv"
+        val_df.to_csv(val_csv, index=False)
+        log.info("  Ki67-vs-distance CSV → %s", val_csv)
+
+    # ------------------------------------------------------------------
+    # 8. Summary
     # ------------------------------------------------------------------
     log.info("Done.")
     log.info("  Patches processed : %d", processed)
