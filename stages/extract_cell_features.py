@@ -13,6 +13,7 @@ import json
 import logging
 import pathlib
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 
 import cv2
 import numpy as np
@@ -66,6 +67,119 @@ def _cell_mask_from_contour(
     return canvas.astype(bool)
 
 
+# ---------------------------------------------------------------------------
+# Parallel worker (module-level so ProcessPoolExecutor can pickle it)
+# ---------------------------------------------------------------------------
+
+_ECF_CTX: dict = {}
+
+
+def _init_ecf_worker(ctx: dict) -> None:
+    global _ECF_CTX
+    _ECF_CTX = ctx
+
+
+def _ecf_patch_worker(patch_meta: dict) -> dict:
+    ctx = _ECF_CTX
+    cellvit_dir: pathlib.Path = ctx["cellvit_dir"]
+    multiplex_dir: pathlib.Path = ctx["multiplex_dir"]
+    channel_names: list[str] = ctx["channel_names"]
+    coord_scale: float = ctx["coord_scale"]
+
+    x0 = int(patch_meta["x0"])
+    y0 = int(patch_meta["y0"])
+    patch_id = f"{x0}_{y0}"
+
+    cell_json_path = cellvit_dir / f"{patch_id}.json"
+    if not cell_json_path.exists():
+        return {"rows": [], "missing_cellvit": 1, "missing_multiplex": 0,
+                "skipped_cells": 0, "processed_patches": 0, "warn_truncated": False}
+
+    mx_path = multiplex_dir / f"{patch_id}.npy"
+    if not mx_path.exists():
+        return {"rows": [], "missing_cellvit": 0, "missing_multiplex": 1,
+                "skipped_cells": 0, "processed_patches": 0, "warn_truncated": False}
+
+    with cell_json_path.open(encoding="utf-8") as fh:
+        cells: list[dict] = json.load(fh).get("cells", [])
+
+    patch = np.load(mx_path)
+    if patch.ndim != 3:
+        raise ValueError(
+            f"Multiplex patch must have shape (C,H,W), got {patch.shape} for {mx_path}"
+        )
+
+    c, h, w = patch.shape
+    if len(channel_names) < c:
+        raise ValueError(
+            f"Channel names ({len(channel_names)}) shorter than patch channels ({c}) "
+            f"for {mx_path}. Provide full --channels in patch order."
+        )
+
+    patch_channel_names = channel_names[:c]
+    warn_truncated = len(channel_names) > c
+
+    rows: list[dict] = []
+    skipped_cells = 0
+
+    for cell_index, cell in enumerate(cells):
+        mask = _cell_mask_from_contour(cell.get("contour", []), h, w)
+        if mask is None:
+            skipped_cells += 1
+            continue
+
+        area = int(mask.sum())
+        if area <= 0:
+            skipped_cells += 1
+            continue
+
+        centroid = cell.get("centroid", [0, 0])
+        lx = float(centroid[0]) if len(centroid) > 0 else 0.0
+        ly = float(centroid[1]) if len(centroid) > 1 else 0.0
+        gx_he = x0 + lx
+        gy_he = y0 + ly
+
+        marker_means = patch[:, mask].mean(axis=1, dtype=np.float64)
+
+        raw_values: dict[str, float] = {}
+        canonical_values: dict[str, list[float]] = defaultdict(list)
+        for idx, marker in enumerate(patch_channel_names):
+            name = str(marker).strip()
+            val = float(marker_means[idx])
+            if name:
+                raw_values[name] = val
+                canonical_values[canonicalize_marker_name(name)].append(val)
+
+        row: dict = {
+            "PatchID": patch_id,
+            "CellIndex": int(cell_index),
+            "type_cellvit": int(cell.get("type_cellvit", 0)),
+            "type_prob": float(cell.get("type_prob", 0.0)),
+            "Xt": gx_he * coord_scale,
+            "Yt": gy_he * coord_scale,
+            "X": gx_he * coord_scale,
+            "Y": gy_he * coord_scale,
+            "X_he": gx_he,
+            "Y_he": gy_he,
+            "X_local": lx,
+            "Y_local": ly,
+            "Area_cellvit_px": area,
+        }
+        row.update(raw_values)
+        for canonical, values in canonical_values.items():
+            row[canonical] = float(np.mean(values))
+        rows.append(row)
+
+    return {
+        "rows": rows,
+        "missing_cellvit": 0,
+        "missing_multiplex": 0,
+        "skipped_cells": skipped_cells,
+        "processed_patches": 1,
+        "warn_truncated": warn_truncated,
+    }
+
+
 def extract_cell_features_table(
     cellvit_dir: pathlib.Path,
     multiplex_dir: pathlib.Path,
@@ -74,6 +188,7 @@ def extract_cell_features_table(
     metadata_csv: pathlib.Path | None = None,
     coord_scale: float = 1.0,
     logger: logging.Logger | None = None,
+    workers: int = 1,
 ) -> pd.DataFrame:
     """Extract a per-cell feature table from CellViT contours and MX patches."""
     log = logger or logging.getLogger(__name__)
@@ -91,99 +206,30 @@ def extract_cell_features_table(
     skipped_cells = 0
     truncated_channels_logged = False
 
-    for patch_meta in patches:
-        x0 = int(patch_meta["x0"])
-        y0 = int(patch_meta["y0"])
-        patch_id = f"{x0}_{y0}"
-
-        cell_json_path = cellvit_dir / f"{patch_id}.json"
-        if not cell_json_path.exists():
-            missing_cellvit += 1
-            continue
-
-        mx_path = multiplex_dir / f"{patch_id}.npy"
-        if not mx_path.exists():
-            missing_multiplex += 1
-            continue
-
-        with cell_json_path.open(encoding="utf-8") as fh:
-            cells: list[dict] = json.load(fh).get("cells", [])
-
-        patch = np.load(mx_path)
-        if patch.ndim != 3:
-            raise ValueError(
-                f"Multiplex patch must have shape (C,H,W), got {patch.shape} for {mx_path}"
-            )
-
-        c, h, w = patch.shape
-        if len(channel_names) < c:
-            raise ValueError(
-                f"Channel names ({len(channel_names)}) shorter than patch channels ({c}) "
-                f"for {mx_path}. Provide full --channels in patch order."
-            )
-
-        patch_channel_names = channel_names[:c]
-        if len(channel_names) > c and not truncated_channels_logged:
-            log.warning(
-                "More channel names provided (%d) than patch channels (%d). "
-                "Using first %d names.",
-                len(channel_names),
-                c,
-                c,
-            )
-            truncated_channels_logged = True
-
-        for cell_index, cell in enumerate(cells):
-            mask = _cell_mask_from_contour(cell.get("contour", []), h, w)
-            if mask is None:
-                skipped_cells += 1
-                continue
-
-            area = int(mask.sum())
-            if area <= 0:
-                skipped_cells += 1
-                continue
-
-            centroid = cell.get("centroid", [0, 0])
-            lx = float(centroid[0]) if len(centroid) > 0 else 0.0
-            ly = float(centroid[1]) if len(centroid) > 1 else 0.0
-            gx_he = x0 + lx
-            gy_he = y0 + ly
-
-            marker_means = patch[:, mask].mean(axis=1, dtype=np.float64)
-
-            raw_values: dict[str, float] = {}
-            canonical_values: dict[str, list[float]] = defaultdict(list)
-            for idx, marker in enumerate(patch_channel_names):
-                name = str(marker).strip()
-                val = float(marker_means[idx])
-                if name:
-                    raw_values[name] = val
-                    canonical_values[canonicalize_marker_name(name)].append(val)
-
-            row: dict[str, float | int | str] = {
-                "PatchID": patch_id,
-                "CellIndex": int(cell_index),
-                "type_cellvit": int(cell.get("type_cellvit", 0)),
-                "type_prob": float(cell.get("type_prob", 0.0)),
-                "Xt": gx_he * coord_scale,
-                "Yt": gy_he * coord_scale,
-                "X": gx_he * coord_scale,
-                "Y": gy_he * coord_scale,
-                "X_he": gx_he,
-                "Y_he": gy_he,
-                "X_local": lx,
-                "Y_local": ly,
-                "Area_cellvit_px": area,
-            }
-
-            row.update(raw_values)
-            for canonical, values in canonical_values.items():
-                row[canonical] = float(np.mean(values))
-
-            rows.append(row)
-
-        processed_patches += 1
+    ctx = {
+        "cellvit_dir": cellvit_dir,
+        "multiplex_dir": multiplex_dir,
+        "channel_names": channel_names,
+        "coord_scale": coord_scale,
+    }
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=_init_ecf_worker,
+        initargs=(ctx,),
+    ) as executor:
+        for result in executor.map(_ecf_patch_worker, patches):
+            rows.extend(result["rows"])
+            missing_cellvit += result["missing_cellvit"]
+            missing_multiplex += result["missing_multiplex"]
+            skipped_cells += result["skipped_cells"]
+            processed_patches += result["processed_patches"]
+            if result["warn_truncated"] and not truncated_channels_logged:
+                log.warning(
+                    "More channel names provided (%d) than patch channels. "
+                    "Using first N names.",
+                    len(channel_names),
+                )
+                truncated_channels_logged = True
 
     df = pd.DataFrame(rows)
     if not df.empty:
@@ -213,6 +259,7 @@ def extract_cell_features_to_csv(
     metadata_csv: pathlib.Path | None = None,
     coord_scale: float = 1.0,
     logger: logging.Logger | None = None,
+    workers: int = 1,
 ) -> pathlib.Path:
     """Extract CellViT-aligned cell features and write CSV to ``out_csv``."""
     df = extract_cell_features_table(
@@ -223,6 +270,7 @@ def extract_cell_features_to_csv(
         metadata_csv=metadata_csv,
         coord_scale=coord_scale,
         logger=logger,
+        workers=workers,
     )
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_csv, index=False)
@@ -290,6 +338,12 @@ def main() -> None:
             "you pass to stages.assign_cells --coord-scale."
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of parallel worker processes for patch extraction (default: 4).",
+    )
     args = parser.parse_args()
 
     out_csv = pathlib.Path(args.out_csv)
@@ -304,6 +358,7 @@ def main() -> None:
         metadata_csv=metadata_csv,
         coord_scale=args.coord_scale,
         logger=log,
+        workers=args.workers,
     )
     log.info("Wrote extracted cell features CSV: %s", written)
 

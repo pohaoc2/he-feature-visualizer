@@ -98,10 +98,14 @@ python3 -m stages.patchify \
   --metadata-csv data/WD-76845-097-metadata.csv \
   --out processed_wd \
   --channels DNA \
+  --workers 8
   # --register
   # add --no-register to skip ECC and use mpp-ratio scaling only
   # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed_wd/masks/
+  # --workers N  parallelise patch extraction over N processes (default: 4)
 ```
+
+Patch extraction is parallelised with `ProcessPoolExecutor`. Each worker opens its own zarr file handles, so the default of 4 workers is safe. On a machine with fast NVMe storage, `--workers 8` or higher is recommended.
 
 ### Registration
 
@@ -255,7 +259,9 @@ python -m stages.assign_cells \
   --index processed_crc33_crop/index.json \
   --coord-scale 1.0 \
   --classifier codex \
-  --csv-mpp 1.0
+  --csv-mpp 1.0 \
+  --model-weight 0.5 \
+  --workers 8
 ```
 
 ### Mode B: Auto-extract features from CellViT + multiplex patches
@@ -269,11 +275,16 @@ python -m stages.assign_cells \
   --multiplex-dir processed_crc33_crop/multiplex/ \
   --index processed_crc33_crop/index.json \
   --out processed_crc33_crop/ \
-  --classifier codex
+  --classifier codex \
+  --workers 8
 ```
+
+In Mode B, `--workers` is shared between the feature-extraction step (Stage 2.5) and the cell-assignment step.
 
 This writes `processed_crc33_crop/cellvit_mx_features.csv` and then uses it for
 assignment.
+
+`--workers N` parallelises both the cell-assignment loop and (in Mode B) the upstream feature-extraction step using `ProcessPoolExecutor`. Default is 4; recommended value is `os.cpu_count() // 2` or the number of physical cores.
 
 Stage 3 outputs now include:
 
@@ -289,7 +300,8 @@ python -m stages.extract_cell_features \
   --cellvit-dir processed_crc33_crop/cellvit/ \
   --multiplex-dir processed_crc33_crop/multiplex/ \
   --index processed_crc33_crop/index.json \
-  --out-csv processed_crc33_crop/cellvit_mx_features.csv
+  --out-csv processed_crc33_crop/cellvit_mx_features.csv \
+  --workers 8
 ```
 
 ---
@@ -306,10 +318,22 @@ distance clamps (µm) to pixels.
 |---|---|---|---|---|
 | Vasculature | CD31 (+ SMA optional) | — | Otsu threshold → binary mask | — |
 | Oxygen | CD31 | `distance` (default) | Euclidean distance transform clamped at **160 µm** | Grimes 2014, Zaidi 2019 |
-| Oxygen | CD31, Ki67, CD68 | `pde` | Steady-state `D∇²u − k(x)u + s(x) = 0`; k(x) = base + Ki67 + CD68 | Kumar 2024 |
+| Oxygen | CD31, Ki67, CD68 | `wsi-pde` | Steady-state `D∇²u − k(x)u + s(x) = 0` solved **WSI-wide** at coarse resolution; per-patch results cropped from the global field | Kumar 2024 |
 | Glucose | CD31 | `distance` | Same distance transform clamped at **450 µm** (wider supply zone) | Grimes 2014 |
-| Glucose | Ki67 | `max` | `percentile_norm(Ki67)` | — |
-| Glucose | CD31, Ki67, CD68 | `pde` | Same PDE solver as oxygen | Kumar 2024 |
+| Glucose | Ki67 | `max` (default) | `percentile_norm(Ki67)` | — |
+| Glucose | CD31, Ki67, CD68 | `wsi-pde` | Same WSI-scale PDE solver as oxygen | Kumar 2024 |
+
+**Why WSI-scale?**  The Krogh oxygen diffusion radius (~160 µm) is larger than a single 256 px patch (~83 µm at 0.325 µm/px).
+Per-patch computation cannot capture nutrients supplied by vessels in adjacent patches.
+The WSI-scale solver reads CD31/Ki67 directly from the OME-TIFF pyramid at a coarse downsampling factor (`--wsi-pde-ds`, default 8), computes a Euclidean distance transform once on the full slide, and extracts per-patch slices in milliseconds.
+
+**Algorithm** (O(N), runs in seconds even for 30 M-pixel WSIs):
+1. Build vessel mask from CD31 at coarse resolution
+2. Compute `dist = distance_transform_edt(~vessel_mask)` — exact for constant k
+3. Compute spatially varying decay length `L(x) = krogh_um / (mpp_coarse × √(k(x)/k_base))` where k(x) = base + Ki67 + CD68 demand terms
+4. `u(x) = exp(−dist(x) / L(x))` — exact PDE solution for constant k; WKB approximation for varying k
+
+Only CD31, Ki67, and CD68 channels are loaded — memory ≤ 400 MB for a 30 M-pixel WSI at ds=8.
 
 ### Outputs
 
@@ -321,10 +345,13 @@ distance clamps (µm) to pixels.
 | `{out}/glucose/{x0}_{y0}.png` | Hot glucose-availability map |
 | `{out}/validation/ki67_vs_distance.csv` | Ki67 mean vs distance-from-vessel bins (optional, `--validate-ki67-distance`) |
 
+`--workers N` parallelises the per-patch loop (numpy/cv2 operations, file I/O) using `ProcessPoolExecutor`. The WSI-scale PDE pre-computation (when `--oxygen-model wsi-pde` or `--glucose-model wsi-pde`) runs once serially before the parallel loop and is unaffected by `--workers`.
+
 ### Distance model run (default, Zaidi 2019 / Grimes 2014)
 
-Uses physically clamped distance transforms with separate scales for O₂ and glucose.
-MPP is read from `index.json` automatically.
+Uses physically clamped distance transforms with separate Krogh radii for O₂ and glucose.
+MPP is read from `index.json` automatically; `--oxygen-krogh-um` and `--glucose-krogh-um`
+control both the distance clamp and (when using `wsi-pde`) the D calibration.
 
 ```bash
 python -m stages.multiplex_layers \
@@ -333,36 +360,61 @@ python -m stages.multiplex_layers \
   --metadata-csv data/markers.csv \
   --out processed_crc33/ \
   --oxygen-model distance \
-  --oxygen-max-dist-um 160 \
+  --oxygen-krogh-um 160 \
   --glucose-model distance \
-  --glucose-max-dist-um 450
+  --glucose-krogh-um 450 \
+  --workers 8
 ```
 
-### PDE run with CD68 macrophage consumption (Kumar 2024)
+### WSI-scale PDE run (Kumar 2024, physically correct)
+
+Solves `D∇²u − k(x)u + s(x) = 0` once on the full WSI at coarse resolution
+(`--wsi-pde-ds 4` → 1.3 µm/px coarse grid), then crops per-patch results.
+Requires the raw multiplex OME-TIFF via `--multiplex-tiff`.
 
 ```bash
+# Full WSI (recommended: ds=8 keeps memory ~400 MB and converges in <30k iters)
 python -m stages.multiplex_layers \
   --multiplex-dir processed_crc33/multiplex/ \
   --index processed_crc33/index.json \
   --metadata-csv data/markers.csv \
   --out processed_crc33/ \
-  --oxygen-model pde \
-  --glucose-model pde \
-  --oxygen-pde-diffusion 1.0 \
-  --glucose-pde-diffusion 0.32 \
-  --pde-max-iters 500 \
-  --pde-tol 1e-4 \
+  --multiplex-tiff data/mx_crc33.ome.tiff \
+  --oxygen-model wsi-pde \
+  --oxygen-krogh-um 160 \
+  --glucose-model wsi-pde \
+  --glucose-krogh-um 450 \
+  --wsi-pde-ds 8 \
+  --wsi-pde-max-iters 40000 \
   --oxygen-consumption-base 0.1 \
   --oxygen-consumption-demand-weight 0.3 \
   --glucose-consumption-base 0.1 \
   --glucose-consumption-demand-weight 0.3 \
-  --cd68-consumption-weight 0.1
+  --cd68-consumption-weight 0.1 \
+  --workers 8
 ```
 
+Key `wsi-pde` parameters:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--multiplex-tiff` | required | Path to the multiplex OME-TIFF |
+| `--wsi-pde-ds` | `4` | Downsampling factor. Use **8** for full WSIs to keep memory ≤ 500 MB and converge in ≤ 40k iters |
+| `--wsi-pde-max-iters` | `20000` | Jacobi iterations needed ≈ 4 × L_coarse² where L_coarse = krogh_um / (mpp × ds) |
+| `--wsi-pde-tol` | `1e-4` | Convergence tolerance |
+| `--oxygen-krogh-um` | `160` | Krogh radius → auto-calibrates D = (krogh_um / mpp_coarse)² × k_base |
+| `--glucose-krogh-um` | `450` | Same for glucose |
+
+Memory footprint at ds=8 (only CD31 + Ki67 + CD68 are loaded — all other channels are skipped):
+
+| WSI size | Coarse grid | Memory (3 ch) |
+|---|---|---|
+| 1 024 × 1 024 crop | 128 × 128 | < 1 MB |
+| 52 740 × 36 354 full | 6 593 × 4 545 | ~360 MB |
+
 The PDE equation structure and additive k(x) form follow Kumar et al. (2024).
-Note: Kumar 2024 fits the scalar weights data-driven from CA9 hypoxia staining.
-Since CA9 is absent from this panel, `base`, `w_ki67`, and `w_cd68` are heuristic
-defaults — not paper-derived values. Outputs reflect model structure, not fitted biology.
+Scalar weights (`base`, `w_ki67`, `w_cd68`) are heuristic defaults; Kumar 2024
+fits them data-driven from CA9 hypoxia staining (absent from this panel).
 
 ### Ki67-vs-distance validation (Zaidi 2019)
 
@@ -377,9 +429,11 @@ python -m stages.multiplex_layers \
   --metadata-csv data/markers.csv \
   --out processed_crc33/ \
   --oxygen-model distance \
-  --glucose-model distance \
+  --oxygen-krogh-um 160 \
+  --glucose-model max \
   --validate-ki67-distance \
-  --validate-bin-um 10
+  --validate-bin-um 10 \
+  --workers 8
 ```
 
 Output: `{out}/validation/ki67_vs_distance.csv` with columns `distance_um`, `ki67_mean`, `pixel_count`.
@@ -397,7 +451,8 @@ python -m stages.multiplex_layers \
   --vasc-open-kernel-size 3 \
   --vasc-close-kernel-size 3 \
   --vasc-min-area 16 \
-  --vasc-noisy-max-fraction 0.98
+  --vasc-noisy-max-fraction 0.98 \
+  --workers 8
 ```
 
 SMA refinement adds αSMA⁺ pixels adjacent to CD31 mask (pericyte-covered vessels
@@ -408,15 +463,18 @@ masks with >98% coverage as artefactual.
 
 | Use case | Oxygen model | Glucose model | Notes |
 |---|---|---|---|
-| Quick exploratory | `distance` | `distance` | Physically grounded, fast |
-| Full mechanistic | `pde` | `pde` | Add `--cd68-consumption-weight 0.1` |
-| Demand-only glucose | `distance` | `max` | Glucose = Ki67 metabolic demand |
+| Quick exploratory | `distance` | `max` | Fast; no OME-TIFF needed at runtime |
+| Physically calibrated | `distance` | `distance` | Both Krogh-clamped; cross-patch comparable |
+| Full mechanistic (WSI) | `wsi-pde` | `wsi-pde` | Requires `--multiplex-tiff`; captures cross-patch gradients |
 
 ### Interpretation caveats
 
-- **Distance maps** use a physically grounded clamp (160 µm O₂, 450 µm glucose per Grimes 2014)
+- **Distance maps** use a physically grounded clamp (160 µm O₂, 450 µm glucose per Grimes 2014),
   making values cross-patch comparable. Pixels beyond the clamp are all set to fully depleted.
-- **PDE maps** are relative nutrient-density proxies, not absolute physiological concentrations.
+- **WSI-PDE maps** are normalized relative nutrient-density proxies (vessel pixel = 1, depleted = 0),
+  not absolute physiological concentrations. Normalization is done per-WSI-solve.
+- Glucose `wsi-pde` at small crops (< 400 µm) will yield nearly flat output — glucose reaches
+  everywhere within the Krogh radius. Use the full WSI OME-TIFF for meaningful glucose gradients.
 - All 2D models systematically underestimate oxygenation near out-of-plane vessels (Grimes 2016).
 - Output quality is sensitive to CD31 channel quality and upstream registration.
 
@@ -504,7 +562,10 @@ Column layout (one row per patch):
 | C2 | Hoechst/DNA channel (Blues colormap) |
 | C3 | CellViT segmentation mask — contours filled by 5-class type (neoplastic / inflammatory / connective / dead / epithelial) |
 | C4 | Final fused type overlay — contours matched to Stage 3 assignments (cancer / immune / healthy) |
-| C5 | CD31 channel (Reds colormap) — vasculature proxy |
+| C5 | Cell state overlay (proliferative / quiescent / dead) |
+| C6 | Vasculature RGBA overlay (CD31 mask composited on H&E) |
+| C7 | Oxygen proxy (RdYlBu: blue = near vessel / oxygenated, red = hypoxic) + colorbar |
+| C8 | Glucose proxy (hot colormap: bright = high supply, dark = depleted) + colorbar |
 
 Patches are discovered automatically from `he/`, `cellvit/`, and `cell_assignments.csv`.
 If `--random N` exceeds the number of valid patches, it clamps silently.
@@ -527,7 +588,8 @@ python -m stages.assign_cells \
   --out processed_crc33_crop/ \
   --classifier codex \
   --coord-scale 1.0 \
-  --csv-mpp 1.0
+  --csv-mpp 1.0 \
+  --model-weight 0.5
 
 # 2) Render one patch (auto-selects evidence marker; CD31/SMA vasculature column added automatically)
 python -m tools.scientific_vis_cellvit_mx \
@@ -654,7 +716,13 @@ Stage 3 is documented around the **CODEX-style clustering** workflow:
 - State labels: `dead`, `proliferative`, `quiescent`
 - Fine model subtypes: `epithelial`, `cd4_t`, `cd8_t`, `treg`, `b_cell`, `macrophage`, `endothelial`, `sma_stromal`
 - Final collapse: immune subtypes → `immune`, endothelial/stromal → `healthy`, epithelial → `cancer`
-- Fusion: `P_final = 0.85 * P_model + 0.15 * P_cellvit_prior`
+- Fusion: `P_final = w * P_model + (1-w) * P_cellvit_prior` where `w` is adaptive per CellViT type:
+  - `type=1` (Neoplastic): `w=0.30` — H&E morphology strongly trusted; cancer cells stay cancer
+  - `type=2` (Inflammatory): `w=0.70` — CODEX trusted for immune subtyping
+  - `type=3` (Connective): `w=0.40` — H&E trusted; stromal cells stay healthy
+  - `type=0/4/5` (unknown/dead/epithelial): `w=0.50` — equal weight
+  - `--model-weight` overrides the default fallback (0.85) for types not in the table
+- Normalization: winsorize per marker to [1st, 99th pct] → per-marker Z-score (Bai et al. 2021, *Front. Immunol.*)
 - Dead-state override: `type_cellvit == 4 -> dead`
 
 

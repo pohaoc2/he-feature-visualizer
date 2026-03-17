@@ -18,6 +18,7 @@ import json
 import logging
 import pathlib
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import cv2
 import numpy as np
@@ -72,20 +73,26 @@ CODEX_FINE_TYPE_MARKERS: dict[str, list[str]] = {
     "sma_stromal": ["SMA"],
 }
 
+# Weights normalized by number of fine types per final class (1/5, 1/1, 1/2) so that a
+# cell with uniform fine-type probabilities maps to equal 3-class probabilities (0.33 each)
+# rather than immune=0.625 from the structural 5:1:2 imbalance.
 CODEX_FINE_TO_FINAL_WEIGHTS: dict[str, dict[str, float]] = {
-    "epithelial": {"cancer": 1.0},
-    "cd4_t": {"immune": 1.0},
-    "cd8_t": {"immune": 1.0},
-    "treg": {"immune": 1.0},
-    "b_cell": {"immune": 1.0},
-    "macrophage": {"immune": 1.0},
-    "endothelial": {"healthy": 1.0},
-    "sma_stromal": {"healthy": 1.0},
+    "epithelial": {"cancer": 1.0},    # 1/1 cancer
+    "cd4_t":      {"immune": 0.2},    # 1/5 immune
+    "cd8_t":      {"immune": 0.2},    # 1/5 immune
+    "treg":       {"immune": 0.2},    # 1/5 immune
+    "b_cell":     {"immune": 0.2},    # 1/5 immune
+    "macrophage": {"immune": 0.2},    # 1/5 immune
+    "endothelial":  {"healthy": 0.5}, # 1/2 healthy
+    "sma_stromal":  {"healthy": 0.5}, # 1/2 healthy
 }
 
 NON_TYPING_MARKERS: tuple[str, ...] = ("Hoechst", "AF1", "Argo550", "PD-L1")
 
 CONFIDENCE_THRESHOLDS: tuple[float, float] = (0.25, 0.12)
+# When max collapsed model probability is below this, CODEX signal is noise — fall back to
+# CellViT morphological prior entirely rather than letting ambiguous clusters vote 5:1 immune.
+MIN_MODEL_CONFIDENCE: float = 0.40
 DEFAULT_MODEL_WEIGHT = 0.85
 
 # Per-CellViT-type model weights: lower = trust CellViT morphology more.
@@ -174,18 +181,36 @@ def _stable_softmax(frame: pd.DataFrame, temperature: float = 1.0) -> pd.DataFra
     return pd.DataFrame(exp / denom, index=frame.index, columns=frame.columns)
 
 
-def _preprocess_codex_matrix(expr_df: pd.DataFrame) -> pd.DataFrame:
+def _preprocess_codex_matrix(
+    expr_df: pd.DataFrame,
+    winsorize_pct: float = 1.0,
+) -> pd.DataFrame:
     """Prepare per-cell multiplex features for CODEX-style clustering.
 
-    The current CODEX path follows the Frontiers benchmarking paper's
-    recommended normalization for cell-type identification: per-marker
-    Z normalization across all cells.
+    Follows the Frontiers benchmarking paper (Bai et al. 2021, doi:10.3389/fimmu.2021.727626)
+    which found per-marker Z-score normalization to be the most effective method.
+    Winsorization to [1st, 99th] percentile is applied first to remove outlier fluorescence
+    intensities (analogous to the paper's min-max preprocessing step).
     """
     out = expr_df.apply(pd.to_numeric, errors="coerce").fillna(0.0).clip(lower=0.0)
     if out.empty:
         return out.astype(float)
 
     arr = out.to_numpy(dtype=float)
+
+    # Step 1: subtract per-marker autofluorescence floor (5th percentile).
+    # Multiplex images have a background floor of 100–250 intensity units across all markers
+    # (autofluorescence + camera offset). Without subtraction, most cells sit in a compressed
+    # background band, making them indistinguishable by KMeans.
+    background = np.percentile(arr, 5.0, axis=0)
+    arr = np.clip(arr - background, 0.0, None)
+
+    # Step 2: winsorize per marker — clip residual outlier intensities before Z-scoring
+    lo = np.percentile(arr, winsorize_pct, axis=0)
+    hi = np.percentile(arr, 100.0 - winsorize_pct, axis=0)
+    arr = np.clip(arr, lo, hi)
+
+    # Step 3: per-marker Z-score (paper's top-ranked normalization method)
     mean = arr.mean(axis=0)
     std = arr.std(axis=0)
     std[std <= CODEX_ZSCORE_EPS] = 1.0
@@ -551,12 +576,18 @@ def match_cells(
                 model_probs = {c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES}
                 model_type = _argmax_label(model_probs)
                 model_type_fine = str(row.get("type_codex_fine", model_type))
-                effective_weight = CELLVIT_TYPE_MODEL_WEIGHTS.get(type_cellvit, model_weight)
-                fused_probs = {
-                    c: effective_weight * model_probs[c] + (1.0 - effective_weight) * prior_probs[c]
-                    for c in CELL_TYPES
-                }
-                final_type = _argmax_label(fused_probs)
+                # If the CODEX model is uncertain (ambiguous cluster), fall back to CellViT
+                # prior entirely rather than letting low-confidence votes bias toward immune.
+                if max(model_probs.values()) < MIN_MODEL_CONFIDENCE:
+                    fused_probs = prior_probs.copy()
+                    final_type = prior_type
+                else:
+                    effective_weight = CELLVIT_TYPE_MODEL_WEIGHTS.get(type_cellvit, model_weight)
+                    fused_probs = {
+                        c: effective_weight * model_probs[c] + (1.0 - effective_weight) * prior_probs[c]
+                        for c in CELL_TYPES
+                    }
+                    final_type = _argmax_label(fused_probs)
                 mismatch = model_type != prior_type
                 confidence = confidence_from_probs(fused_probs, mismatch)
                 state = assign_state(row, state_thresholds, type_cellvit)
@@ -663,6 +694,95 @@ def rasterize_cells(
     return canvas
 
 
+def rasterize_binary_masks(
+    cells: list[dict],
+    patch_size: int,
+) -> dict[str, np.ndarray]:
+    """Draw per-cell-type/state binary masks.
+
+    Returns a dict of (patch_size, patch_size) uint8 arrays (0 or 255):
+      - cell type masks: cancer/immune/healthy
+      - cell state masks: proliferative/quiescent/dead
+    """
+    masks: dict[str, np.ndarray] = {}
+    for cell_type in CELL_TYPES:
+        masks[cell_type] = np.zeros((patch_size, patch_size), dtype=np.uint8)
+    for cell_state in ("proliferative", "quiescent", "dead"):
+        masks[cell_state] = np.zeros((patch_size, patch_size), dtype=np.uint8)
+
+    for cell in cells:
+        contour = cell.get("contour", [])
+        if len(contour) < 3:
+            continue
+        label = str(cell.get("cell_type", "other"))
+        if label not in masks:
+            continue
+        pts = np.array(contour, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(masks[label], [pts], 255)
+        state = str(cell.get("cell_state", "other"))
+        if state in masks:
+            cv2.fillPoly(masks[state], [pts], 255)
+
+    return masks
+
+
+def compose_union_rgb(
+    masks: dict[str, np.ndarray],
+    labels: tuple[str, ...],
+    color_map: dict[str, tuple[int, int, int, int]],
+) -> np.ndarray:
+    """Compose an RGB union image with a right-side color legend."""
+    h, w = next(iter(masks.values())).shape
+    union = np.zeros((h, w, 3), dtype=np.uint8)
+    for label in labels:
+        if label not in masks:
+            continue
+        on = masks[label] > 0
+        rgb = np.array(color_map[label][:3], dtype=np.uint8)
+        union[on] = np.maximum(union[on], rgb)
+
+    legend_width = 180
+    out = np.zeros((h, w + legend_width, 3), dtype=np.uint8)
+    out[:, :w] = union
+    out[:, w:] = np.uint8(24)
+
+    cv2.putText(
+        out,
+        "Legend",
+        (w + 12, 24),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (235, 235, 235),
+        1,
+        cv2.LINE_AA,
+    )
+
+    y = 44
+    box_size = 14
+    row_step = 24
+    for label in labels:
+        rgb = tuple(int(v) for v in color_map[label][:3])
+        cv2.rectangle(
+            out,
+            (w + 12, y - box_size + 2),
+            (w + 12 + box_size, y + 2),
+            rgb,
+            thickness=-1,
+        )
+        cv2.putText(
+            out,
+            label,
+            (w + 34, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.48,
+            (235, 235, 235),
+            1,
+            cv2.LINE_AA,
+        )
+        y += row_step
+    return out
+
+
 # ---------------------------------------------------------------------------
 # CLI / main
 # ---------------------------------------------------------------------------
@@ -677,6 +797,96 @@ def _resolve_coord_cols(df: pd.DataFrame) -> tuple[str, str]:
     raise ValueError(
         "CSV must contain coordinate columns 'Xt'/'Yt' or 'X'/'Y'. "
         f"Found columns: {list(df.columns)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parallel worker (module-level so ProcessPoolExecutor can pickle it)
+# ---------------------------------------------------------------------------
+
+_AC_CTX: dict = {}
+
+
+def _init_ac_worker(ctx: dict) -> None:
+    """Set per-process context once at worker startup."""
+    global _AC_CTX
+    _AC_CTX = ctx
+
+
+def _ac_patch_worker(patch_meta: dict) -> tuple | None:
+    """Process one patch. Returns result tuple, or None if JSON is missing."""
+    ctx = _AC_CTX
+    x0 = int(patch_meta["x0"])
+    y0 = int(patch_meta["y0"])
+    patch_id = f"{x0}_{y0}"
+
+    json_path = ctx["cellvit_dir"] / f"{patch_id}.json"
+    if not json_path.exists():
+        return None
+
+    with json_path.open(encoding="utf-8") as fh:
+        cells: list[dict] = json.load(fh).get("cells", [])
+
+    cells = match_cells(
+        cells=cells,
+        kdtree=ctx["kdtree"],
+        df=ctx["df"],
+        state_thresholds=ctx["state_thresholds"],
+        x0=x0,
+        y0=y0,
+        max_dist=ctx["max_dist"],
+        coord_scale=ctx["coord_scale"],
+        model_weight=ctx["model_weight"],
+    )
+
+    patch_records = []
+    patch_confidence_counts: Counter = Counter()
+    patch_mismatch_count = 0
+    patch_conflict_pairs: Counter = Counter()
+    for c in cells:
+        patch_confidence_counts[c.get("cell_type_confidence", "low")] += 1
+        if bool(c.get("is_mismatch", False)):
+            patch_mismatch_count += 1
+            key = f"model={c.get('type_codex')},cellvit={c.get('type_cellvit_prior')}"
+            patch_conflict_pairs[key] += 1
+        matched_row_idx = c.get("matched_row_idx")
+        if matched_row_idx is None:
+            continue
+        patch_records.append(
+            build_assignment_record(
+                patch_id=patch_id,
+                x0=x0,
+                y0=y0,
+                cell=c,
+                row=ctx["df"].iloc[int(matched_row_idx)],
+            )
+        )
+
+    binary_masks = rasterize_binary_masks(cells, ctx["patch_size"])
+    Image.fromarray(binary_masks["cancer"]).save(ctx["types_cancers_dir"] / f"{patch_id}.png")
+    Image.fromarray(binary_masks["immune"]).save(ctx["types_immune_dir"] / f"{patch_id}.png")
+    Image.fromarray(binary_masks["healthy"]).save(ctx["types_healthy_dir"] / f"{patch_id}.png")
+    type_union_rgb = compose_union_rgb(
+        binary_masks,
+        ("cancer", "immune", "healthy"),
+        CELL_TYPE_COLORS,
+    )
+    Image.fromarray(type_union_rgb, mode="RGB").save(ctx["types_union_dir"] / f"{patch_id}.png")
+    Image.fromarray(binary_masks["proliferative"]).save(ctx["states_proliferative_dir"] / f"{patch_id}.png")
+    Image.fromarray(binary_masks["quiescent"]).save(ctx["states_quiescent_dir"] / f"{patch_id}.png")
+    Image.fromarray(binary_masks["dead"]).save(ctx["states_dead_dir"] / f"{patch_id}.png")
+    state_union_rgb = compose_union_rgb(
+        binary_masks,
+        ("proliferative", "quiescent", "dead"),
+        CELL_STATE_COLORS,
+    )
+    Image.fromarray(state_union_rgb, mode="RGB").save(ctx["states_union_dir"] / f"{patch_id}.png")
+    type_counts = Counter(c.get("cell_type", "other") for c in cells)
+    state_counts = Counter(c.get("cell_state", "other") for c in cells)
+    return (
+        patch_id, x0, y0, len(cells),
+        patch_records, type_counts, state_counts,
+        patch_confidence_counts, patch_mismatch_count, patch_conflict_pairs,
     )
 
 
@@ -791,6 +1001,12 @@ def main() -> None:
         default=None,
         help="Deprecated; accepted for CLI compatibility.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of parallel worker threads for patch processing (default: 4).",
+    )
     args = parser.parse_args()
 
     if args.thresholds_config is not None:
@@ -814,6 +1030,19 @@ def main() -> None:
     types_dir.mkdir(parents=True, exist_ok=True)
     states_dir.mkdir(parents=True, exist_ok=True)
 
+    # Binary mask sub-folders under cell_types/
+    def _create_dir(dir: pathlib.Path) -> pathlib.Path:
+        dir.mkdir(parents=True, exist_ok=True)
+        return dir
+    types_cancers_dir = _create_dir(types_dir / "cancers")
+    types_immune_dir = _create_dir(types_dir / "immune")
+    types_healthy_dir = _create_dir(types_dir / "healthy")
+    types_union_dir = _create_dir(types_dir / "union")
+    states_dir = _create_dir(states_dir)
+    states_proliferative_dir = _create_dir(states_dir / "proliferative")
+    states_quiescent_dir = _create_dir(states_dir / "quiescent")
+    states_dead_dir = _create_dir(states_dir / "dead")
+    states_union_dir = _create_dir(states_dir / "union")
     auto_extracted = False
     if features_csv is None:
         if not args.multiplex_dir:
@@ -842,6 +1071,7 @@ def main() -> None:
             ),
             coord_scale=coord_scale,
             logger=log,
+            workers=args.workers,
         )
 
     # ------------------------------------------------------------------
@@ -915,73 +1145,60 @@ def main() -> None:
     global_mismatch_count = 0
     global_conflict_pairs: Counter = Counter()
 
-    for patch_meta in patches:
-        x0 = int(patch_meta["x0"])
-        y0 = int(patch_meta["y0"])
-        patch_id = f"{x0}_{y0}"
-
-        json_path = cellvit_dir / f"{patch_id}.json"
-        if not json_path.exists():
-            log.warning("Missing CellViT file: %s — skipping.", json_path)
-            skipped += 1
-            continue
-
-        with json_path.open(encoding="utf-8") as fh:
-            cells: list[dict] = json.load(fh).get("cells", [])
-
-        cells = match_cells(
-            cells=cells,
-            kdtree=kdtree,
-            df=df,
-            state_thresholds=state_thresholds,
-            x0=x0,
-            y0=y0,
-            max_dist=max_dist,
-            coord_scale=coord_scale,
-            model_weight=model_weight,
-        )
-        total_cells += len(cells)
-
-        for c in cells:
-            global_confidence_counts[c.get("cell_type_confidence", "low")] += 1
-            if bool(c.get("is_mismatch", False)):
-                global_mismatch_count += 1
-                key = f"model={c.get('type_codex')},cellvit={c.get('type_cellvit_prior')}"
-                global_conflict_pairs[key] += 1
-            matched_row_idx = c.get("matched_row_idx")
-            if matched_row_idx is None:
+    ctx = {
+        "cellvit_dir": cellvit_dir,
+        "patch_size": patch_size,
+        "kdtree": kdtree,
+        "df": df,
+        "state_thresholds": state_thresholds,
+        "max_dist": max_dist,
+        "coord_scale": coord_scale,
+        "model_weight": model_weight,
+        "types_dir": types_dir,
+        "states_dir": states_dir,
+        "types_cancers_dir": types_cancers_dir,
+        "types_immune_dir": types_immune_dir,
+        "types_healthy_dir": types_healthy_dir,
+        "types_union_dir": types_union_dir,
+        "states_dir": states_dir,
+        "states_proliferative_dir": states_proliferative_dir,
+        "states_quiescent_dir": states_quiescent_dir,
+        "states_dead_dir": states_dead_dir,
+        "states_union_dir": states_union_dir,
+    }
+    with ProcessPoolExecutor(
+        max_workers=args.workers,
+        initializer=_init_ac_worker,
+        initargs=(ctx,),
+    ) as executor:
+        futures = [executor.submit(_ac_patch_worker, pm) for pm in patches]
+        for future in as_completed(futures):
+            result = future.result()
+            if result is None:
+                skipped += 1
                 continue
-            assignment_records.append(
-                build_assignment_record(
-                    patch_id=patch_id,
-                    x0=x0,
-                    y0=y0,
-                    cell=c,
-                    row=df.iloc[int(matched_row_idx)],
-                )
-            )
-
-        type_img = rasterize_cells(cells, patch_size, "cell_type", CELL_TYPE_COLORS)
-        state_img = rasterize_cells(cells, patch_size, "cell_state", CELL_STATE_COLORS)
-
-        Image.fromarray(type_img, mode="RGBA").save(types_dir / f"{patch_id}.png")
-        Image.fromarray(state_img, mode="RGBA").save(states_dir / f"{patch_id}.png")
-
-        type_counts = Counter(c.get("cell_type", "other") for c in cells)
-        state_counts = Counter(c.get("cell_state", "other") for c in cells)
-        per_patch_summary[patch_id] = {
-            "n_cells": len(cells),
-            "x0": x0,
-            "y0": y0,
-            "cell_types": dict(type_counts),
-            "cell_states": dict(state_counts),
-        }
-        global_type_counts += type_counts
-        global_state_counts += state_counts
-
-        processed += 1
-        if processed % 50 == 0:
-            log.info("  Progress: %d patches processed, %d skipped …", processed, skipped)
+            (
+                patch_id, x0, y0, n_cells,
+                patch_records, type_counts, state_counts,
+                patch_confidence_counts, patch_mismatch_count, patch_conflict_pairs,
+            ) = result
+            total_cells += n_cells
+            assignment_records.extend(patch_records)
+            per_patch_summary[patch_id] = {
+                "n_cells": n_cells,
+                "x0": x0,
+                "y0": y0,
+                "cell_types": dict(type_counts),
+                "cell_states": dict(state_counts),
+            }
+            global_type_counts += type_counts
+            global_state_counts += state_counts
+            global_confidence_counts += patch_confidence_counts
+            global_mismatch_count += patch_mismatch_count
+            global_conflict_pairs += patch_conflict_pairs
+            processed += 1
+            if processed % 50 == 0:
+                log.info("  Progress: %d patches processed, %d skipped …", processed, skipped)
 
     # ------------------------------------------------------------------
     # 4. Summary

@@ -47,6 +47,7 @@ import argparse
 import json
 import logging
 import pathlib
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -76,10 +77,13 @@ from stages.multiplex_layers_lib.render import (
     apply_colormap,
     make_glucose_map,
     make_glucose_map_distance,
-    make_glucose_map_pde,
     make_oxygen_map,
-    make_oxygen_map_pde,
     make_vasculature_overlay,
+)
+from stages.multiplex_layers_lib.wsi_pde import (
+    extract_patch_from_coarse,
+    read_wsi_channel_stack,
+    solve_wsi_pde_map,
 )
 from utils.channels import resolve_channel_indices
 from utils.normalize import percentile_norm
@@ -108,10 +112,11 @@ __all__ = [
     "solve_steady_state_diffusion",
     "compute_metabolic_demand_map",
     "make_oxygen_map",
-    "make_oxygen_map_pde",
     "make_glucose_map",
     "make_glucose_map_distance",
-    "make_glucose_map_pde",
+    "read_wsi_channel_stack",
+    "solve_wsi_pde_map",
+    "extract_patch_from_coarse",
     "main",
 ]
 
@@ -119,6 +124,160 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Parallel worker (module-level so ProcessPoolExecutor can pickle it)
+# ---------------------------------------------------------------------------
+
+_ML_CTX: dict = {}
+
+
+def _init_ml_worker(ctx: dict) -> None:
+    global _ML_CTX
+    _ML_CTX = ctx
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
+def _ml_patch_worker(patch_meta: dict) -> dict:
+    ctx = _ML_CTX
+    _log = logging.getLogger(__name__)
+
+    multiplex_dir: pathlib.Path = ctx["multiplex_dir"]
+    mpp: float = ctx["mpp"]
+    he_mpp: float = ctx["he_mpp"]
+    patch_size: int = ctx["patch_size"]
+    warp_matrix = ctx["warp_matrix"]
+    cd31_idx: int = ctx["cd31_idx"]
+    ki67_idx: int = ctx["ki67_idx"]
+    pcna_idx = ctx["pcna_idx"]
+    cd68_idx = ctx["cd68_idx"]
+    sma_idx = ctx["sma_idx"]
+    oxygen_model: str = ctx["oxygen_model"]
+    glucose_model: str = ctx["glucose_model"]
+    oxygen_krogh_um: float = ctx["oxygen_krogh_um"]
+    glucose_krogh_um: float = ctx["glucose_krogh_um"]
+    sma_adjacency_px: int = ctx["sma_adjacency_px"]
+    vasc_open_kernel_size: int = ctx["vasc_open_kernel_size"]
+    vasc_close_kernel_size: int = ctx["vasc_close_kernel_size"]
+    vasc_min_area: int = ctx["vasc_min_area"]
+    vasc_noisy_max_fraction: float = ctx["vasc_noisy_max_fraction"]
+    wsi_o2_coarse = ctx["wsi_o2_coarse"]
+    wsi_glc_coarse = ctx["wsi_glc_coarse"]
+    wsi_pde_ds: int = ctx["wsi_pde_ds"]
+    vasc_dir: pathlib.Path = ctx["vasc_dir"]
+    vasc_mask_dir: pathlib.Path = ctx["vasc_mask_dir"]
+    oxygen_dir: pathlib.Path = ctx["oxygen_dir"]
+    glucose_dir: pathlib.Path = ctx["glucose_dir"]
+    validate_ki67_distance: bool = ctx["validate_ki67_distance"]
+    validate_bin_um: float = ctx["validate_bin_um"]
+    val_n_bins: int = ctx["val_n_bins"]
+
+    x0 = patch_meta["x0"]
+    y0 = patch_meta["y0"]
+    patch_id = f"{x0}_{y0}"
+
+    npy_path = multiplex_dir / f"{patch_id}.npy"
+    if not npy_path.exists():
+        _log.warning("Missing multiplex file: %s — skipping.", npy_path)
+        return {"missing": True, "val_sum_patch": None, "val_count_patch": None}
+
+    patch = load_multiplex_patch(str(npy_path))
+
+    cd31_raw = extract_channel(patch, cd31_idx)
+    ki67_raw = extract_channel(patch, ki67_idx)
+    pcna_raw = extract_channel(patch, pcna_idx) if pcna_idx is not None else None
+    cd68_raw = extract_channel(patch, cd68_idx) if cd68_idx is not None else None
+    sma_raw = extract_channel(patch, sma_idx) if sma_idx is not None else None
+
+    cd31_norm = percentile_norm(cd31_raw.astype(np.float32))
+    cd31_base_mask = binarize_otsu(cd31_norm)
+    vessel_mask = cd31_base_mask.copy()
+    if sma_raw is not None:
+        sma_norm = percentile_norm(sma_raw.astype(np.float32))
+        sma_mask = binarize_otsu(sma_norm)
+        vessel_mask = refine_vasculature_with_sma(
+            vessel_mask, sma_mask, adjacency_px=sma_adjacency_px,
+        )
+    vessel_mask = cleanup_vasculature_mask(
+        vessel_mask,
+        open_kernel_size=vasc_open_kernel_size,
+        close_kernel_size=vasc_close_kernel_size,
+        min_area=vasc_min_area,
+    )
+    vessel_mask, vessel_status = apply_vessel_mask_quality_fallback(
+        candidate_mask=vessel_mask,
+        cd31_fallback_mask=cd31_base_mask,
+        noisy_max_fraction=vasc_noisy_max_fraction,
+    )
+    if vessel_status == "empty_fallback":
+        _log.warning(
+            "Patch %s: empty vessel mask after refinement/cleanup; "
+            "falling back to CD31-only mask.", patch_id,
+        )
+    elif vessel_status == "noisy_fallback":
+        _log.warning(
+            "Patch %s: vessel mask coverage exceeded noisy threshold "
+            "(>= %.3f); falling back to CD31-only mask.",
+            patch_id, vasc_noisy_max_fraction,
+        )
+    elif vessel_status == "empty":
+        _log.warning(
+            "Patch %s: vessel mask is empty; proceeding with deterministic "
+            "empty mask.", patch_id,
+        )
+
+    vasc_rgba = make_vasculature_overlay(vessel_mask)
+    demand_map = compute_metabolic_demand_map(ki67_raw, pcna_raw)
+    immune_map = (
+        percentile_norm(cd68_raw.astype(np.float32)) if cd68_raw is not None else None
+    )
+
+    if oxygen_model == "wsi-pde":
+        assert wsi_o2_coarse is not None
+        o2_patch = extract_patch_from_coarse(
+            wsi_o2_coarse, x0, y0, patch_size, warp_matrix, he_mpp, mpp, wsi_pde_ds,
+        )
+        oxygen_rgba = apply_colormap(o2_patch, "RdYlBu")
+    else:
+        oxygen_rgba = make_oxygen_map(vessel_mask, mpp=mpp, max_dist_um=oxygen_krogh_um)
+
+    if glucose_model == "wsi-pde":
+        assert wsi_glc_coarse is not None
+        glc_patch = extract_patch_from_coarse(
+            wsi_glc_coarse, x0, y0, patch_size, warp_matrix, he_mpp, mpp, wsi_pde_ds,
+        )
+        glucose_rgba = apply_colormap(glc_patch, "hot")
+    elif glucose_model == "distance":
+        glucose_rgba = make_glucose_map_distance(
+            vessel_mask, mpp=mpp, max_dist_um=glucose_krogh_um,
+        )
+    else:
+        glucose_rgba = make_glucose_map(ki67_raw, pcna_raw)
+
+    val_sum_patch: np.ndarray | None = None
+    val_count_patch: np.ndarray | None = None
+    if validate_ki67_distance and val_n_bins > 0:
+        dist_px = scipy.ndimage.distance_transform_edt(~vessel_mask)
+        dist_um = dist_px * mpp
+        ki67_norm_val = percentile_norm(ki67_raw.astype(np.float32))
+        bin_idx = np.clip(
+            (dist_um / validate_bin_um).astype(np.int64), 0, val_n_bins - 1,
+        ).ravel()
+        ki67_flat = ki67_norm_val.ravel().astype(np.float64)
+        val_sum_patch = np.bincount(bin_idx, weights=ki67_flat, minlength=val_n_bins)
+        val_count_patch = np.bincount(bin_idx, minlength=val_n_bins)
+
+    Image.fromarray(vasc_rgba, "RGBA").save(vasc_dir / f"{patch_id}.png")
+    np.save(vasc_mask_dir / f"{patch_id}.npy", vessel_mask.astype(bool), allow_pickle=False)
+    Image.fromarray(oxygen_rgba, "RGBA").save(oxygen_dir / f"{patch_id}.png")
+    Image.fromarray(glucose_rgba, "RGBA").save(glucose_dir / f"{patch_id}.png")
+
+    return {"missing": False, "val_sum_patch": val_sum_patch, "val_count_patch": val_count_patch}
 
 
 def main() -> None:
@@ -185,42 +344,57 @@ def main() -> None:
         "Default: 19-channel panel from data/markers.csv.",
     )
     parser.add_argument(
-        "--oxygen-model",
-        choices=["distance", "pde"],
-        default="distance",
+        "--multiplex-tiff",
+        default=None,
         help=(
-            "Oxygen proxy model. 'distance' uses a physically clamped CD31 "
-            "distance transform (Grimes 2014, Zaidi 2019); 'pde' uses a "
-            "steady-state diffusion-consumption solver (Kumar 2024)."
+            "Path to the multiplex OME-TIFF (required when --oxygen-model wsi-pde "
+            "or --glucose-model wsi-pde)."
         ),
     )
     parser.add_argument(
-        "--oxygen-max-dist-um",
-        type=float,
-        default=160.0,
+        "--wsi-pde-ds",
+        type=int,
+        default=4,
         help=(
-            "O2 diffusion clamp in microns for the distance model "
-            "(default: 160 µm, Grimes 2014 / Zaidi 2019)."
+            "Downsampling factor for WSI-scale PDE (default: 4). "
+            "At ds=4 and mpp=0.325 the coarse grid spacing is 1.3 µm/px and "
+            "the O2 decay length is ~123 coarse pixels, requiring ~15000 Jacobi "
+            "iterations to converge."
+        ),
+    )
+    parser.add_argument(
+        "--wsi-pde-max-iters",
+        type=int,
+        default=20000,
+        help="Maximum Jacobi iterations for the WSI-scale PDE solver (default: 20000).",
+    )
+    parser.add_argument(
+        "--wsi-pde-tol",
+        type=float,
+        default=1e-4,
+        help="Convergence tolerance for the WSI-scale PDE solver (default: 1e-4).",
+    )
+    parser.add_argument(
+        "--oxygen-model",
+        choices=["distance", "wsi-pde"],
+        default="distance",
+        help=(
+            "Oxygen proxy model. 'distance' uses a physically clamped CD31 "
+            "distance transform (Grimes 2014, Zaidi 2019); 'wsi-pde' runs a "
+            "steady-state diffusion-consumption PDE on the full WSI at coarse "
+            "resolution and extracts per-patch slices (Kumar 2024, physically "
+            "correct for Krogh radii > patch size)."
         ),
     )
     parser.add_argument(
         "--glucose-model",
-        choices=["max", "distance", "pde"],
+        choices=["max", "distance", "wsi-pde"],
         default="max",
         help=(
             "Glucose proxy model. 'max' uses max(norm(Ki67), norm(PCNA)); "
             "'distance' uses a physically clamped CD31 distance transform "
             "(default clamp 450 µm, Grimes 2014); "
-            "'pde' uses a steady-state diffusion-consumption solver (Kumar 2024)."
-        ),
-    )
-    parser.add_argument(
-        "--glucose-max-dist-um",
-        type=float,
-        default=450.0,
-        help=(
-            "Glucose diffusion clamp in microns for the distance model "
-            "(default: 450 µm, Grimes 2014)."
+            "'wsi-pde' runs WSI-scale PDE (requires --multiplex-tiff)."
         ),
     )
     parser.add_argument(
@@ -229,8 +403,8 @@ def main() -> None:
         default=0.1,
         help=(
             "Weight for CD68 macrophage demand in PDE consumption map k(x) "
-            "(Kumar et al. 2024). Only used with --oxygen-model pde or "
-            "--glucose-model pde."
+            "(Kumar et al. 2024). Only used with --oxygen-model wsi-pde or "
+            "--glucose-model wsi-pde."
         ),
     )
     parser.add_argument(
@@ -249,48 +423,13 @@ def main() -> None:
         help="Bin width in µm for Ki67-vs-distance curve (default: 10 µm).",
     )
     parser.add_argument(
-        "--pde-max-iters",
-        type=int,
-        default=2000,
-        help=(
-            "Maximum PDE solver iterations (default: 2000). With physically "
-            "calibrated D values (large), more iterations are needed for convergence "
-            "across the patch."
-        ),
-    )
-    parser.add_argument(
-        "--pde-tol",
-        type=float,
-        default=1e-4,
-        help="PDE convergence tolerance (max absolute update).",
-    )
-    parser.add_argument(
-        "--oxygen-pde-diffusion",
-        type=float,
-        default=None,
-        help=(
-            "Diffusion coefficient for the oxygen PDE. If omitted, auto-computed "
-            "from --oxygen-krogh-um and mpp so that the PDE decay length matches "
-            "the Krogh radius: D = (krogh_um / mpp)^2 * k_base."
-        ),
-    )
-    parser.add_argument(
         "--oxygen-krogh-um",
         type=float,
         default=160.0,
         help=(
-            "Krogh cylinder O2 diffusion radius in µm used to auto-calibrate "
-            "--oxygen-pde-diffusion (default: 160 µm, Grimes 2014). Ignored if "
-            "--oxygen-pde-diffusion is set explicitly."
-        ),
-    )
-    parser.add_argument(
-        "--glucose-pde-diffusion",
-        type=float,
-        default=None,
-        help=(
-            "Diffusion coefficient for the glucose PDE. If omitted, auto-computed "
-            "from --glucose-krogh-um and mpp: D = (krogh_um / mpp)^2 * k_base."
+            "Krogh cylinder O2 diffusion radius in µm. Used by both the "
+            "'distance' model (distance clamp) and 'wsi-pde' model (D calibration). "
+            "Default: 160 µm (Grimes 2014)."
         ),
     )
     parser.add_argument(
@@ -298,9 +437,9 @@ def main() -> None:
         type=float,
         default=450.0,
         help=(
-            "Krogh cylinder glucose diffusion radius in µm used to auto-calibrate "
-            "--glucose-pde-diffusion (default: 450 µm, Grimes 2014). Ignored if "
-            "--glucose-pde-diffusion is set explicitly."
+            "Krogh cylinder glucose diffusion radius in µm. Used by both the "
+            "'distance' model (distance clamp) and 'wsi-pde' model (D calibration). "
+            "Default: 450 µm (Grimes 2014)."
         ),
     )
     parser.add_argument(
@@ -387,6 +526,12 @@ def main() -> None:
             "fallback to CD31-only mask."
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of parallel worker processes for patch processing (default: 4).",
+    )
     args = parser.parse_args()
 
     # Validate vessel-mask cleanup options once at startup.
@@ -401,13 +546,11 @@ def main() -> None:
     index_path = pathlib.Path(args.index)
     out_dir = pathlib.Path(args.out)
 
-    if args.oxygen_model == "pde":
-        log.info(
-            "Oxygen model: PDE (relative density proxy, not absolute concentration)."
-        )
-    if args.glucose_model == "pde":
-        log.info(
-            "Glucose model: PDE (relative density proxy, not absolute concentration)."
+    needs_wsi_pde = args.oxygen_model == "wsi-pde" or args.glucose_model == "wsi-pde"
+    if needs_wsi_pde and not args.multiplex_tiff:
+        parser.error(
+            "--multiplex-tiff is required when --oxygen-model wsi-pde or "
+            "--glucose-model wsi-pde."
         )
 
     # ------------------------------------------------------------------
@@ -463,32 +606,9 @@ def main() -> None:
     patches = index.get("patches", [])
     log.info("  %d patches in index.", len(patches))
 
-    # Auto-calibrate PDE diffusion coefficients from Krogh radius + mpp if not set.
-    # Formula: L = sqrt(D / k_base)  →  D = L_px^2 * k_base  where L_px = krogh_um / mpp
-    if args.oxygen_model == "pde":
-        if args.oxygen_pde_diffusion is None:
-            L_o2 = args.oxygen_krogh_um / mpp
-            args.oxygen_pde_diffusion = L_o2 ** 2 * args.oxygen_consumption_base
-            log.info(
-                "  O2 PDE: auto-calibrated D=%.1f (Krogh=%.0f µm, mpp=%.4f, "
-                "L=%.1f px, k_base=%.4f)",
-                args.oxygen_pde_diffusion, args.oxygen_krogh_um, mpp,
-                L_o2, args.oxygen_consumption_base,
-            )
-        else:
-            log.info("  O2 PDE: D=%.1f (user-specified)", args.oxygen_pde_diffusion)
-    if args.glucose_model == "pde":
-        if args.glucose_pde_diffusion is None:
-            L_glc = args.glucose_krogh_um / mpp
-            args.glucose_pde_diffusion = L_glc ** 2 * args.glucose_consumption_base
-            log.info(
-                "  Glucose PDE: auto-calibrated D=%.1f (Krogh=%.0f µm, mpp=%.4f, "
-                "L=%.1f px, k_base=%.4f)",
-                args.glucose_pde_diffusion, args.glucose_krogh_um, mpp,
-                L_glc, args.glucose_consumption_base,
-            )
-        else:
-            log.info("  Glucose PDE: D=%.1f (user-specified)", args.glucose_pde_diffusion)
+    he_mpp: float = index.get("he_mpp") or mpp
+    warp_matrix: list = index.get("warp_matrix", [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    patch_size: int = index.get("patch_size", 256)
 
     vasc_dir = out_dir / "vasculature"
     vasc_mask_dir = out_dir / "vasculature_mask"
@@ -497,6 +617,100 @@ def main() -> None:
     for d in (vasc_dir, vasc_mask_dir, oxygen_dir, glucose_dir):
         d.mkdir(parents=True, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # 3b. WSI-scale PDE pre-computation (runs once before per-patch loop)
+    # ------------------------------------------------------------------
+    wsi_o2_coarse: np.ndarray | None = None
+    wsi_glc_coarse: np.ndarray | None = None
+
+    if needs_wsi_pde:
+        # Read only the channels needed by the PDE solver to keep memory manageable.
+        # On a large WSI, reading all 19 channels at even ds=4 can exceed 9 GB.
+        _wsi_needed = [cd31_idx, ki67_idx]
+        if cd68_idx is not None:
+            _wsi_needed.append(cd68_idx)
+        if sma_idx is not None:
+            _wsi_needed.append(sma_idx)
+        if pcna_idx is not None:
+            _wsi_needed.append(pcna_idx)
+        _wsi_needed_unique = list(dict.fromkeys(_wsi_needed))  # deduplicate, preserve order
+        _remap = {orig: new for new, orig in enumerate(_wsi_needed_unique)}
+
+        log.info(
+            "Reading WSI channels %s at ds=%d from %s …",
+            _wsi_needed_unique, args.wsi_pde_ds, args.multiplex_tiff,
+        )
+        channel_stack = read_wsi_channel_stack(
+            args.multiplex_tiff, args.wsi_pde_ds, channel_indices=_wsi_needed_unique
+        )
+        log.info("  Channel stack shape: %s (%.0f MB)",
+                 channel_stack.shape, channel_stack.nbytes / 1e6)
+
+        # Remapped indices into the reduced channel_stack
+        wsi_cd31_idx  = _remap[cd31_idx]
+        wsi_ki67_idx  = _remap[ki67_idx]
+        wsi_cd68_idx  = _remap.get(cd68_idx)
+        wsi_sma_idx   = _remap.get(sma_idx)
+        wsi_pcna_idx  = _remap.get(pcna_idx)
+
+        if args.oxygen_model == "wsi-pde":
+            mpp_coarse = mpp * args.wsi_pde_ds
+            L_coarse = args.oxygen_krogh_um / mpp_coarse
+            D_coarse = L_coarse**2 * args.oxygen_consumption_base
+            log.info(
+                "  O2 WSI-PDE: Krogh=%.0f µm, mpp_coarse=%.3f, L_coarse=%.1f px, "
+                "D_coarse=%.1f, max_iters=%d",
+                args.oxygen_krogh_um, mpp_coarse, L_coarse, D_coarse, args.wsi_pde_max_iters,
+            )
+            wsi_o2_coarse = solve_wsi_pde_map(
+                channel_stack=channel_stack,
+                cd31_idx=wsi_cd31_idx,
+                ki67_idx=wsi_ki67_idx,
+                mpp=mpp,
+                ds=args.wsi_pde_ds,
+                krogh_um=args.oxygen_krogh_um,
+                k_base=args.oxygen_consumption_base,
+                demand_weight=args.oxygen_consumption_demand_weight,
+                immune_weight=args.cd68_consumption_weight,
+                sma_idx=wsi_sma_idx,
+                sma_adjacency_px=args.sma_adjacency_px,
+                cd68_idx=wsi_cd68_idx,
+                pcna_idx=wsi_pcna_idx,
+                max_iters=args.wsi_pde_max_iters,
+                tol=args.wsi_pde_tol,
+            )
+            log.info("  O2 WSI-PDE solved. Grid: %s, range [%.3f, %.3f]",
+                     wsi_o2_coarse.shape, float(wsi_o2_coarse.min()), float(wsi_o2_coarse.max()))
+
+        if args.glucose_model == "wsi-pde":
+            mpp_coarse = mpp * args.wsi_pde_ds
+            L_coarse = args.glucose_krogh_um / mpp_coarse
+            D_coarse = L_coarse**2 * args.glucose_consumption_base
+            log.info(
+                "  Glucose WSI-PDE: Krogh=%.0f µm, mpp_coarse=%.3f, L_coarse=%.1f px, "
+                "D_coarse=%.1f, max_iters=%d",
+                args.glucose_krogh_um, mpp_coarse, L_coarse, D_coarse, args.wsi_pde_max_iters,
+            )
+            wsi_glc_coarse = solve_wsi_pde_map(
+                channel_stack=channel_stack,
+                cd31_idx=wsi_cd31_idx,
+                ki67_idx=wsi_ki67_idx,
+                mpp=mpp,
+                ds=args.wsi_pde_ds,
+                krogh_um=args.glucose_krogh_um,
+                k_base=args.glucose_consumption_base,
+                demand_weight=args.glucose_consumption_demand_weight,
+                immune_weight=args.cd68_consumption_weight,
+                sma_idx=wsi_sma_idx,
+                sma_adjacency_px=args.sma_adjacency_px,
+                cd68_idx=wsi_cd68_idx,
+                pcna_idx=wsi_pcna_idx,
+                max_iters=args.wsi_pde_max_iters,
+                tol=args.wsi_pde_tol,
+            )
+            log.info("  Glucose WSI-PDE solved. Grid: %s, range [%.3f, %.3f]",
+                     wsi_glc_coarse.shape, float(wsi_glc_coarse.min()), float(wsi_glc_coarse.max()))
+
     # Ki67-vs-distance validation accumulators (Zaidi et al. 2019)
     val_n_bins: int = 0
     val_sum: np.ndarray | None = None
@@ -504,7 +718,7 @@ def main() -> None:
     if args.validate_ki67_distance:
         if args.validate_bin_um <= 0:
             parser.error("--validate-bin-um must be > 0")
-        val_n_bins = int(np.ceil(args.oxygen_max_dist_um / args.validate_bin_um)) + 1
+        val_n_bins = int(np.ceil(args.oxygen_krogh_um / args.validate_bin_um)) + 1
         val_sum = np.zeros(val_n_bins, dtype=np.float64)
         val_count = np.zeros(val_n_bins, dtype=np.int64)
         (out_dir / "validation").mkdir(parents=True, exist_ok=True)
@@ -515,147 +729,57 @@ def main() -> None:
     processed = 0
     skipped = 0
 
-    for patch_meta in patches:
-        x0 = patch_meta["x0"]
-        y0 = patch_meta["y0"]
-        patch_id = f"{x0}_{y0}"
-
-        npy_path = multiplex_dir / f"{patch_id}.npy"
-        if not npy_path.exists():
-            log.warning("Missing multiplex file: %s — skipping.", npy_path)
-            skipped += 1
-            continue
-
-        # a. Load (C, H, W) uint16 array
-        patch = load_multiplex_patch(str(npy_path))
-
-        # b. Extract individual channels
-        cd31_raw = extract_channel(patch, cd31_idx)
-        ki67_raw = extract_channel(patch, ki67_idx)
-        pcna_raw = extract_channel(patch, pcna_idx) if pcna_idx is not None else None
-        cd68_raw = extract_channel(patch, cd68_idx) if cd68_idx is not None else None
-        sma_raw = extract_channel(patch, sma_idx) if sma_idx is not None else None
-
-        # c. Vasculature overlay
-        cd31_norm = percentile_norm(cd31_raw.astype(np.float32))
-        cd31_base_mask = binarize_otsu(cd31_norm)
-        vessel_mask = cd31_base_mask.copy()
-        if sma_raw is not None:
-            sma_norm = percentile_norm(sma_raw.astype(np.float32))
-            sma_mask = binarize_otsu(sma_norm)
-            vessel_mask = refine_vasculature_with_sma(
-                vessel_mask,
-                sma_mask,
-                adjacency_px=args.sma_adjacency_px,
-            )
-        vessel_mask = cleanup_vasculature_mask(
-            vessel_mask,
-            open_kernel_size=args.vasc_open_kernel_size,
-            close_kernel_size=args.vasc_close_kernel_size,
-            min_area=args.vasc_min_area,
-        )
-        vessel_mask, vessel_status = apply_vessel_mask_quality_fallback(
-            candidate_mask=vessel_mask,
-            cd31_fallback_mask=cd31_base_mask,
-            noisy_max_fraction=args.vasc_noisy_max_fraction,
-        )
-        if vessel_status == "empty_fallback":
-            log.warning(
-                "Patch %s: empty vessel mask after refinement/cleanup; "
-                "falling back to CD31-only mask.",
-                patch_id,
-            )
-        elif vessel_status == "noisy_fallback":
-            log.warning(
-                "Patch %s: vessel mask coverage exceeded noisy threshold "
-                "(>= %.3f); falling back to CD31-only mask.",
-                patch_id,
-                args.vasc_noisy_max_fraction,
-            )
-        elif vessel_status == "empty":
-            log.warning(
-                "Patch %s: vessel mask is empty; proceeding with deterministic "
-                "empty mask.",
-                patch_id,
-            )
-
-        vasc_rgba = make_vasculature_overlay(vessel_mask)
-        demand_map = compute_metabolic_demand_map(ki67_raw, pcna_raw)
-        immune_map = (
-            percentile_norm(cd68_raw.astype(np.float32))
-            if cd68_raw is not None
-            else None
-        )
-
-        # d. Oxygen map
-        if args.oxygen_model == "pde":
-            oxygen_rgba = make_oxygen_map_pde(
-                vessel_mask=vessel_mask,
-                demand_map=demand_map,
-                immune_map=immune_map,
-                diffusion=args.oxygen_pde_diffusion,
-                max_iters=args.pde_max_iters,
-                tol=args.pde_tol,
-                base_consumption=args.oxygen_consumption_base,
-                demand_weight=args.oxygen_consumption_demand_weight,
-                immune_weight=args.cd68_consumption_weight,
-            )
-        else:
-            oxygen_rgba = make_oxygen_map(
-                vessel_mask, mpp=mpp, max_dist_um=args.oxygen_max_dist_um
-            )
-
-        # e. Glucose / metabolic demand map
-        if args.glucose_model == "pde":
-            glucose_rgba = make_glucose_map_pde(
-                vessel_mask=vessel_mask,
-                demand_map=demand_map,
-                immune_map=immune_map,
-                diffusion=args.glucose_pde_diffusion,
-                max_iters=args.pde_max_iters,
-                tol=args.pde_tol,
-                base_consumption=args.glucose_consumption_base,
-                demand_weight=args.glucose_consumption_demand_weight,
-                immune_weight=args.cd68_consumption_weight,
-            )
-        elif args.glucose_model == "distance":
-            glucose_rgba = make_glucose_map_distance(
-                vessel_mask, mpp=mpp, max_dist_um=args.glucose_max_dist_um
-            )
-        else:
-            glucose_rgba = make_glucose_map(ki67_raw, pcna_raw)
-
-        # f. Ki67-vs-distance validation (Zaidi et al. 2019)
-        if args.validate_ki67_distance and val_sum is not None and val_count is not None:
-            dist_px = scipy.ndimage.distance_transform_edt(~vessel_mask)
-            dist_um = dist_px * mpp
-            ki67_norm_val = percentile_norm(ki67_raw.astype(np.float32))
-            bin_idx = np.clip(
-                (dist_um / args.validate_bin_um).astype(np.int64),
-                0,
-                val_n_bins - 1,
-            ).ravel()
-            ki67_flat = ki67_norm_val.ravel().astype(np.float64)
-            val_sum += np.bincount(bin_idx, weights=ki67_flat, minlength=val_n_bins)
-            val_count += np.bincount(bin_idx, minlength=val_n_bins)
-
-        # g. Save outputs
-        Image.fromarray(vasc_rgba, "RGBA").save(vasc_dir / f"{patch_id}.png")
-        np.save(
-            vasc_mask_dir / f"{patch_id}.npy",
-            vessel_mask.astype(bool),
-            allow_pickle=False,
-        )
-        Image.fromarray(oxygen_rgba, "RGBA").save(oxygen_dir / f"{patch_id}.png")
-        Image.fromarray(glucose_rgba, "RGBA").save(glucose_dir / f"{patch_id}.png")
-
-        processed += 1
-        if processed % 50 == 0:
-            log.info(
-                "  Progress: %d patches processed, %d skipped …",
-                processed,
-                skipped,
-            )
+    ctx = {
+        "multiplex_dir": multiplex_dir,
+        "mpp": mpp,
+        "he_mpp": he_mpp,
+        "patch_size": patch_size,
+        "warp_matrix": warp_matrix,
+        "cd31_idx": cd31_idx,
+        "ki67_idx": ki67_idx,
+        "pcna_idx": pcna_idx,
+        "cd68_idx": cd68_idx,
+        "sma_idx": sma_idx,
+        "oxygen_model": args.oxygen_model,
+        "glucose_model": args.glucose_model,
+        "oxygen_krogh_um": args.oxygen_krogh_um,
+        "glucose_krogh_um": args.glucose_krogh_um,
+        "sma_adjacency_px": args.sma_adjacency_px,
+        "vasc_open_kernel_size": args.vasc_open_kernel_size,
+        "vasc_close_kernel_size": args.vasc_close_kernel_size,
+        "vasc_min_area": args.vasc_min_area,
+        "vasc_noisy_max_fraction": args.vasc_noisy_max_fraction,
+        "wsi_o2_coarse": wsi_o2_coarse,
+        "wsi_glc_coarse": wsi_glc_coarse,
+        "wsi_pde_ds": args.wsi_pde_ds,
+        "vasc_dir": vasc_dir,
+        "vasc_mask_dir": vasc_mask_dir,
+        "oxygen_dir": oxygen_dir,
+        "glucose_dir": glucose_dir,
+        "validate_ki67_distance": args.validate_ki67_distance,
+        "validate_bin_um": args.validate_bin_um,
+        "val_n_bins": val_n_bins,
+    }
+    with ProcessPoolExecutor(
+        max_workers=args.workers,
+        initializer=_init_ml_worker,
+        initargs=(ctx,),
+    ) as executor:
+        for result in executor.map(_ml_patch_worker, patches):
+            if result["missing"]:
+                skipped += 1
+                continue
+            if val_sum is not None and result["val_sum_patch"] is not None:
+                val_sum += result["val_sum_patch"]
+            if val_count is not None and result["val_count_patch"] is not None:
+                val_count += result["val_count_patch"]
+            processed += 1
+            if processed % 50 == 0:
+                log.info(
+                    "  Progress: %d patches processed, %d skipped …",
+                    processed,
+                    skipped,
+                )
 
     # ------------------------------------------------------------------
     # 7. Ki67-vs-distance validation CSV

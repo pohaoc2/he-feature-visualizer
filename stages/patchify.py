@@ -31,6 +31,7 @@ python patchify.py --he-image PATH --multiplex-image PATH --metadata-csv PATH
 
 import argparse
 import json
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import cv2
@@ -1327,6 +1328,104 @@ def _evaluate_registration_qc(
 
 
 # ---------------------------------------------------------------------------
+# Parallel worker (module-level so ProcessPoolExecutor can pickle it)
+# ---------------------------------------------------------------------------
+
+_PY_CTX: dict = {}
+
+
+def _init_py_worker(he_path: str, mx_path: str, seg_path: str | None, ctx_rest: dict) -> None:
+    """Open zarr stores once per worker process, store in module global."""
+    global _PY_CTX
+    import tifffile as _tifffile
+    from utils.ome import open_zarr_store as _open_zarr_store
+
+    he_tif = _tifffile.TiffFile(he_path)
+    mx_tif = _tifffile.TiffFile(mx_path)
+    _PY_CTX = dict(ctx_rest)
+    _PY_CTX["he_store"] = _open_zarr_store(he_tif)
+    _PY_CTX["mx_store"] = _open_zarr_store(mx_tif)
+    if seg_path is not None:
+        seg_tif = _tifffile.TiffFile(seg_path)
+        _PY_CTX["seg_store"] = _open_zarr_store(seg_tif)
+    else:
+        _PY_CTX["seg_store"] = None
+
+
+def _py_patch_worker(task: tuple) -> tuple:
+    """Process one (idx, x0, y0) patch, return (idx, entry, he_vc, mx_vc)."""
+    idx, x0, y0 = task
+    ctx = _PY_CTX
+    he_store = ctx["he_store"]
+    mx_store = ctx["mx_store"]
+    seg_store = ctx["seg_store"]
+    he_axes, he_w, he_h = ctx["he_axes"], ctx["he_w"], ctx["he_h"]
+    mx_axes, mx_w, mx_h = ctx["mx_axes"], ctx["mx_w"], ctx["mx_h"]
+    seg_axes, seg_w, seg_h = ctx["seg_axes"], ctx["seg_w"], ctx["seg_h"]
+    registration_mode = ctx["registration_mode"]
+    deform_state = ctx["deform_state"]
+    m_full = ctx["m_full"]
+    channel_indices = ctx["channel_indices"]
+    patch_size = ctx["patch_size"]
+    min_mx_overlap = ctx["min_mx_overlap"]
+    ds = ctx["ds"]
+    out_dir = ctx["out_dir"]
+
+    he_patch = read_he_patch(he_store, he_axes, he_w, he_h, y0, x0, patch_size)
+    Image.fromarray(he_patch).save(out_dir / "he" / f"{x0}_{y0}.png")
+
+    has_seg = False
+    if seg_store is not None:
+        seg_patch = read_mask_patch(seg_store, seg_axes, seg_w, seg_h, y0, x0, patch_size)
+        np.save(out_dir / "masks" / f"{x0}_{y0}.npy", seg_patch)
+        has_seg = True
+
+    if registration_mode == REG_MODE_DEFORMABLE and deform_state is not None:
+        mx_patch, inside_mx = read_multiplex_patch_affine_deform(
+            mx_store, mx_axes, mx_w, mx_h,
+            he_x0=x0, he_y0=y0, patch_size=patch_size, m_full=m_full,
+            channel_indices=channel_indices,
+            flow_dx_ov=deform_state["flow_dx_ov"],
+            flow_dy_ov=deform_state["flow_dy_ov"],
+            he_full_w=he_w, he_full_h=he_h,
+        )
+        mx_overlap = multiplex_patch_overlap_fraction_deform(
+            he_x0=x0, he_y0=y0, patch_size=patch_size, m_full=m_full,
+            flow_dx_ov=deform_state["flow_dx_ov"],
+            flow_dy_ov=deform_state["flow_dy_ov"],
+            he_full_w=he_w, he_full_h=he_h, mx_w=mx_w, mx_h=mx_h,
+        )
+    else:
+        mx_patch, inside_mx = read_multiplex_patch_affine(
+            mx_store, mx_axes, mx_w, mx_h,
+            he_x0=x0, he_y0=y0, patch_size=patch_size, m_full=m_full,
+            channel_indices=channel_indices,
+        )
+        mx_overlap = multiplex_patch_overlap_fraction_affine(
+            he_x0=x0, he_y0=y0, patch_size=patch_size, m_full=m_full,
+            mx_w=mx_w, mx_h=mx_h,
+        )
+
+    if min_mx_overlap >= 1.0 - 1e-9:
+        has_mx = bool(inside_mx)
+    else:
+        has_mx = bool(mx_overlap >= min_mx_overlap)
+    if has_mx:
+        np.save(out_dir / "multiplex" / f"{x0}_{y0}.npy", mx_patch)
+
+    x0_mx, y0_mx = transform_he_to_mx_point(m_full, x0, y0)
+    entry: dict = {
+        "x0": x0,
+        "y0": y0,
+        "has_multiplex": has_mx,
+        "multiplex_overlap_fraction": float(mx_overlap),
+    }
+    if seg_store is not None:
+        entry["has_mask"] = has_seg
+    return idx, entry, (x0 // ds, y0 // ds), (x0_mx // ds, y0_mx // ds)
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -1434,6 +1533,12 @@ def main():
         default=1.0,
         help="Minimum MX overlap fraction required to save multiplex patch "
         "(0.0-1.0, default: 1.0 for full-coverage only).",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of parallel worker threads for patch extraction (default: 4).",
     )
     args = parser.parse_args()
     if not (0.0 <= args.min_multiplex_overlap <= 1.0):
@@ -1817,89 +1922,46 @@ def main():
         mx_vis_coords: list[tuple[int, int]] = []
         print(f"  Multiplex save threshold: overlap >= {min_mx_overlap:.3f}")
 
-        for idx, (x0, y0) in enumerate(coords[:]):
-            if idx % 500 == 0:
-                print(f"  {idx}/{len(coords)} ...")
-
-            he_patch = read_he_patch(he_store, he_axes, he_w, he_h, y0, x0, patch_size)
-            Image.fromarray(he_patch).save(out_dir / "he" / f"{x0}_{y0}.png")
-
-            has_seg = False
-            if seg_store is not None:
-                seg_patch = read_mask_patch(
-                    seg_store, seg_axes, seg_w, seg_h, y0, x0, patch_size
-                )
-                np.save(out_dir / "masks" / f"{x0}_{y0}.npy", seg_patch)
-                has_seg = True
-
-            if registration_mode == REG_MODE_DEFORMABLE and deform_state is not None:
-                mx_patch, inside_mx = read_multiplex_patch_affine_deform(
-                    mx_store,
-                    mx_axes,
-                    mx_w,
-                    mx_h,
-                    he_x0=x0,
-                    he_y0=y0,
-                    patch_size=patch_size,
-                    m_full=m_full,
-                    channel_indices=channel_indices,
-                    flow_dx_ov=deform_state["flow_dx_ov"],
-                    flow_dy_ov=deform_state["flow_dy_ov"],
-                    he_full_w=he_w,
-                    he_full_h=he_h,
-                )
-                mx_overlap = multiplex_patch_overlap_fraction_deform(
-                    he_x0=x0,
-                    he_y0=y0,
-                    patch_size=patch_size,
-                    m_full=m_full,
-                    flow_dx_ov=deform_state["flow_dx_ov"],
-                    flow_dy_ov=deform_state["flow_dy_ov"],
-                    he_full_w=he_w,
-                    he_full_h=he_h,
-                    mx_w=mx_w,
-                    mx_h=mx_h,
-                )
-            else:
-                mx_patch, inside_mx = read_multiplex_patch_affine(
-                    mx_store,
-                    mx_axes,
-                    mx_w,
-                    mx_h,
-                    he_x0=x0,
-                    he_y0=y0,
-                    patch_size=patch_size,
-                    m_full=m_full,
-                    channel_indices=channel_indices,
-                )
-                mx_overlap = multiplex_patch_overlap_fraction_affine(
-                    he_x0=x0,
-                    he_y0=y0,
-                    patch_size=patch_size,
-                    m_full=m_full,
-                    mx_w=mx_w,
-                    mx_h=mx_h,
-                )
-            if min_mx_overlap >= 1.0 - 1e-9:
-                has_mx = bool(inside_mx)
-            else:
-                has_mx = bool(mx_overlap >= min_mx_overlap)
-            if has_mx:
-                np.save(out_dir / "multiplex" / f"{x0}_{y0}.npy", mx_patch)
-
-            x0_mx, y0_mx = transform_he_to_mx_point(m_full, x0, y0)
-            mx_vis_coords.append((x0_mx // ds, y0_mx // ds))
-
-            he_vis_coords.append((x0 // ds, y0 // ds))
-            entry: dict = {
-                "x0": x0,
-                "y0": y0,
-                "has_multiplex": has_mx,
-                "multiplex_overlap_fraction": float(mx_overlap),
+        ctx_rest = {
+            "he_axes": he_axes, "he_w": he_w, "he_h": he_h,
+            "mx_axes": mx_axes, "mx_w": mx_w, "mx_h": mx_h,
+            "seg_axes": seg_axes, "seg_w": seg_w, "seg_h": seg_h,
+            "registration_mode": registration_mode,
+            "deform_state": deform_state,
+            "m_full": m_full,
+            "channel_indices": channel_indices,
+            "patch_size": patch_size,
+            "min_mx_overlap": min_mx_overlap,
+            "ds": ds,
+            "out_dir": out_dir,
+        }
+        n_total = len(coords)
+        results: list[tuple | None] = [None] * n_total
+        done = 0
+        with ProcessPoolExecutor(
+            max_workers=args.workers,
+            initializer=_init_py_worker,
+            initargs=(
+                str(args.he_image),
+                str(args.multiplex_image),
+                str(args.mask_image) if args.mask_image else None,
+                ctx_rest,
+            ),
+        ) as executor:
+            futures = {
+                executor.submit(_py_patch_worker, (idx, x0, y0)): idx
+                for idx, (x0, y0) in enumerate(coords)
             }
-            if seg_store is not None:
-                entry["has_mask"] = has_seg
-            index.append(entry)
+            for future in as_completed(futures):
+                orig_idx, entry, he_vc, mx_vc = future.result()
+                results[orig_idx] = (entry, he_vc, mx_vc)
+                done += 1
+                if done % 500 == 0:
+                    print(f"  {done}/{n_total} ...")
+
+        index = [r[0] for r in results]  # type: ignore[index]
+        he_vis_coords = [r[1] for r in results]  # type: ignore[index]
+        mx_vis_coords = [r[2] for r in results]  # type: ignore[index]
 
         reg_dir = out_dir / "registration"
         reg_dir.mkdir(parents=True, exist_ok=True)
