@@ -151,7 +151,6 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
     mpp: float = ctx["mpp"]
     he_mpp: float = ctx["he_mpp"]
     patch_size: int = ctx["patch_size"]
-    warp_matrix = ctx["warp_matrix"]
     cd31_idx: int = ctx["cd31_idx"]
     ki67_idx: int = ctx["ki67_idx"]
     pcna_idx = ctx["pcna_idx"]
@@ -201,7 +200,9 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
         sma_norm = percentile_norm(sma_raw.astype(np.float32))
         sma_mask = binarize_otsu(sma_norm)
         vessel_mask = refine_vasculature_with_sma(
-            vessel_mask, sma_mask, adjacency_px=sma_adjacency_px,
+            vessel_mask,
+            sma_mask,
+            adjacency_px=sma_adjacency_px,
         )
     vessel_mask = cleanup_vasculature_mask(
         vessel_mask,
@@ -217,18 +218,21 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
     if vessel_status == "empty_fallback":
         _log.warning(
             "Patch %s: empty vessel mask after refinement/cleanup; "
-            "falling back to CD31-only mask.", patch_id,
+            "falling back to CD31-only mask.",
+            patch_id,
         )
     elif vessel_status == "noisy_fallback":
         _log.warning(
             "Patch %s: vessel mask coverage exceeded noisy threshold "
             "(>= %.3f); falling back to CD31-only mask.",
-            patch_id, vasc_noisy_max_fraction,
+            patch_id,
+            vasc_noisy_max_fraction,
         )
     elif vessel_status == "empty":
         _log.warning(
             "Patch %s: vessel mask is empty; proceeding with deterministic "
-            "empty mask.", patch_id,
+            "empty mask.",
+            patch_id,
         )
 
     vasc_rgba = make_vasculature_overlay(vessel_mask)
@@ -240,7 +244,13 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
     if oxygen_model == "wsi-pde":
         assert wsi_o2_coarse is not None
         o2_patch = extract_patch_from_coarse(
-            wsi_o2_coarse, x0, y0, patch_size, warp_matrix, he_mpp, mpp, wsi_pde_ds,
+            wsi_o2_coarse,
+            x0,
+            y0,
+            patch_size,
+            he_mpp,
+            mpp,
+            wsi_pde_ds,
         )
         oxygen_rgba = apply_colormap(o2_patch, "RdYlBu")
     else:
@@ -249,12 +259,20 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
     if glucose_model == "wsi-pde":
         assert wsi_glc_coarse is not None
         glc_patch = extract_patch_from_coarse(
-            wsi_glc_coarse, x0, y0, patch_size, warp_matrix, he_mpp, mpp, wsi_pde_ds,
+            wsi_glc_coarse,
+            x0,
+            y0,
+            patch_size,
+            he_mpp,
+            mpp,
+            wsi_pde_ds,
         )
         glucose_rgba = apply_colormap(glc_patch, "hot")
     elif glucose_model == "distance":
         glucose_rgba = make_glucose_map_distance(
-            vessel_mask, mpp=mpp, max_dist_um=glucose_krogh_um,
+            vessel_mask,
+            mpp=mpp,
+            max_dist_um=glucose_krogh_um,
         )
     else:
         glucose_rgba = make_glucose_map(ki67_raw, pcna_raw)
@@ -266,18 +284,26 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
         dist_um = dist_px * mpp
         ki67_norm_val = percentile_norm(ki67_raw.astype(np.float32))
         bin_idx = np.clip(
-            (dist_um / validate_bin_um).astype(np.int64), 0, val_n_bins - 1,
+            (dist_um / validate_bin_um).astype(np.int64),
+            0,
+            val_n_bins - 1,
         ).ravel()
         ki67_flat = ki67_norm_val.ravel().astype(np.float64)
         val_sum_patch = np.bincount(bin_idx, weights=ki67_flat, minlength=val_n_bins)
         val_count_patch = np.bincount(bin_idx, minlength=val_n_bins)
 
     Image.fromarray(vasc_rgba, "RGBA").save(vasc_dir / f"{patch_id}.png")
-    np.save(vasc_mask_dir / f"{patch_id}.npy", vessel_mask.astype(bool), allow_pickle=False)
+    np.save(
+        vasc_mask_dir / f"{patch_id}.npy", vessel_mask.astype(bool), allow_pickle=False
+    )
     Image.fromarray(oxygen_rgba, "RGBA").save(oxygen_dir / f"{patch_id}.png")
     Image.fromarray(glucose_rgba, "RGBA").save(glucose_dir / f"{patch_id}.png")
 
-    return {"missing": False, "val_sum_patch": val_sum_patch, "val_count_patch": val_count_patch}
+    return {
+        "missing": False,
+        "val_sum_patch": val_sum_patch,
+        "val_count_patch": val_count_patch,
+    }
 
 
 def main() -> None:
@@ -607,7 +633,6 @@ def main() -> None:
     log.info("  %d patches in index.", len(patches))
 
     he_mpp: float = index.get("he_mpp") or mpp
-    warp_matrix: list = index.get("warp_matrix", [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
     patch_size: int = index.get("patch_size", 256)
 
     vasc_dir = out_dir / "vasculature"
@@ -633,25 +658,32 @@ def main() -> None:
             _wsi_needed.append(sma_idx)
         if pcna_idx is not None:
             _wsi_needed.append(pcna_idx)
-        _wsi_needed_unique = list(dict.fromkeys(_wsi_needed))  # deduplicate, preserve order
+        _wsi_needed_unique = list(
+            dict.fromkeys(_wsi_needed)
+        )  # deduplicate, preserve order
         _remap = {orig: new for new, orig in enumerate(_wsi_needed_unique)}
 
         log.info(
             "Reading WSI channels %s at ds=%d from %s …",
-            _wsi_needed_unique, args.wsi_pde_ds, args.multiplex_tiff,
+            _wsi_needed_unique,
+            args.wsi_pde_ds,
+            args.multiplex_tiff,
         )
         channel_stack = read_wsi_channel_stack(
             args.multiplex_tiff, args.wsi_pde_ds, channel_indices=_wsi_needed_unique
         )
-        log.info("  Channel stack shape: %s (%.0f MB)",
-                 channel_stack.shape, channel_stack.nbytes / 1e6)
+        log.info(
+            "  Channel stack shape: %s (%.0f MB)",
+            channel_stack.shape,
+            channel_stack.nbytes / 1e6,
+        )
 
         # Remapped indices into the reduced channel_stack
-        wsi_cd31_idx  = _remap[cd31_idx]
-        wsi_ki67_idx  = _remap[ki67_idx]
-        wsi_cd68_idx  = _remap.get(cd68_idx)
-        wsi_sma_idx   = _remap.get(sma_idx)
-        wsi_pcna_idx  = _remap.get(pcna_idx)
+        wsi_cd31_idx = _remap[cd31_idx]
+        wsi_ki67_idx = _remap[ki67_idx]
+        wsi_cd68_idx = _remap.get(cd68_idx)
+        wsi_sma_idx = _remap.get(sma_idx)
+        wsi_pcna_idx = _remap.get(pcna_idx)
 
         if args.oxygen_model == "wsi-pde":
             mpp_coarse = mpp * args.wsi_pde_ds
@@ -660,7 +692,11 @@ def main() -> None:
             log.info(
                 "  O2 WSI-PDE: Krogh=%.0f µm, mpp_coarse=%.3f, L_coarse=%.1f px, "
                 "D_coarse=%.1f, max_iters=%d",
-                args.oxygen_krogh_um, mpp_coarse, L_coarse, D_coarse, args.wsi_pde_max_iters,
+                args.oxygen_krogh_um,
+                mpp_coarse,
+                L_coarse,
+                D_coarse,
+                args.wsi_pde_max_iters,
             )
             wsi_o2_coarse = solve_wsi_pde_map(
                 channel_stack=channel_stack,
@@ -679,8 +715,12 @@ def main() -> None:
                 max_iters=args.wsi_pde_max_iters,
                 tol=args.wsi_pde_tol,
             )
-            log.info("  O2 WSI-PDE solved. Grid: %s, range [%.3f, %.3f]",
-                     wsi_o2_coarse.shape, float(wsi_o2_coarse.min()), float(wsi_o2_coarse.max()))
+            log.info(
+                "  O2 WSI-PDE solved. Grid: %s, range [%.3f, %.3f]",
+                wsi_o2_coarse.shape,
+                float(wsi_o2_coarse.min()),
+                float(wsi_o2_coarse.max()),
+            )
 
         if args.glucose_model == "wsi-pde":
             mpp_coarse = mpp * args.wsi_pde_ds
@@ -689,7 +729,11 @@ def main() -> None:
             log.info(
                 "  Glucose WSI-PDE: Krogh=%.0f µm, mpp_coarse=%.3f, L_coarse=%.1f px, "
                 "D_coarse=%.1f, max_iters=%d",
-                args.glucose_krogh_um, mpp_coarse, L_coarse, D_coarse, args.wsi_pde_max_iters,
+                args.glucose_krogh_um,
+                mpp_coarse,
+                L_coarse,
+                D_coarse,
+                args.wsi_pde_max_iters,
             )
             wsi_glc_coarse = solve_wsi_pde_map(
                 channel_stack=channel_stack,
@@ -708,8 +752,12 @@ def main() -> None:
                 max_iters=args.wsi_pde_max_iters,
                 tol=args.wsi_pde_tol,
             )
-            log.info("  Glucose WSI-PDE solved. Grid: %s, range [%.3f, %.3f]",
-                     wsi_glc_coarse.shape, float(wsi_glc_coarse.min()), float(wsi_glc_coarse.max()))
+            log.info(
+                "  Glucose WSI-PDE solved. Grid: %s, range [%.3f, %.3f]",
+                wsi_glc_coarse.shape,
+                float(wsi_glc_coarse.min()),
+                float(wsi_glc_coarse.max()),
+            )
 
     # Ki67-vs-distance validation accumulators (Zaidi et al. 2019)
     val_n_bins: int = 0
@@ -734,7 +782,6 @@ def main() -> None:
         "mpp": mpp,
         "he_mpp": he_mpp,
         "patch_size": patch_size,
-        "warp_matrix": warp_matrix,
         "cd31_idx": cd31_idx,
         "ki67_idx": ki67_idx,
         "pcna_idx": pcna_idx,

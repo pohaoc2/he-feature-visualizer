@@ -52,7 +52,6 @@ import tifffile
 from PIL import Image
 
 from stages.patchify_lib.masking import tissue_mask_hsv
-from stages.patchify_lib.registration import register_he_mx_affine
 from utils.normalize import percentile_to_uint8
 from utils.ome import get_image_dims, get_ome_mpp, open_zarr_store, read_overview_chw
 
@@ -674,7 +673,9 @@ def visualize_crop_dna(
         print(f"[crop-dna] center: row={row}, col={col}")
 
     print(f"[crop-dna] reading {crop_size}x{crop_size} crop from mask ...")
-    mask_crop, (mask_y0, mask_x0) = _read_channel_crop(mask_path, row, col, crop_size, 0)
+    mask_crop, (mask_y0, mask_x0) = _read_channel_crop(
+        mask_path, row, col, crop_size, 0
+    )
     print(
         f"[crop-dna] mask origin x={mask_x0} y={mask_y0}, shape={mask_crop.shape}, "
         f"non-zero={(mask_crop > 0).mean() * 100:.1f}%"
@@ -770,31 +771,28 @@ def crop_tiff_pair(
                 "image2_tissue_fraction": float("nan"),
             }
         else:
-            print(f"[pair-crop] building tissue masks at 1/{downsample} resolution ...")
-            image1_chw = read_overview_chw(
-                store1, image1_axes, image1_h, image1_w, downsample
-            )
-            image2_chw = read_overview_chw(
-                store2, image2_axes, image2_h, image2_w, downsample
-            )
-            image1_mask = _build_binary_tissue_mask(image1_chw)
-            image2_mask = _build_binary_tissue_mask(image2_chw)
-
-            print("[pair-crop] estimating image1 -> image2 affine transform ...")
-            m_full = register_he_mx_affine(
-                image1_mask,
-                image2_mask,
-                downsample,
-                image1_h,
-                image1_w,
-                image2_h,
-                image2_w,
-            )
-            print(f"[pair-crop] affine:\n{m_full}")
+            # Build MPP-based scale-only affine (no registration needed;
+            # images are assumed to be pre-aligned).
             if mpp1_x is not None and mpp2_x is not None:
-                print(f"[pair-crop] mpp scale image1 -> image2: {mpp1_x / mpp2_x:.4f}")
+                scale = mpp1_x / mpp2_x
+            else:
+                scale = image2_w / max(1, image1_w)
+            m_full = np.array([[scale, 0.0, 0.0], [0.0, scale, 0.0]], dtype=np.float32)
+            print(f"[pair-crop] MPP scale image1 -> image2: {scale:.4f}")
 
             if image1_box is None:
+                print(
+                    f"[pair-crop] building tissue masks at 1/{downsample} resolution ..."
+                )
+                image1_chw = read_overview_chw(
+                    store1, image1_axes, image1_h, image1_w, downsample
+                )
+                image2_chw = read_overview_chw(
+                    store2, image2_axes, image2_h, image2_w, downsample
+                )
+                image1_mask = _build_binary_tissue_mask(image1_chw)
+                image2_mask = _build_binary_tissue_mask(image2_chw)
+
                 image1_box, image2_box, stats = _auto_detect_shared_crop(
                     image1_mask,
                     image2_mask,
@@ -808,9 +806,7 @@ def crop_tiff_pair(
                 )
             else:
                 stats = {
-                    "image1_tissue_fraction": _mask_fraction_for_box(
-                        image1_mask, image1_box, image1_w, image1_h
-                    ),
+                    "image1_tissue_fraction": float("nan"),
                     "shared_tissue_fraction": float("nan"),
                     "image2_tissue_fraction": float("nan"),
                 }

@@ -283,7 +283,8 @@ def test_patchify_cli_different_size_with_mock_mpp(tmp_path, monkeypatch):
     p0 = data["patches"][0]
     patch_id = f"{p0['x0']}_{p0['y0']}"
     patch_arr = np.load(out_dir / "multiplex" / f"{patch_id}.npy")
-    assert patch_arr.shape == (4, 256, 256)
+    # HE mpp=0.5, MX mpp=1.0 => mpp_scale=0.5 => MX patch size = 256*0.5 = 128
+    assert patch_arr.shape == (4, 128, 128)
 
 
 # ---------------------------------------------------------------------------

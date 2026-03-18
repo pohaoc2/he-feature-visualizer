@@ -13,7 +13,7 @@ Usage (called from multiplex_layers.py)
                                   mpp=0.325, ds=8, krogh_um=160.0)
     for x0, y0 in patch_coords:
         patch = extract_patch_from_coarse(o2_coarse, x0, y0, 256,
-                                          warp_matrix, he_mpp, mx_mpp, ds=8)
+                                          he_mpp, mx_mpp, ds=8)
 """
 
 from __future__ import annotations
@@ -107,7 +107,9 @@ def read_wsi_channel_stack(
         out_h = h_trunc // extra_stride
         out_w = w_trunc // extra_stride
 
-        ch_to_read = list(range(n_total_ch)) if channel_indices is None else channel_indices
+        ch_to_read = (
+            list(range(n_total_ch)) if channel_indices is None else channel_indices
+        )
 
         out = np.zeros((len(ch_to_read), out_h, out_w), dtype=np.float32)
         for out_c, ch in enumerate(ch_to_read):
@@ -204,16 +206,15 @@ def extract_patch_from_coarse(
     x0: int,
     y0: int,
     patch_size: int,
-    warp_matrix: list,
     he_mpp: float,
     mx_mpp: float,
     ds: int,
 ) -> np.ndarray:
     """Extract and resize a patch region from the coarse WSI PDE solution.
 
-    Transforms the patch origin ``(x0, y0)`` from H&E full-resolution space to
-    multiplex coarse space using ``warp_matrix``, crops the corresponding
-    region, and resizes to ``(patch_size, patch_size)``.
+    Maps the H&E patch origin ``(x0, y0)`` to multiplex coarse space using
+    the MPP ratio, crops the corresponding region, and resizes to
+    ``(patch_size, patch_size)``.
 
     Parameters
     ----------
@@ -223,9 +224,6 @@ def extract_patch_from_coarse(
         Patch origin in H&E full-resolution pixels (as stored in index.json).
     patch_size:
         Output size in pixels (e.g. 256).
-    warp_matrix:
-        2×3 affine stored in index.json: ``[[a, b, tx], [c, d, ty]]``.
-        Maps H&E full-res → multiplex full-res.
     he_mpp, mx_mpp:
         Microns-per-pixel for H&E and multiplex images.
     ds:
@@ -235,13 +233,11 @@ def extract_patch_from_coarse(
     -------
     ``(patch_size, patch_size)`` float32 in ``[0, 1]``.
     """
-    a, b, tx = warp_matrix[0]
-    c, d, ty = warp_matrix[1]
-    mx_x = a * x0 + b * y0 + tx
-    mx_y = c * x0 + d * y0 + ty
+    mpp_scale = he_mpp / max(mx_mpp, 1e-9)
+    mx_x = x0 * mpp_scale
+    mx_y = y0 * mpp_scale
 
-    # Patch footprint in MX full-res pixels, then convert to coarse grid
-    patch_size_mx = patch_size * (he_mpp / mx_mpp)
+    patch_size_mx = patch_size * mpp_scale
     size_c = patch_size_mx / ds
 
     H_c, W_c = coarse_arr.shape
