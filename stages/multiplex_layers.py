@@ -28,8 +28,7 @@ proxy maps from the raw channel intensities:
         (black → red → yellow/white as demand increases).
 
 Stage 5 (visualisation) saves the three RGBA overlay PNGs to sub-directories
-of the output folder so they can be served directly by server_patches.py and
-composited on top of H&E tiles in viewer_patches.html.
+of the output folder for downstream use.
 
 Input
 -----

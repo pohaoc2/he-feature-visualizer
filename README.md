@@ -690,53 +690,6 @@ Stage 3 is documented around the **CODEX-style clustering** workflow:
 
 ---
 
-## Group Viewer (Web)
-
-Use these tools for interactive H&E + multiplex group inspection.
-
-### Web viewer (`tools.view_groups_web`)
-
-```bash
-python -m tools.view_groups_web \
-  --he-image data/WD-76845-096.ome.tif \
-  --multiplex-image data/WD-76845-097.ome.tif \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --index-json processed_wd/index.json \
-  --min-level 1 \
-  --auto-max-dim 1200 \
-  --host 127.0.0.1 \
-  --port 8010
-```
-
-Open **[http://127.0.0.1:8010](http://127.0.0.1:8010)**.
-
-Remote (EC2) usage is the same, then tunnel:
-
-```bash
-ssh -i /path/to/key.pem -L 8010:127.0.0.1:8010 ec2-user@<EC2_PUBLIC_DNS_OR_IP>
-```
-
-Viewer controls:
-
-- Group buttons: `H&E`, `Immune`, `Vasculature`, `Cancer Cells`, `Proliferative Cells`
-- Transparency slider for multiplex overlay
-- Pan: two-finger touchpad scroll or click-drag
-- Zoom: pinch or `Ctrl/Alt + wheel`
-- Left and right panes are synchronized during pan/zoom
-- Color legend is drawn on the figure (right panel)
-
-Rendering behavior:
-
-- Defaults to `min-level >= 1` to avoid full-resolution level 0 loading.
-- Multi-marker groups use per-channel min-max normalization (no percentile), then multicolor max projection.
-
-Notes:
-
-- If `--index-json` is omitted, the viewer tries `processed_wd/index.json` then `proceeded_wd/index.json`.
-- Use `--no-preload-multiplex` if memory is limited.
-
----
-
 ## Tests
 
 All tests use synthetic data — no real images or data files are required.
