@@ -23,7 +23,6 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.patches import Patch
 from PIL import Image
 
-from utils.cell_assignment_reports import load_cell_assignments
 from utils.marker_aliases import canonicalize_marker_name, normalize_marker_name
 from utils.normalize import percentile_norm
 
@@ -65,6 +64,17 @@ COL_TITLES = [
     "Oxygen (O₂)",
     "Glucose",
 ]
+
+ASSIGNMENT_REQUIRED_COLUMNS: tuple[str, str, str] = (
+    "patch_id",
+    "centroid_x_local",
+    "centroid_y_local",
+)
+ASSIGNMENT_OPTIONAL_COLUMNS: tuple[str, str] = ("cell_type", "cell_state")
+ASSIGNMENT_COLUMNS: tuple[str, ...] = (
+    *ASSIGNMENT_REQUIRED_COLUMNS,
+    *ASSIGNMENT_OPTIONAL_COLUMNS,
+)
 
 # ── Small rendering helpers ───────────────────────────────────────────────────
 
@@ -259,16 +269,18 @@ def _add_type_legend(
 
 def _available_patches(
     processed_dir: Path,
-    assignments_df: pd.DataFrame | None,
+    assignments: pd.DataFrame | set[str] | None,
 ) -> list[str]:
     """Return patch IDs that have H&E + CellViT JSON (assignments optional)."""
     he_dir = processed_dir / "he"
     cellvit_dir = processed_dir / "cellvit"
-    assigned_patches = (
-        set(assignments_df["patch_id"].astype(str).unique())
-        if assignments_df is not None
-        else None
-    )
+    assigned_patches: set[str] | None = None
+    if assignments is not None:
+        if isinstance(assignments, pd.DataFrame):
+            assigned_patches = set(assignments["patch_id"].astype(str).unique())
+        else:
+            assigned_patches = {str(pid) for pid in assignments}
+
     patches = []
     for png in sorted(he_dir.glob("*.png")):
         pid = png.stem
@@ -278,6 +290,66 @@ def _available_patches(
             continue
         patches.append(pid)
     return patches
+
+
+def _empty_assignments_df() -> pd.DataFrame:
+    return pd.DataFrame(columns=list(ASSIGNMENT_COLUMNS))
+
+
+def _load_assignment_patch_ids(csv_path: Path, *, chunksize: int = 250_000) -> set[str]:
+    """Stream only patch_id values from CSV and return unique IDs."""
+    patch_ids: set[str] = set()
+    for chunk in pd.read_csv(csv_path, usecols=["patch_id"], chunksize=chunksize):
+        patch_ids.update(chunk["patch_id"].astype(str).unique())
+    return patch_ids
+
+
+def _load_assignments_for_patches(
+    csv_path: Path,
+    patch_ids: set[str],
+    *,
+    chunksize: int = 250_000,
+) -> pd.DataFrame:
+    """Load only the rows needed for selected patches and required display columns."""
+    if not patch_ids:
+        return _empty_assignments_df()
+
+    header = pd.read_csv(csv_path, nrows=0)
+    available = set(header.columns)
+    missing_required = [
+        col for col in ASSIGNMENT_REQUIRED_COLUMNS if col not in available
+    ]
+    if missing_required:
+        missing = ", ".join(missing_required)
+        raise RuntimeError(f"Assignments CSV is missing required columns: {missing}")
+
+    usecols = [
+        *ASSIGNMENT_REQUIRED_COLUMNS,
+        *[c for c in ASSIGNMENT_OPTIONAL_COLUMNS if c in available],
+    ]
+
+    rows: list[pd.DataFrame] = []
+    for chunk in pd.read_csv(csv_path, usecols=usecols, chunksize=chunksize):
+        patch_col = chunk["patch_id"].astype(str)
+        keep = patch_col.isin(patch_ids)
+        if not keep.any():
+            continue
+        filtered = chunk.loc[keep].copy()
+        filtered["patch_id"] = patch_col.loc[keep]
+        rows.append(filtered)
+
+    if not rows:
+        return _empty_assignments_df()
+
+    result = pd.concat(rows, ignore_index=True)
+    for col in ASSIGNMENT_OPTIONAL_COLUMNS:
+        if col not in result.columns:
+            result[col] = "other"
+        else:
+            result[col] = result[col].fillna("other").astype(str)
+    for col in ("centroid_x_local", "centroid_y_local"):
+        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0.0)
+    return result.loc[:, list(ASSIGNMENT_COLUMNS)].copy()
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -337,14 +409,15 @@ def main() -> None:
     if not index_path.exists():
         raise FileNotFoundError(f"Missing index.json: {index_path}")
 
+    assigned_patch_ids: set[str] | None = None
     if assignments_path.exists():
-        assignments_df = load_cell_assignments(assignments_path)
+        assigned_patch_ids = _load_assignment_patch_ids(assignments_path)
     else:
         print(
             f"[warn] assignments CSV not found ({assignments_path}); cell type/state cols will be blank."
         )
-        assignments_df = None
-    patches = _available_patches(processed_dir, assignments_df)
+
+    patches = _available_patches(processed_dir, assigned_patch_ids)
     if not patches:
         raise RuntimeError(
             "No patches found with all required files (he, cellvit, assignments)."
@@ -353,6 +426,11 @@ def main() -> None:
     n = min(args.n_patches, len(patches))
     rng = random.Random(args.seed)
     selected = rng.sample(patches, n)
+
+    if assignments_path.exists():
+        assignments_df = _load_assignments_for_patches(assignments_path, set(selected))
+    else:
+        assignments_df = None
 
     # Figure: n rows × 8 cols + extra width for two colorbars
     col_w, row_h = 2.5, 2.5
@@ -378,7 +456,7 @@ def main() -> None:
 
         cells = _load_patch_json(cellvit_path)
         asgn = (
-            assignments_df[assignments_df["patch_id"].astype(str) == patch_id].copy()
+            assignments_df[assignments_df["patch_id"] == patch_id].copy()
             if assignments_df is not None
             else pd.DataFrame()
         )

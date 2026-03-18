@@ -108,6 +108,28 @@ def test_available_patches_returns_valid_ids(tmp_path: Path) -> None:
     assert set(found) == set(patch_ids)
 
 
+def test_load_assignment_patch_ids(tmp_path: Path) -> None:
+    processed, patch_ids = _make_processed(tmp_path, n_patches=4)
+    found = grid_vis._load_assignment_patch_ids(processed / "cell_assignments.csv")
+    assert found == set(patch_ids)
+
+
+def test_load_assignments_for_selected_patches(tmp_path: Path) -> None:
+    processed, patch_ids = _make_processed(tmp_path, n_patches=4)
+    keep = {patch_ids[1], patch_ids[3]}
+    df = grid_vis._load_assignments_for_patches(
+        processed / "cell_assignments.csv", keep
+    )
+    assert set(df["patch_id"].unique()) == keep
+    assert set(df.columns) == {
+        "patch_id",
+        "centroid_x_local",
+        "centroid_y_local",
+        "cell_type",
+        "cell_state",
+    }
+
+
 def test_available_patches_excludes_missing_cellvit(tmp_path: Path) -> None:
     processed, patch_ids = _make_processed(tmp_path, n_patches=2)
     # Remove one CellViT file
