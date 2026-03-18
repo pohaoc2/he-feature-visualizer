@@ -228,7 +228,7 @@ def _plot_marker_bar(
     # text block — placed at the very bottom of the axes below the bars
     final = str(row.get("cell_type", "?"))
     cvit = str(row.get("cellvit_mapped_type", "?"))
-    codex = str(row.get("type_codex", row.get("type_astir", "?")))
+    codex = str(row.get("type_codex", "?"))
     margin = float(row.get("codex_margin", float("nan")))
     # "CODEX conf." = p_winner − max(p_others): how decisively CODEX chose this class
     text = f"Final:   {final}\nCellViT: {cvit}\nCODEX:   {codex}\nCODEX conf: {margin:.2f}"
@@ -242,7 +242,7 @@ def _plot_confusion_heatmap(ax: plt.Axes, df: pd.DataFrame) -> None:
     Cells show raw count (bold) + row-normalised % below.
     """
     classes = list(CELL_TYPES)
-    codex_col = "type_codex" if "type_codex" in df.columns else "type_astir"
+    codex_col = "type_codex"
     counts = np.zeros((3, 3), dtype=int)
     for i, rv in enumerate(classes):
         for j, cv in enumerate(classes):

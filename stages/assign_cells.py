@@ -263,7 +263,7 @@ def _compute_codex_probabilities(
     else:
         try:
             from sklearn.cluster import KMeans
-        except Exception as exc:  # pragma: no cover - sklearn is expected via astir deps
+        except Exception as exc:  # pragma: no cover
             raise RuntimeError("CODEX classifier requires scikit-learn.") from exc
 
         km = KMeans(n_clusters=n_clusters, random_state=0, n_init=20)

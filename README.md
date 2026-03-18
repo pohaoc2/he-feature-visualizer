@@ -593,32 +593,6 @@ a "not in panel" placeholder renders and the figure still saves normally.
 - Cell types: red (cancer), blue (immune), green (healthy)
 - Cell states: magenta (proliferative), amber (quiescent), purple (dead)
 
-### Scientific-Vis Figure: Sample-Level Model Evidence Report
-
-Use `tools.scientific_vis_model_report` to generate a sample-level report with:
-
-- mapped CellViT vs model vs final class counts
-- CellViT/model mismatch heatmap
-- model probability distributions over `cancer / immune / healthy`
-- model subtype distributions
-- fine-to-final collapse summary used by the model report
-- representative example cells for each final class
-
-```bash
-python -m tools.scientific_vis_model_report \
-  --processed processed_crc33_crop_demo/ \
-  --assignments-csv processed_crc33_crop_demo/cell_assignments.csv \
-  --summary-json processed_crc33_crop_demo/cell_summary.json \
-  --out-prefix processed_crc33_crop_demo/model_report \
-  --formats png,pdf
-```
-
-If `cell_summary.json` reports `classifier_used=rule_fallback`, the report is
-labeled accordingly and its probability panels should be interpreted as
-rule-based outputs.
-
----
-
 ### Scientific-Vis Figure: CellViT vs CODEX Comparison
 
 `tools.scientific_vis_codex_comparison` — 16×16 publication figure comparing

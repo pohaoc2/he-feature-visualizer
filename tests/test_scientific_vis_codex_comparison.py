@@ -25,7 +25,7 @@ def _base_df() -> pd.DataFrame:
         {
             "cell_type": "cancer",
             "cellvit_mapped_type": "cancer",
-            "type_astir": "cancer",
+            "type_codex": "cancer",
             "is_mismatch": False,
             "p_model_cancer": 0.80,
             "p_model_immune": 0.10,
@@ -37,7 +37,7 @@ def _base_df() -> pd.DataFrame:
         {
             "cell_type": "immune",
             "cellvit_mapped_type": "immune",
-            "type_astir": "immune",
+            "type_codex": "immune",
             "is_mismatch": False,
             "p_model_cancer": 0.05,
             "p_model_immune": 0.85,
@@ -49,7 +49,7 @@ def _base_df() -> pd.DataFrame:
         {
             "cell_type": "healthy",
             "cellvit_mapped_type": "cancer",   # mismatch
-            "type_astir": "healthy",
+            "type_codex": "healthy",
             "is_mismatch": True,
             "p_model_cancer": 0.05,
             "p_model_immune": 0.10,
@@ -61,7 +61,7 @@ def _base_df() -> pd.DataFrame:
         {
             "cell_type": "other",   # must be excluded
             "cellvit_mapped_type": "other",
-            "type_astir": "other",
+            "type_codex": "other",
             "is_mismatch": False,
             "p_model_cancer": 0.30,
             "p_model_immune": 0.40,
@@ -98,17 +98,17 @@ def _selection_df() -> pd.DataFrame:
     """DataFrame for one class with known margins and mismatch flags."""
     return pd.DataFrame([
         # agree candidates (is_mismatch=False): margin 0.60 and 0.20
-        {"cell_type": "cancer", "cellvit_mapped_type": "cancer", "type_astir": "cancer",
+        {"cell_type": "cancer", "cellvit_mapped_type": "cancer", "type_codex": "cancer",
          "is_mismatch": False, "codex_margin": 0.60,
          "patch_id": "p0", "centroid_x_local": 10.0, "centroid_y_local": 10.0},
-        {"cell_type": "cancer", "cellvit_mapped_type": "cancer", "type_astir": "cancer",
+        {"cell_type": "cancer", "cellvit_mapped_type": "cancer", "type_codex": "cancer",
          "is_mismatch": False, "codex_margin": 0.20,
          "patch_id": "p0", "centroid_x_local": 20.0, "centroid_y_local": 20.0},
         # disagree candidates (is_mismatch=True): margin 0.70 and 0.40
-        {"cell_type": "cancer", "cellvit_mapped_type": "immune", "type_astir": "cancer",
+        {"cell_type": "cancer", "cellvit_mapped_type": "immune", "type_codex": "cancer",
          "is_mismatch": True, "codex_margin": 0.70,
          "patch_id": "p0", "centroid_x_local": 30.0, "centroid_y_local": 30.0},
-        {"cell_type": "cancer", "cellvit_mapped_type": "immune", "type_astir": "cancer",
+        {"cell_type": "cancer", "cellvit_mapped_type": "immune", "type_codex": "cancer",
          "is_mismatch": True, "codex_margin": 0.40,
          "patch_id": "p0", "centroid_x_local": 40.0, "centroid_y_local": 40.0},
     ])
@@ -162,7 +162,7 @@ def test_missing_canonical_marker_renders_placeholder() -> None:
     row = pd.Series({
         "cell_type": "cancer",
         "cellvit_mapped_type": "cancer",
-        "type_astir": "cancer",
+        "type_codex": "cancer",
         "codex_margin": 0.60,
     })
     fig, ax = plt.subplots(figsize=(3, 2))
@@ -183,7 +183,7 @@ def _make_processed_codex(tmp_path: Path) -> tuple[Path, Path]:
     )
 
     rows = []
-    for i, (ct, cvit, astir, mismatch) in enumerate([
+    for i, (ct, cvit, codex, mismatch) in enumerate([
         ("cancer",  "cancer",  "cancer",  False),
         ("cancer",  "immune",  "cancer",  True),
         ("immune",  "immune",  "immune",  False),
@@ -195,7 +195,7 @@ def _make_processed_codex(tmp_path: Path) -> tuple[Path, Path]:
             "patch_id": patch_id,
             "cell_type": ct,
             "cellvit_mapped_type": cvit,
-            "type_astir": astir,
+            "type_codex": codex,
             "is_mismatch": mismatch,
             "type_cellvit": 1,
             "cell_type_confidence": "high",

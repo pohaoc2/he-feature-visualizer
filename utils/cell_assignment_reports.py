@@ -57,19 +57,15 @@ def model_label_column(
     prefer_fine: bool = True,
 ) -> str:
     key = str(classifier_used).strip().lower()
-    if prefer_fine and key == "codex" and (
-        "type_codex_fine" in df.columns or "type_astir_fine" in df.columns
-    ):
-        return "type_codex_fine" if "type_codex_fine" in df.columns else "type_astir_fine"
+    if prefer_fine and key == "codex" and "type_codex_fine" in df.columns:
+        return "type_codex_fine"
     if "type_codex" in df.columns:
         return "type_codex"
-    if "type_astir" in df.columns:
-        return "type_astir"
     return "cell_type"
 
 
 def collapse_display_lines(model_col: str) -> list[str]:
-    if model_col not in ("type_codex_fine", "type_astir_fine"):
+    if model_col != "type_codex_fine":
         return []
     return [
         f"{final_label} <- {', '.join(subtypes)}"

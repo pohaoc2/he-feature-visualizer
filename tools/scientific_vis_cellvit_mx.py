@@ -411,8 +411,8 @@ def main() -> None:
     if assignments_patch.empty:
         raise ValueError(f"No assignment rows found for patch '{patch}' in {assignments_path}")
     model_col = model_label_column(assignments_patch, classifier_used, prefer_fine=True)
-    model_colors = MODEL_FINE_COLORS if model_col == "type_astir_fine" else CELL_TYPE_COLORS
-    model_title = f"{model_name} fine type" if model_col == "type_astir_fine" else f"{model_name} top class"
+    model_colors = MODEL_FINE_COLORS if model_col == "type_codex_fine" else CELL_TYPE_COLORS
+    model_title = f"{model_name} fine type" if model_col == "type_codex_fine" else f"{model_name} top class"
 
     index_data = json.loads(index_path.read_text(encoding="utf-8"))
     channels = [str(x) for x in index_data.get("channels", [])]
