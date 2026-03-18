@@ -35,7 +35,6 @@ tools/
   check_shape.py         # Inspect OME-TIFF dimensions (local or S3)
   visualize_pipeline.py  # 6-panel pipeline summary figure
   view_groups_web.py     # Local FastAPI web viewer (H&E + multiplex groups)
-cellvit_backend.py       # CellViT model integration stub
 notebooks/               # Stage 2: GPU cell segmentation on Colab
 tests/                   # pytest test suite
 ```

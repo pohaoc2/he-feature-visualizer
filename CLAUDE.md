@@ -16,7 +16,6 @@ stages/multiplex_layers.py  # Stage 4: vasculature/signaling layers
 utils/normalize.py          # percentile_norm, percentile_to_uint8
 utils/channels.py           # load_channel_metadata, resolve_channel_indices
 utils/ome.py                # get_ome_mpp, open_zarr_store, read_overview_chw, get_image_dims
-cellvit_backend.py          # CellViT model integration stub
 tests/                      # pytest suite
 docs/plans/                 # Implementation plan docs
 data/                       # Raw data (gitignored): CRC02-HE.ome.tif, CRC02.ome.tif, channel CSV
