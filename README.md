@@ -30,11 +30,12 @@ utils/
   ome.py                 # get_ome_mpp, open_zarr_store, read_overview_chw, get_image_dims
   group_visualizer.py    # Shared H&E + multiplex group rendering helpers
 tools/
-  build_pyramid.py       # Convert mask TIF to pyramidal OME-TIFF
-  viz_mask.py            # Visualize mask + OME side-by-side (overview / crop)
-  check_shape.py         # Inspect OME-TIFF dimensions (local or S3)
-  visualize_pipeline.py  # 6-panel pipeline summary figure
-  view_groups_web.py     # Local FastAPI web viewer (H&E + multiplex groups)
+  build_pyramid.py              # Convert mask TIF to pyramidal OME-TIFF
+  viz_mask.py                   # Visualize mask + OME side-by-side (overview / crop)
+  check_shape.py                # Inspect OME-TIFF dimensions (local or S3)
+  visualize_pipeline.py         # 6-panel pipeline summary figure
+  view_groups_web.py            # Local FastAPI web viewer (H&E + multiplex groups)
+  cellvit_to_binary_mask.py     # Convert CellViT JSON output to per-patch binary cell masks
 notebooks/               # Stage 2: GPU cell segmentation on Colab
 tests/                   # pytest test suite
 ```
@@ -212,6 +213,24 @@ Cell type IDs used by CellViT:
 | 4   | Dead         |
 | 5   | Epithelial   |
 
+
+### Binary Cell Masks
+
+`tools.cellvit_to_binary_mask` converts CellViT JSON output into per-patch binary PNG masks (255 = cell, 0 = background). One mask is written per patch, with filenames matching the CellViT JSONs (`{x0}_{y0}.png`).
+
+```bash
+# default output → <processed-dir>/cell_masks/
+python -m tools.cellvit_to_binary_mask --processed-dir processed_crc33_crop
+
+# custom output directory
+python -m tools.cellvit_to_binary_mask --processed-dir processed_crc33_crop \
+    --out-dir processed_crc33_crop/cell_masks
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--processed-dir` | required | Processed directory containing `index.json` and `cellvit/` |
+| `--out-dir` | `<processed-dir>/cell_masks/` | Output directory for per-patch mask PNGs |
 
 ---
 
