@@ -11,7 +11,7 @@ A pipeline for generating spatially-resolved, multi-channel feature maps from co
 
 Given a pair of H&E and multiplex OME-TIFF images, this pipeline:
 
-1. Extracts tissue patches and aligns multiplex channel arrays to each patch
+1. Extracts tissue patches and corresponding multiplex channel arrays
 2. Runs GPU-accelerated cell segmentation (CellViT) to detect and classify cells
 3. Refines cell type assignments using multiplex marker intensities
 4. Produces per-patch feature layers (cell type maps, vasculature, signaling channels) suitable for downstream spatial analysis or model training
@@ -20,7 +20,7 @@ Given a pair of H&E and multiplex OME-TIFF images, this pipeline:
 
 ```
 stages/
-  patchify.py            # Stage 1: extract 256×256 H&E patches + multiplex arrays + ECC registration
+  patchify.py            # Stage 1: extract 256×256 H&E patches + multiplex arrays (MPP-ratio coordinate mapping)
   extract_cell_features.py # Stage 2.5: extract CellViT-aligned MX marker features to CSV
   assign_cells.py        # Stage 3: assign cell types/states (CSV or auto CellViT+MX)
   multiplex_layers.py    # Stage 4: derive vasculature/signaling layers
@@ -33,7 +33,6 @@ tools/
   build_pyramid.py       # Convert mask TIF to pyramidal OME-TIFF
   viz_mask.py            # Visualize mask + OME side-by-side (overview / crop)
   check_shape.py         # Inspect OME-TIFF dimensions (local or S3)
-  debug_match_he_mul.py  # Interactive/headless H&E↔multiplex alignment viewer (QC)
   visualize_pipeline.py  # 6-panel pipeline summary figure
   view_groups_web.py     # Local FastAPI web viewer (H&E + multiplex groups)
 cellvit_backend.py       # CellViT model integration stub
@@ -89,7 +88,7 @@ lin-2021-crc-atlas/
 
 ## Stage 1 — Patch Extraction
 
-Run `stages.patchify` to extract 256×256 H&E patches and corresponding multiplex arrays. ECC affine registration between the two images is performed automatically (use `--no-register` to disable).
+Run `stages.patchify` to extract 256×256 H&E patches and corresponding multiplex arrays. Multiplex coordinates are mapped from H&E space using the MPP ratio (`he_mpp / mx_mpp`) — the two images are assumed to be pre-aligned.
 
 ```bash
 python3 -m stages.patchify \
@@ -99,21 +98,11 @@ python3 -m stages.patchify \
   --out processed_wd \
   --channels DNA \
   --workers 8
-  # --register
-  # add --no-register to skip ECC and use mpp-ratio scaling only
   # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed_wd/masks/
   # --workers N  parallelise patch extraction over N processes (default: 4)
 ```
 
 Patch extraction is parallelised with `ProcessPoolExecutor`. Each worker opens its own zarr file handles, so the default of 4 workers is safe. On a machine with fast NVMe storage, `--workers 8` or higher is recommended.
-
-### Registration
-
-By default, Stage 1 computes an affine warp between the H&E and multiplex images using `cv2.findTransformECC` on binary tissue masks (H&E: HSV saturation → Otsu; MX: DNA/DAPI ch0 with blur+morphology) at overview resolution. This corrects translational and rotational misalignment without requiring manual landmarks.
-
-Stage 1 then runs QC gates (channel drift, global IoU/centroid/scale, patch-level gain). If QC returns `FAIL_LOCAL_NEEDS_DEFORMABLE`, a deformable refinement is attempted and only applied when it improves QC.
-
-The resulting 2×3 `warp_matrix` (H&E full-res → MX full-res) is stored in `index.json`. During patch extraction, each multiplex patch is sampled with this transform (affine or deformable-refined) into the H&E patch frame (not only top-left scale mapping), improving patch-level correspondence when shear/rotation offsets exist.
 
 ### Outputs
 
@@ -123,8 +112,7 @@ The resulting 2×3 `warp_matrix` (H&E full-res → MX full-res) is stored in `in
 | `processed_wd/he/`             | RGB PNG patches                                                                       | Stage 2 (Colab) |
 | `processed_wd/multiplex/`      | Per-channel `.npy` arrays (uint16)                                                    | Stage 4         |
 | `processed_wd/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given       | Downstream      |
-| `processed_wd/index.json`      | Patch coordinate index + `warp_matrix` + `registration_mode` + flags per patch        | All stages      |
-| `processed_wd/registration/`   | `affine.json`, `qc_metrics.json`, `final_transform.json`, optional `deform_field.npz` | QC / debug      |
+| `processed_wd/index.json`      | Patch coordinate index + `mpp_scale` + flags per patch                                | All stages      |
 | `processed_wd/vis_patches.jpg` | H&E + multiplex overview with patch grid                                              | QC              |
 
 
@@ -476,33 +464,7 @@ masks with >98% coverage as artefactual.
 - Glucose `wsi-pde` at small crops (< 400 µm) will yield nearly flat output — glucose reaches
   everywhere within the Krogh radius. Use the full WSI OME-TIFF for meaningful glucose gradients.
 - All 2D models systematically underestimate oxygenation near out-of-plane vessels (Grimes 2016).
-- Output quality is sensitive to CD31 channel quality and upstream registration.
-
----
-
-## Alignment QC
-
-Use `tools.debug_match_he_mul` to visually verify H&E↔multiplex registration. Without `--index-json` it does a naive resize; with it, it applies the registration transform from `index.json` (ECC affine, plus deformable field when available and active).
-
-```bash
-# Interactive viewer (requires display)
-python -m tools.debug_match_he_mul \
-  --he-image data/WD-76845-096.ome.tif \
-  --multiplex-image data/WD-76845-097.ome.tif \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --downsample 64 \
-  --index-json processed_wd/index.json
-
-# Headless — save static 3-panel PNG (no display needed)
-python -m tools.debug_match_he_mul \
-  --he-image data/WD-76845-096.ome.tif \
-  --multiplex-image data/WD-76845-097.ome.tif \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --index-json processed_wd/index.json \
-  --save-png processed_wd/vis_registered_check.png
-```
-
-The overlay panel (right) shows H&E blended with the selected multiplex channel. With good registration, tissue boundaries should coincide. The title bar indicates whether affine or deformable registration was applied.
+- Output quality is sensitive to CD31 channel quality.
 
 ---
 
@@ -730,7 +692,7 @@ Stage 3 is documented around the **CODEX-style clustering** workflow:
 
 ## Group Viewer (Web)
 
-Use these tools for interactive H&E + multiplex group inspection after registration.
+Use these tools for interactive H&E + multiplex group inspection.
 
 ### Web viewer (`tools.view_groups_web`)
 
@@ -765,7 +727,6 @@ Viewer controls:
 
 Rendering behavior:
 
-- Uses registration matrix (`warp_matrix`) from `index.json` to transform multiplex into H&E space.
 - Defaults to `min-level >= 1` to avoid full-resolution level 0 loading.
 - Multi-marker groups use per-channel min-max normalization (no percentile), then multicolor max projection.
 
@@ -787,8 +748,6 @@ pytest tests/ -v
 # Run with coverage report
 pytest tests/ -v --cov=stages --cov=utils --cov-report=term-missing
 
-# Run only registration / mapping tests
-pytest tests/test_patchify_registration.py -v
 ```
 
 Coverage is reported automatically on every CI run via [Codecov](https://codecov.io/gh/pohaoc2/he-feature-visualizer).
