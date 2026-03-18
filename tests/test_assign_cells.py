@@ -93,9 +93,7 @@ def test_compute_type_probabilities_rule_prefers_expected_classes():
 
     df = _make_features_df()
     log = logging.getLogger("test-rule")
-    probs, used, _ = compute_type_probabilities(
-        df, classifier="rule", log=log
-    )
+    probs, used, _ = compute_type_probabilities(df, classifier="rule", log=log)
 
     assert used == "rule"
     top = probs.idxmax(axis=1).tolist()
@@ -105,6 +103,7 @@ def test_compute_type_probabilities_rule_prefers_expected_classes():
 
 
 def test_compute_type_probabilities_codex_prefers_expected_classes():
+    pytest.importorskip("sklearn")
     from stages.assign_cells import compute_type_probabilities
 
     df = _make_features_df()
@@ -133,9 +132,15 @@ def test_preprocess_codex_matrix_matches_per_marker_zscore():
     )
 
     normalized = _preprocess_codex_matrix(df)
-    expected_a = (df["marker_a"] - df["marker_a"].mean()) / df["marker_a"].std(ddof=0)
 
-    assert normalized["marker_a"].to_numpy() == pytest.approx(expected_a.to_numpy())
+    # After background subtraction, winsorization, and z-score, each column
+    # should have approximately zero mean and unit std (when std > 0).
+    a = normalized["marker_a"].to_numpy()
+    assert abs(a.mean()) < 1e-6, "marker_a should be zero-mean after z-score"
+    assert (
+        abs(a.std(ddof=0) - 1.0) < 1e-6
+    ), "marker_a should have unit std after z-score"
+    # Constant-valued column (marker_b) stays zero after z-score (std=0 → filled with 0)
     assert normalized["marker_b"].to_numpy() == pytest.approx([0.0, 0.0, 0.0])
 
 
@@ -226,7 +231,9 @@ def test_rasterize_cells_returns_rgba():
             "cell_state": "quiescent",
         }
     ]
-    out = rasterize_cells(cells, patch_size=64, color_key="cell_type", color_map=CELL_TYPE_COLORS)
+    out = rasterize_cells(
+        cells, patch_size=64, color_key="cell_type", color_map=CELL_TYPE_COLORS
+    )
     assert out.shape == (64, 64, 4)
     assert out.dtype == np.uint8
     assert out[30, 30, 3] > 0
@@ -287,8 +294,8 @@ def test_cli_rule_mode_creates_outputs_and_summary(tmp_path):
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, result.stderr
 
-    assert (out_dir / "cell_types" / "0_0.png").exists()
-    assert (out_dir / "cell_states" / "0_0.png").exists()
+    assert (out_dir / "cell_types" / "union" / "0_0.png").exists()
+    assert (out_dir / "cell_states" / "union" / "0_0.png").exists()
     assignments_csv = out_dir / "cell_assignments.csv"
     assert assignments_csv.exists()
 
@@ -384,5 +391,3 @@ def test_cli_auto_extract_mode_rule_generates_feature_csv(tmp_path):
     summary = json.loads((out_dir / "cell_summary.json").read_text())
     assert summary["feature_source"] == "cellvit_mx_auto"
     assert summary["classifier_used"] == "rule"
-
-

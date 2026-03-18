@@ -32,7 +32,7 @@ def _make_processed(tmp_path: Path, n_patches: int = 3) -> tuple[Path, list[str]
             processed / "he" / f"{pid}.png"
         )
         mx = np.zeros((4, 64, 64), dtype=np.uint16)
-        mx[0, 5:20, 5:20] = 3000   # DNA channel
+        mx[0, 5:20, 5:20] = 3000  # DNA channel
         mx[2, 30:50, 30:50] = 4000  # CD31 channel
         np.save(processed / "multiplex" / f"{pid}.npy", mx)
         cellvit_payload = {
@@ -65,8 +65,12 @@ def _make_processed(tmp_path: Path, n_patches: int = 3) -> tuple[Path, list[str]
                 "is_mismatch": False,
                 "centroid_x_local": 16.0,
                 "centroid_y_local": 16.0,
-                "p_model_cancer": 0.9, "p_model_immune": 0.05, "p_model_healthy": 0.05,
-                "p_final_cancer": 0.9, "p_final_immune": 0.05, "p_final_healthy": 0.05,
+                "p_model_cancer": 0.9,
+                "p_model_immune": 0.05,
+                "p_model_healthy": 0.05,
+                "p_final_cancer": 0.9,
+                "p_final_immune": 0.05,
+                "p_final_healthy": 0.05,
             },
             {
                 "patch_id": pid,
@@ -80,8 +84,12 @@ def _make_processed(tmp_path: Path, n_patches: int = 3) -> tuple[Path, list[str]
                 "is_mismatch": False,
                 "centroid_x_local": 44.0,
                 "centroid_y_local": 44.0,
-                "p_model_cancer": 0.05, "p_model_immune": 0.85, "p_model_healthy": 0.10,
-                "p_final_cancer": 0.05, "p_final_immune": 0.88, "p_final_healthy": 0.07,
+                "p_model_cancer": 0.05,
+                "p_model_immune": 0.85,
+                "p_model_healthy": 0.10,
+                "p_final_cancer": 0.05,
+                "p_final_immune": 0.88,
+                "p_final_healthy": 0.07,
             },
         ]
 
@@ -129,11 +137,16 @@ def test_patch_grid_smoke(tmp_path: Path) -> None:
     out_prefix = processed / "patch_grid"
     cmd = [
         *_tool_cmd(),
-        "--processed", str(processed),
-        "--random", "2",
-        "--seed", "0",
-        "--formats", "png",
-        "--out-prefix", str(out_prefix),
+        "--processed",
+        str(processed),
+        "--random",
+        "2",
+        "--seed",
+        "0",
+        "--formats",
+        "png",
+        "--out-prefix",
+        str(out_prefix),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, result.stderr
@@ -146,11 +159,16 @@ def test_patch_grid_clamps_to_available(tmp_path: Path) -> None:
     out_prefix = processed / "patch_grid_clamped"
     cmd = [
         *_tool_cmd(),
-        "--processed", str(processed),
-        "--random", "99",
-        "--seed", "1",
-        "--formats", "png",
-        "--out-prefix", str(out_prefix),
+        "--processed",
+        str(processed),
+        "--random",
+        "99",
+        "--seed",
+        "1",
+        "--formats",
+        "png",
+        "--out-prefix",
+        str(out_prefix),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, result.stderr
@@ -168,10 +186,14 @@ def test_patch_grid_placeholder_when_cd31_missing(tmp_path: Path) -> None:
     out_prefix = processed / "patch_grid_no_cd31"
     cmd = [
         *_tool_cmd(),
-        "--processed", str(processed),
-        "--random", "1",
-        "--formats", "png",
-        "--out-prefix", str(out_prefix),
+        "--processed",
+        str(processed),
+        "--random",
+        "1",
+        "--formats",
+        "png",
+        "--out-prefix",
+        str(out_prefix),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, result.stderr

@@ -72,10 +72,7 @@ def _pde_matvec(
     """Matrix-free matvec for A = (4D + k)*I - D*Laplacian_disc with Neumann BCs."""
     u = u_flat.reshape(H, W)
     padded = np.pad(u, 1, mode="edge")
-    neigh = (
-        padded[:-2, 1:-1] + padded[2:, 1:-1]
-        + padded[1:-1, :-2] + padded[1:-1, 2:]
-    )
+    neigh = padded[:-2, 1:-1] + padded[2:, 1:-1] + padded[1:-1, :-2] + padded[1:-1, 2:]
     return ((4.0 * diffusion + k_map) * u - diffusion * neigh).ravel()
 
 
@@ -128,6 +125,7 @@ def solve_steady_state_diffusion(
         # Warm-start: exp(-dist/L) is the exact solution for uniform k.
         # For spatially varying k(x), CG only corrects the residual → very few iters.
         from scipy.ndimage import distance_transform_edt
+
         vessel_bool = source > 0
         if vessel_bool.any():
             dist = distance_transform_edt(~vessel_bool)
@@ -151,8 +149,7 @@ def solve_steady_state_diffusion(
     for _ in range(max_iters):
         padded = np.pad(u, 1, mode="edge")
         neighbor_sum = (
-            padded[:-2, 1:-1] + padded[2:, 1:-1]
-            + padded[1:-1, :-2] + padded[1:-1, 2:]
+            padded[:-2, 1:-1] + padded[2:, 1:-1] + padded[1:-1, :-2] + padded[1:-1, 2:]
         )
         jacobi = np.clip((diffusion * neighbor_sum + source32) / denom, 0.0, 1.0)
         if relaxation < 1.0:

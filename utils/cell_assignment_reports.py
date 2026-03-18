@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pandas as pd
 
-
 FINAL_PROB_COLUMNS: tuple[str, str, str] = (
     "p_final_cancer",
     "p_final_immune",
@@ -26,7 +25,9 @@ FINAL_COLLAPSE_GROUPS: dict[str, list[str]] = {
 }
 
 
-def map_cellvit_type(type_cellvit: object, type_cellvit_prior: object | None = None) -> str:
+def map_cellvit_type(
+    type_cellvit: object, type_cellvit_prior: object | None = None
+) -> str:
     """Map raw CellViT classes into the shared 3-class comparison ontology."""
     try:
         value = int(type_cellvit)
@@ -39,7 +40,11 @@ def map_cellvit_type(type_cellvit: object, type_cellvit_prior: object | None = N
     if value == 3:
         return "healthy"
     if value == 5 and isinstance(type_cellvit_prior, str):
-        return type_cellvit_prior if type_cellvit_prior in {"cancer", "immune", "healthy"} else "other"
+        return (
+            type_cellvit_prior
+            if type_cellvit_prior in {"cancer", "immune", "healthy"}
+            else "other"
+        )
     return "other"
 
 
@@ -107,7 +112,11 @@ def load_cell_assignments(csv_path: Path) -> pd.DataFrame:
     ]
     df["final_margin"] = _final_margin(df)
     df["confidence_score"] = (
-        df["cell_type_confidence"].astype(str).str.lower().map(CONFIDENCE_SCORES).fillna(0)
+        df["cell_type_confidence"]
+        .astype(str)
+        .str.lower()
+        .map(CONFIDENCE_SCORES)
+        .fillna(0)
     )
     return df
 
@@ -169,7 +178,9 @@ def _pick_first(
         order_cols.append("cell_id")
     else:
         order_cols.append("_row_id")
-    ordered = df.sort_values(order_cols, ascending=ascending + [True, True], kind="stable")
+    ordered = df.sort_values(
+        order_cols, ascending=ascending + [True, True], kind="stable"
+    )
     for _, row in ordered.iterrows():
         key = row["cell_id"] if "cell_id" in row else row["_row_id"]
         if key in used:
@@ -202,7 +213,9 @@ def select_representative_cells(df: pd.DataFrame, per_class: int = 3) -> pd.Data
         used: set[object] = set()
 
         match = _pick_first(
-            group[group["is_mismatch"] == False],  # noqa: E712 - explicit Series comparison
+            group[
+                group["is_mismatch"] == False
+            ],  # noqa: E712 - explicit Series comparison
             ascending=[False, False],
             used=used,
         )
@@ -218,7 +231,9 @@ def select_representative_cells(df: pd.DataFrame, per_class: int = 3) -> pd.Data
             selected_rows.append(row)
 
         disagreement = _pick_first(
-            group[group["is_mismatch"] == True],  # noqa: E712 - explicit Series comparison
+            group[
+                group["is_mismatch"] == True
+            ],  # noqa: E712 - explicit Series comparison
             ascending=[False, False],
             used=used,
         )
@@ -230,7 +245,9 @@ def select_representative_cells(df: pd.DataFrame, per_class: int = 3) -> pd.Data
     return pd.DataFrame(selected_rows).drop(columns=["_row_id"], errors="ignore")
 
 
-def choose_marker_for_patch(df_patch: pd.DataFrame, marker_columns: list[str]) -> str | None:
+def choose_marker_for_patch(
+    df_patch: pd.DataFrame, marker_columns: list[str]
+) -> str | None:
     """Return the available marker with the strongest class separation."""
     if df_patch.empty:
         return None

@@ -76,7 +76,9 @@ from stages.multiplex_layers_lib.render import (
     apply_colormap,
     make_glucose_map,
     make_glucose_map_distance,
+    make_glucose_map_pde,
     make_oxygen_map,
+    make_oxygen_map_pde,
     make_vasculature_overlay,
 )
 from stages.multiplex_layers_lib.wsi_pde import (
@@ -111,8 +113,10 @@ __all__ = [
     "solve_steady_state_diffusion",
     "compute_metabolic_demand_map",
     "make_oxygen_map",
+    "make_oxygen_map_pde",
     "make_glucose_map",
     "make_glucose_map_distance",
+    "make_glucose_map_pde",
     "read_wsi_channel_stack",
     "solve_wsi_pde_map",
     "extract_patch_from_coarse",

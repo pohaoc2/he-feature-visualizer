@@ -92,13 +92,25 @@ def _ecf_patch_worker(patch_meta: dict) -> dict:
 
     cell_json_path = cellvit_dir / f"{patch_id}.json"
     if not cell_json_path.exists():
-        return {"rows": [], "missing_cellvit": 1, "missing_multiplex": 0,
-                "skipped_cells": 0, "processed_patches": 0, "warn_truncated": False}
+        return {
+            "rows": [],
+            "missing_cellvit": 1,
+            "missing_multiplex": 0,
+            "skipped_cells": 0,
+            "processed_patches": 0,
+            "warn_truncated": False,
+        }
 
     mx_path = multiplex_dir / f"{patch_id}.npy"
     if not mx_path.exists():
-        return {"rows": [], "missing_cellvit": 0, "missing_multiplex": 1,
-                "skipped_cells": 0, "processed_patches": 0, "warn_truncated": False}
+        return {
+            "rows": [],
+            "missing_cellvit": 0,
+            "missing_multiplex": 1,
+            "skipped_cells": 0,
+            "processed_patches": 0,
+            "warn_truncated": False,
+        }
 
     with cell_json_path.open(encoding="utf-8") as fh:
         cells: list[dict] = json.load(fh).get("cells", [])

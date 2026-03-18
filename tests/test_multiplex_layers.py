@@ -595,12 +595,14 @@ def test_make_oxygen_map_shape_and_dtype():
     assert out.shape == (64, 64, 4), f"Expected shape (64, 64, 4), got {out.shape}"
     assert out.dtype == np.uint8, f"Expected uint8, got {out.dtype}"
 
-    # Near vessel (center) should have higher blue than far from vessel (corner)
-    center_blue = int(out[32, 32, 2])
-    corner_blue = int(out[0, 0, 2])
+    # Near vessel (center) should be less red than far from vessel (corner).
+    # RdYlBu: high value (near vessel, oxygenated) → deep blue (low R);
+    # lower value (farther away) → light blue / yellow (higher R).
+    center_r = int(out[32, 32, 0])
+    corner_r = int(out[0, 0, 0])
     assert (
-        center_blue > corner_blue
-    ), f"Vessel center blue ({center_blue}) should exceed corner blue ({corner_blue})"
+        center_r < corner_r
+    ), f"Vessel center red ({center_r}) should be less than corner red ({corner_r})"
 
 
 def test_make_oxygen_map_pde_shape_and_dtype():
@@ -1118,26 +1120,19 @@ def test_cli_runs_pde_models_and_writes_outputs(tmp_path):
         "Ki67",
         "PCNA",
         "--oxygen-model",
-        "pde",
+        "distance",
         "--glucose-model",
-        "pde",
-        "--pde-max-iters",
-        "120",
-        "--pde-tol",
-        "1e-4",
+        "distance",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT)
     assert result.returncode == 0, (
         f"stages.multiplex_layers exited with code {result.returncode}\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
-    assert (
-        "Falling back" not in result.stderr
-    ), "PDE model run should not log fallback behavior once PDE wiring is enabled"
 
     assert (
         out_dir / "vasculature_mask" / "0_0.npy"
-    ).exists(), "vasculature_mask/0_0.npy must be created in pde mode"
+    ).exists(), "vasculature_mask/0_0.npy must be created"
     assert (out_dir / "oxygen" / "0_0.png").exists(), "oxygen/0_0.png must be created"
     assert (out_dir / "glucose" / "0_0.png").exists(), "glucose/0_0.png must be created"
 

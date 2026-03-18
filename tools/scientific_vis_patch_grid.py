@@ -30,34 +30,44 @@ from utils.normalize import percentile_norm
 # ── Color maps ────────────────────────────────────────────────────────────────
 
 CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "cancer":  (220,  50,  50, 200),
-    "immune":  ( 50, 100, 220, 200),
-    "healthy": ( 50, 180,  50, 200),
-    "other":   (150, 150, 150, 120),
+    "cancer": (220, 50, 50, 200),
+    "immune": (50, 100, 220, 200),
+    "healthy": (50, 180, 50, 200),
+    "other": (150, 150, 150, 120),
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferative": (230,  50, 180, 200),   # magenta
-    "quiescent":     (240, 140,  30, 200),   # amber
-    "dead":          (110,  40, 160, 200),   # purple
-    "other":         (160, 160, 160, 120),
+    "proliferative": (230, 50, 180, 200),  # magenta
+    "quiescent": (240, 140, 30, 200),  # amber
+    "dead": (110, 40, 160, 200),  # purple
+    "other": (160, 160, 160, 120),
 }
 
 # Hoechst 33342 fluorescence look: black background → electric blue → blue-white peak
 HOECHST_CMAP = LinearSegmentedColormap.from_list(
     "hoechst33342",
     [
-        (0.00, (0.00, 0.00, 0.00)),   # black background
-        (0.35, (0.04, 0.10, 0.55)),   # deep blue
-        (0.65, (0.10, 0.35, 0.90)),   # electric blue
-        (0.85, (0.35, 0.65, 1.00)),   # bright blue-cyan
-        (1.00, (0.80, 0.93, 1.00)),   # near-white peak
+        (0.00, (0.00, 0.00, 0.00)),  # black background
+        (0.35, (0.04, 0.10, 0.55)),  # deep blue
+        (0.65, (0.10, 0.35, 0.90)),  # electric blue
+        (0.85, (0.35, 0.65, 1.00)),  # bright blue-cyan
+        (1.00, (0.80, 0.93, 1.00)),  # near-white peak
     ],
 )
 
-COL_TITLES = ["H&E", "Hoechst", "Cell mask (CellViT)", "Cell type (CellViT + CODEX)", "Cell state (CODEX)", "Vasculature", "Oxygen (O₂)", "Glucose"]
+COL_TITLES = [
+    "H&E",
+    "Hoechst",
+    "Cell mask (CellViT)",
+    "Cell type (CellViT + CODEX)",
+    "Cell state (CODEX)",
+    "Vasculature",
+    "Oxygen (O₂)",
+    "Glucose",
+]
 
 # ── Small rendering helpers ───────────────────────────────────────────────────
+
 
 def _load_patch_json(path: Path) -> list[dict]:
     with path.open(encoding="utf-8") as fh:
@@ -71,7 +81,9 @@ def _load_patch_json(path: Path) -> list[dict]:
     return []
 
 
-def _composite_rgba_on_rgb(base_rgb: np.ndarray, overlay_rgba: np.ndarray) -> np.ndarray:
+def _composite_rgba_on_rgb(
+    base_rgb: np.ndarray, overlay_rgba: np.ndarray
+) -> np.ndarray:
     base = base_rgb.astype(np.float32)
     if overlay_rgba.ndim != 3 or overlay_rgba.shape[-1] != 4:
         return base_rgb
@@ -133,10 +145,12 @@ def _draw_final_type(
         best_idx, best_dist = None, float("inf")
         for idx in unused:
             r = rows[idx]
-            d = float(np.hypot(
-                centroid[0] - float(r.get("centroid_x_local", 0.0)),
-                centroid[1] - float(r.get("centroid_y_local", 0.0)),
-            ))
+            d = float(
+                np.hypot(
+                    centroid[0] - float(r.get("centroid_x_local", 0.0)),
+                    centroid[1] - float(r.get("centroid_y_local", 0.0)),
+                )
+            )
             if d < best_dist:
                 best_dist, best_idx = d, idx
 
@@ -171,10 +185,12 @@ def _draw_cell_state(
         best_idx, best_dist = None, float("inf")
         for idx in unused:
             r = rows[idx]
-            d = float(np.hypot(
-                centroid[0] - float(r.get("centroid_x_local", 0.0)),
-                centroid[1] - float(r.get("centroid_y_local", 0.0)),
-            ))
+            d = float(
+                np.hypot(
+                    centroid[0] - float(r.get("centroid_x_local", 0.0)),
+                    centroid[1] - float(r.get("centroid_y_local", 0.0)),
+                )
+            )
             if d < best_dist:
                 best_dist, best_idx = d, idx
 
@@ -204,9 +220,16 @@ def _show_or_placeholder(
         ax.imshow(img, cmap=cmap, vmin=0.0, vmax=1.0)
     else:
         ax.imshow(np.full((*shape, 3), 220, dtype=np.uint8))
-        ax.text(0.5, 0.5, f"{label}\nnot in panel",
-                ha="center", va="center", fontsize=7, color="#555555",
-                transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            f"{label}\nnot in panel",
+            ha="center",
+            va="center",
+            fontsize=7,
+            color="#555555",
+            transform=ax.transAxes,
+        )
 
 
 def _add_type_legend(
@@ -216,13 +239,23 @@ def _add_type_legend(
 ) -> None:
     handles = [
         Patch(facecolor=np.array(v[:3], dtype=float) / 255.0, edgecolor="none", label=k)
-        for k, v in color_map.items() if k != "other"
+        for k, v in color_map.items()
+        if k != "other"
     ]
-    ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.02, 0.02),
-              frameon=True, framealpha=0.85, fontsize=6, title=title, title_fontsize=6)
+    ax.legend(
+        handles=handles,
+        loc="lower left",
+        bbox_to_anchor=(0.02, 0.02),
+        frameon=True,
+        framealpha=0.85,
+        fontsize=6,
+        title=title,
+        title_fontsize=6,
+    )
 
 
 # ── Patch discovery ───────────────────────────────────────────────────────────
+
 
 def _available_patches(
     processed_dir: Path,
@@ -233,7 +266,8 @@ def _available_patches(
     cellvit_dir = processed_dir / "cellvit"
     assigned_patches = (
         set(assignments_df["patch_id"].astype(str).unique())
-        if assignments_df is not None else None
+        if assignments_df is not None
+        else None
     )
     patches = []
     for png in sorted(he_dir.glob("*.png")):
@@ -245,7 +279,9 @@ def _available_patches(
         patches.append(pid)
     return patches
 
+
 # ── Main ─────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -255,28 +291,45 @@ def main() -> None:
         )
     )
     parser.add_argument("--processed", required=True, help="Processed directory.")
-    parser.add_argument("--random", dest="n_patches", type=int, required=True,
-                        help="Number of patches to sample randomly.")
+    parser.add_argument(
+        "--random",
+        dest="n_patches",
+        type=int,
+        required=True,
+        help="Number of patches to sample randomly.",
+    )
     parser.add_argument("--seed", type=int, default=None, help="Random seed.")
-    parser.add_argument("--assignments-csv", default=None,
-                        help="Path to cell_assignments.csv. Default: <processed>/cell_assignments.csv")
-    parser.add_argument("--vasc-cd31", default="CD31",
-                        help="CD31 marker name in index.json (default: CD31).")
-    parser.add_argument("--out-prefix", default=None,
-                        help="Output path prefix. Default: <processed>/patch_grid.")
-    parser.add_argument("--formats", default="pdf,png",
-                        help="Comma-separated output formats (default: pdf,png).")
+    parser.add_argument(
+        "--assignments-csv",
+        default=None,
+        help="Path to cell_assignments.csv. Default: <processed>/cell_assignments.csv",
+    )
+    parser.add_argument(
+        "--vasc-cd31",
+        default="CD31",
+        help="CD31 marker name in index.json (default: CD31).",
+    )
+    parser.add_argument(
+        "--out-prefix",
+        default=None,
+        help="Output path prefix. Default: <processed>/patch_grid.",
+    )
+    parser.add_argument(
+        "--formats",
+        default="pdf,png",
+        help="Comma-separated output formats (default: pdf,png).",
+    )
     parser.add_argument("--dpi", type=int, default=300, help="Raster DPI.")
     args = parser.parse_args()
 
     processed_dir = Path(args.processed)
     assignments_path = (
-        Path(args.assignments_csv) if args.assignments_csv
+        Path(args.assignments_csv)
+        if args.assignments_csv
         else processed_dir / "cell_assignments.csv"
     )
     out_prefix = (
-        Path(args.out_prefix) if args.out_prefix
-        else processed_dir / "patch_grid"
+        Path(args.out_prefix) if args.out_prefix else processed_dir / "patch_grid"
     )
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
 
@@ -287,11 +340,15 @@ def main() -> None:
     if assignments_path.exists():
         assignments_df = load_cell_assignments(assignments_path)
     else:
-        print(f"[warn] assignments CSV not found ({assignments_path}); cell type/state cols will be blank.")
+        print(
+            f"[warn] assignments CSV not found ({assignments_path}); cell type/state cols will be blank."
+        )
         assignments_df = None
     patches = _available_patches(processed_dir, assignments_df)
     if not patches:
-        raise RuntimeError("No patches found with all required files (he, cellvit, assignments).")
+        raise RuntimeError(
+            "No patches found with all required files (he, cellvit, assignments)."
+        )
 
     n = min(args.n_patches, len(patches))
     rng = random.Random(args.seed)
@@ -300,7 +357,9 @@ def main() -> None:
     # Figure: n rows × 8 cols + extra width for two colorbars
     col_w, row_h = 2.5, 2.5
     n_cols = len(COL_TITLES)
-    fig, axes = plt.subplots(n, n_cols, figsize=(n_cols * col_w + 1.2, n * row_h), constrained_layout=True)
+    fig, axes = plt.subplots(
+        n, n_cols, figsize=(n_cols * col_w + 1.2, n * row_h), constrained_layout=True
+    )
     if n == 1:
         axes = axes[np.newaxis, :]  # ensure 2-D indexing
 
@@ -320,28 +379,51 @@ def main() -> None:
         cells = _load_patch_json(cellvit_path)
         asgn = (
             assignments_df[assignments_df["patch_id"].astype(str) == patch_id].copy()
-            if assignments_df is not None else pd.DataFrame()
+            if assignments_df is not None
+            else pd.DataFrame()
         )
 
         # Hoechst = channel 0 of the MX array
         hoechst_img = (
-            percentile_norm(mx_arr[0].astype(np.float32)) if mx_arr is not None else None
+            percentile_norm(mx_arr[0].astype(np.float32))
+            if mx_arr is not None
+            else None
         )
 
         # Vasculature / oxygen / glucose PNGs from Stage 4 output
         vasc_png = processed_dir / "vasculature" / f"{patch_id}.png"
         oxygen_png = processed_dir / "oxygen" / f"{patch_id}.png"
         glucose_png = processed_dir / "glucose" / f"{patch_id}.png"
-        vasc_rgba = np.array(Image.open(vasc_png).convert("RGBA")) if vasc_png.exists() else None
-        oxygen_rgba = np.array(Image.open(oxygen_png).convert("RGBA")) if oxygen_png.exists() else None
-        glucose_rgba = np.array(Image.open(glucose_png).convert("RGBA")) if glucose_png.exists() else None
+        vasc_rgba = (
+            np.array(Image.open(vasc_png).convert("RGBA"))
+            if vasc_png.exists()
+            else None
+        )
+        oxygen_rgba = (
+            np.array(Image.open(oxygen_png).convert("RGBA"))
+            if oxygen_png.exists()
+            else None
+        )
+        glucose_rgba = (
+            np.array(Image.open(glucose_png).convert("RGBA"))
+            if glucose_png.exists()
+            else None
+        )
 
         # Composite vasculature overlay onto H&E for display
-        vasc_on_he = _composite_rgba_on_rgb(he_rgb, vasc_rgba) if vasc_rgba is not None else he_rgb.copy()
+        vasc_on_he = (
+            _composite_rgba_on_rgb(he_rgb, vasc_rgba)
+            if vasc_rgba is not None
+            else he_rgb.copy()
+        )
 
         mask_img = _draw_cellvit_mask(patch_shape, cells)
-        final_on_he = _draw_final_type(he_rgb, cells, asgn) if not asgn.empty else he_rgb.copy()
-        state_on_he = _draw_cell_state(he_rgb, cells, asgn) if not asgn.empty else he_rgb.copy()
+        final_on_he = (
+            _draw_final_type(he_rgb, cells, asgn) if not asgn.empty else he_rgb.copy()
+        )
+        state_on_he = (
+            _draw_cell_state(he_rgb, cells, asgn) if not asgn.empty else he_rgb.copy()
+        )
 
         ax_row = axes[row_idx]
 
@@ -350,7 +432,9 @@ def main() -> None:
         ax_row[0].set_ylabel(patch_id, fontsize=7, labelpad=3)
 
         # C2: Hoechst (channel 0)
-        _show_or_placeholder(ax_row[1], hoechst_img, patch_shape, HOECHST_CMAP, "Hoechst")
+        _show_or_placeholder(
+            ax_row[1], hoechst_img, patch_shape, HOECHST_CMAP, "Hoechst"
+        )
 
         # C3: CellViT binary mask
         ax_row[2].imshow(mask_img, cmap="gray")
@@ -362,8 +446,16 @@ def main() -> None:
                 _add_type_legend(ax_row[3], CELL_TYPE_COLORS)
         else:
             ax_row[3].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
-            ax_row[3].text(0.5, 0.5, "No assignments", ha="center", va="center",
-                           fontsize=7, color="#555555", transform=ax_row[3].transAxes)
+            ax_row[3].text(
+                0.5,
+                0.5,
+                "No assignments",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#555555",
+                transform=ax_row[3].transAxes,
+            )
 
         # C5: Cell state
         if assignments_df is not None:
@@ -372,32 +464,64 @@ def main() -> None:
                 _add_type_legend(ax_row[4], CELL_STATE_COLORS, title="State")
         else:
             ax_row[4].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
-            ax_row[4].text(0.5, 0.5, "No assignments", ha="center", va="center",
-                           fontsize=7, color="#555555", transform=ax_row[4].transAxes)
+            ax_row[4].text(
+                0.5,
+                0.5,
+                "No assignments",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#555555",
+                transform=ax_row[4].transAxes,
+            )
 
         # C6: Vasculature overlay on H&E
         if vasc_rgba is not None:
             ax_row[5].imshow(vasc_on_he)
         else:
             ax_row[5].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
-            ax_row[5].text(0.5, 0.5, "Vasculature\nnot found", ha="center", va="center",
-                           fontsize=7, color="#555555", transform=ax_row[5].transAxes)
+            ax_row[5].text(
+                0.5,
+                0.5,
+                "Vasculature\nnot found",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#555555",
+                transform=ax_row[5].transAxes,
+            )
 
         # C7: Oxygen map (RGBA colormap image)
         if oxygen_rgba is not None:
             ax_row[6].imshow(oxygen_rgba)
         else:
             ax_row[6].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
-            ax_row[6].text(0.5, 0.5, "Oxygen\nnot found", ha="center", va="center",
-                           fontsize=7, color="#555555", transform=ax_row[6].transAxes)
+            ax_row[6].text(
+                0.5,
+                0.5,
+                "Oxygen\nnot found",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#555555",
+                transform=ax_row[6].transAxes,
+            )
 
         # C8: Glucose map (RGBA colormap image)
         if glucose_rgba is not None:
             ax_row[7].imshow(glucose_rgba)
         else:
             ax_row[7].imshow(np.full((*patch_shape, 3), 220, dtype=np.uint8))
-            ax_row[7].text(0.5, 0.5, "Glucose\nnot found", ha="center", va="center",
-                           fontsize=7, color="#555555", transform=ax_row[7].transAxes)
+            ax_row[7].text(
+                0.5,
+                0.5,
+                "Glucose\nnot found",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#555555",
+                transform=ax_row[7].transAxes,
+            )
 
         for ax in ax_row:
             ax.set_xticks([])

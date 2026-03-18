@@ -140,7 +140,10 @@ def test_load_cell_assignments_adds_margin_and_bool(tmp_path: Path) -> None:
     assert "cellvit_mapped_type" in loaded.columns
     assert "final_margin" in loaded.columns
     assert loaded.loc[loaded["cell_id"] == "c_match", "final_margin"].item() == 0.87
-    assert loaded.loc[loaded["cell_id"] == "c_match", "cellvit_mapped_type"].item() == "other"
+    assert (
+        loaded.loc[loaded["cell_id"] == "c_match", "cellvit_mapped_type"].item()
+        == "other"
+    )
 
 
 def test_summarize_patch_assignments_computes_expected_metrics() -> None:
@@ -148,7 +151,9 @@ def test_summarize_patch_assignments_computes_expected_metrics() -> None:
 
     assert list(summary["patch_id"]) == ["p_bad", "p_good"]
     assert summary.loc[summary["patch_id"] == "p_bad", "mismatch_count"].item() == 1
-    assert summary.loc[summary["patch_id"] == "p_bad", "low_confidence_count"].item() == 1
+    assert (
+        summary.loc[summary["patch_id"] == "p_bad", "low_confidence_count"].item() == 1
+    )
     assert summary.loc[summary["patch_id"] == "p_good", "n_cells"].item() == 2
 
 
@@ -186,7 +191,9 @@ def test_model_label_column_prefers_fine_labels_for_codex() -> None:
     df = _make_assignments_df()
 
     assert reports.model_display_name("codex") == "CODEX"
-    assert reports.model_label_column(df, "codex", prefer_fine=True) == "type_codex_fine"
+    assert (
+        reports.model_label_column(df, "codex", prefer_fine=True) == "type_codex_fine"
+    )
 
 
 def test_collapse_display_lines_for_fine_model_labels() -> None:

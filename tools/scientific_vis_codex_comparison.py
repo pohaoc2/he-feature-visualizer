@@ -24,21 +24,22 @@ from utils.normalize import percentile_norm
 CELL_TYPES: tuple[str, str, str] = ("cancer", "immune", "healthy")
 
 TYPE_COLORS = {
-    "cancer":  "#DC3232",
-    "immune":  "#3264DC",
+    "cancer": "#DC3232",
+    "immune": "#3264DC",
     "healthy": "#32B432",
 }
 
 MARKER_COLORS = {
-    "cancer":  "#DC3232",
-    "immune":  "#3264DC",
+    "cancer": "#DC3232",
+    "immune": "#3264DC",
     "healthy": "#32B432",
 }
 
-CROP_HALF = 28   # 56×56 px crop
+CROP_HALF = 28  # 56×56 px crop
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
+
 
 def _filter_assignable(df: pd.DataFrame) -> pd.DataFrame:
     """Exclude rows where cell_type is not one of the three canonical classes."""
@@ -94,7 +95,9 @@ def _select_examples(df: pd.DataFrame) -> dict[str, pd.Series | None]:
 
     # disagree: is_mismatch=True, highest codex_margin
     results["disagree"] = None
-    for idx, row in df[df["is_mismatch"]].sort_values("codex_margin", ascending=False).iterrows():
+    for idx, row in (
+        df[df["is_mismatch"]].sort_values("codex_margin", ascending=False).iterrows()
+    ):
         if idx not in used:
             used.add(idx)
             results["disagree"] = row
@@ -104,6 +107,7 @@ def _select_examples(df: pd.DataFrame) -> dict[str, pd.Series | None]:
 
 
 # ── Rendering helpers ──────────────────────────────────────────────────────────
+
 
 def _load_he_crop(
     processed_dir: Path,
@@ -179,7 +183,7 @@ def _load_cell_contour(
     contour = cells[cell_index].get("contour", [])
     if not contour:
         return None
-    pts = np.array(contour, dtype=float)   # shape (N, 2): [[x, y], ...]
+    pts = np.array(contour, dtype=float)  # shape (N, 2): [[x, y], ...]
     xs = pts[:, 0] - x0_crop
     ys = pts[:, 1] - y0_crop
     return xs, ys
@@ -204,7 +208,11 @@ def _plot_marker_bar(
     bar_y_positions = [0.88, 0.65, 0.42]
     bar_h = 0.15
     role_keys = ["cancer_marker", "immune_marker", "healthy_marker"]
-    colors = [MARKER_COLORS["cancer"], MARKER_COLORS["immune"], MARKER_COLORS["healthy"]]
+    colors = [
+        MARKER_COLORS["cancer"],
+        MARKER_COLORS["immune"],
+        MARKER_COLORS["healthy"],
+    ]
 
     for bar_y, role, color in zip(bar_y_positions, role_keys, colors):
         marker_name = markers.get(role, "")
@@ -215,15 +223,23 @@ def _plot_marker_bar(
             ax.barh(bar_y, val, height=bar_h, color=color, align="center", left=0)
             ax.text(min(val + 0.02, 0.97), bar_y, f"{val:.2f}", va="center", fontsize=6)
         else:
-            ax.text(0.5, bar_y, "n/a", va="center", ha="center",
-                    fontsize=7, color="#888888")
+            ax.text(
+                0.5, bar_y, "n/a", va="center", ha="center", fontsize=7, color="#888888"
+            )
 
         ax.text(-0.02, bar_y, label, va="center", ha="right", fontsize=6)
 
     # x-axis label between bottom bar and text block
-    ax.text(0.5, 0.29, "norm. intensity (1–99th pct.)",
-            va="center", ha="center", fontsize=5, color="#555555",
-            transform=ax.transAxes)
+    ax.text(
+        0.5,
+        0.29,
+        "norm. intensity (1–99th pct.)",
+        va="center",
+        ha="center",
+        fontsize=5,
+        color="#555555",
+        transform=ax.transAxes,
+    )
 
     # text block — placed at the very bottom of the axes below the bars
     final = str(row.get("cell_type", "?"))
@@ -231,9 +247,19 @@ def _plot_marker_bar(
     codex = str(row.get("type_codex", "?"))
     margin = float(row.get("codex_margin", float("nan")))
     # "CODEX conf." = p_winner − max(p_others): how decisively CODEX chose this class
-    text = f"Final:   {final}\nCellViT: {cvit}\nCODEX:   {codex}\nCODEX conf: {margin:.2f}"
-    ax.text(0.5, 0.01, text, va="bottom", ha="center", fontsize=6,
-            family="monospace", transform=ax.transAxes)
+    text = (
+        f"Final:   {final}\nCellViT: {cvit}\nCODEX:   {codex}\nCODEX conf: {margin:.2f}"
+    )
+    ax.text(
+        0.5,
+        0.01,
+        text,
+        va="bottom",
+        ha="center",
+        fontsize=6,
+        family="monospace",
+        transform=ax.transAxes,
+    )
 
 
 def _plot_confusion_heatmap(ax: plt.Axes, df: pd.DataFrame) -> None:
@@ -258,12 +284,25 @@ def _plot_confusion_heatmap(ax: plt.Axes, df: pd.DataFrame) -> None:
 
     for i in range(3):
         for j in range(3):
-            ax.text(j, i - 0.12, str(counts[i, j]),
-                    ha="center", va="center", fontsize=14, fontweight="bold",
-                    color="white" if counts[i, j] > counts.max() * 0.6 else "black")
-            ax.text(j, i + 0.22, f"{row_norm[i, j]:.0%}",
-                    ha="center", va="center", fontsize=9,
-                    color="white" if counts[i, j] > counts.max() * 0.6 else "black")
+            ax.text(
+                j,
+                i - 0.12,
+                str(counts[i, j]),
+                ha="center",
+                va="center",
+                fontsize=14,
+                fontweight="bold",
+                color="white" if counts[i, j] > counts.max() * 0.6 else "black",
+            )
+            ax.text(
+                j,
+                i + 0.22,
+                f"{row_norm[i, j]:.0%}",
+                ha="center",
+                va="center",
+                fontsize=9,
+                color="white" if counts[i, j] > counts.max() * 0.6 else "black",
+            )
 
     ax.set_xticks(range(3))
     ax.set_xticklabels(classes, fontsize=13)
@@ -315,9 +354,17 @@ def _plot_summary_panel(
         "   contributes to Final via fusion)",
     ]
 
-    ax.text(0.05, 0.95, "\n".join(lines), transform=ax.transAxes,
-            va="top", ha="left", fontsize=10, family="monospace",
-            linespacing=1.6)
+    ax.text(
+        0.05,
+        0.95,
+        "\n".join(lines),
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        fontsize=10,
+        family="monospace",
+        linespacing=1.6,
+    )
 
 
 def _plot_triptych(
@@ -337,7 +384,8 @@ def _plot_triptych(
     selected row's integer position back to norm_vals array index.
     """
     inner = subplot_spec.subgridspec(
-        3, 3,
+        3,
+        3,
         height_ratios=[0.15, 1.1, 0.85],
         hspace=0.06,
         wspace=0.12,
@@ -347,10 +395,13 @@ def _plot_triptych(
     ax_header = fig.add_subplot(inner[0, :])
     ax_header.axis("off")
     ax_header.text(
-        0.02, 0.5,
+        0.02,
+        0.5,
         f"{panel_label}   {class_name.capitalize()}",
         transform=ax_header.transAxes,
-        va="center", fontsize=11, fontweight="bold",
+        va="center",
+        fontsize=11,
+        fontweight="bold",
         color=TYPE_COLORS.get(class_name, "#333333"),
     )
 
@@ -386,27 +437,46 @@ def _plot_triptych(
                     try:
                         cell_index = int(cell_index_raw)
                         contour = _load_cell_contour(
-                            processed_dir, str(row_data["patch_id"]),
-                            cell_index, x0_patch, y0_patch,
+                            processed_dir,
+                            str(row_data["patch_id"]),
+                            cell_index,
+                            x0_patch,
+                            y0_patch,
                         )
                         if contour is not None:
                             xs, ys = contour
                             ax_he.plot(
-                                np.append(xs, xs[0]), np.append(ys, ys[0]),
-                                color=spine_color, linewidth=1.5,
+                                np.append(xs, xs[0]),
+                                np.append(ys, ys[0]),
+                                color=spine_color,
+                                linewidth=1.5,
                             )
                     except (ValueError, TypeError):
                         pass
             else:
                 ax_he.set_facecolor("#dddddd")
-                ax_he.text(0.5, 0.5, "image\nnot found",
-                           ha="center", va="center", fontsize=7, color="#555555",
-                           transform=ax_he.transAxes)
+                ax_he.text(
+                    0.5,
+                    0.5,
+                    "image\nnot found",
+                    ha="center",
+                    va="center",
+                    fontsize=7,
+                    color="#555555",
+                    transform=ax_he.transAxes,
+                )
         else:
             ax_he.set_facecolor("#eeeeee")
-            ax_he.text(0.5, 0.5, "no example\navailable",
-                       ha="center", va="center", fontsize=7, color="#777777",
-                       transform=ax_he.transAxes)
+            ax_he.text(
+                0.5,
+                0.5,
+                "no example\navailable",
+                ha="center",
+                va="center",
+                fontsize=7,
+                color="#777777",
+                transform=ax_he.transAxes,
+            )
 
         # Marker bar (inner row 2)
         ax_bar = fig.add_subplot(inner[2, col])
@@ -416,8 +486,16 @@ def _plot_triptych(
             _plot_marker_bar(ax_bar, row_data, norm_vals, markers, row_index=row_pos)
         else:
             ax_bar.axis("off")
-            ax_bar.text(0.5, 0.5, "—", ha="center", va="center",
-                        fontsize=10, color="#aaaaaa", transform=ax_bar.transAxes)
+            ax_bar.text(
+                0.5,
+                0.5,
+                "—",
+                ha="center",
+                va="center",
+                fontsize=10,
+                color="#aaaaaa",
+                transform=ax_bar.transAxes,
+            )
 
 
 def build_report_figure(
@@ -442,7 +520,9 @@ def build_report_figure(
     norm_vals: dict[str, np.ndarray] = {}
     for col_name in markers.values():
         if col_name in df.columns:
-            norm_vals[col_name] = percentile_norm(df[col_name].values.astype(np.float32))
+            norm_vals[col_name] = percentile_norm(
+                df[col_name].values.astype(np.float32)
+            )
         # if absent from CSV, omit — _plot_marker_bar renders n/a
 
     # Outer gridspec: 4 rows × 1 col
@@ -481,14 +561,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="CellViT vs CODEX cell type comparison figure."
     )
-    parser.add_argument("--processed", required=True,
-                        help="Processed directory (for he/ patches).")
-    parser.add_argument("--assignments-csv", default=None,
-                        help="Path to cell_assignments.csv. Default: <processed>/cell_assignments.csv")
-    parser.add_argument("--out-prefix", default=None,
-                        help="Output path prefix. Default: <processed>/codex_comparison")
-    parser.add_argument("--formats", default="pdf,png",
-                        help="Comma-separated output formats (default: pdf,png).")
+    parser.add_argument(
+        "--processed", required=True, help="Processed directory (for he/ patches)."
+    )
+    parser.add_argument(
+        "--assignments-csv",
+        default=None,
+        help="Path to cell_assignments.csv. Default: <processed>/cell_assignments.csv",
+    )
+    parser.add_argument(
+        "--out-prefix",
+        default=None,
+        help="Output path prefix. Default: <processed>/codex_comparison",
+    )
+    parser.add_argument(
+        "--formats",
+        default="pdf,png",
+        help="Comma-separated output formats (default: pdf,png).",
+    )
     parser.add_argument("--dpi", type=int, default=300, help="Raster DPI.")
     parser.add_argument("--cancer-marker", default="Pan-CK")
     parser.add_argument("--immune-marker", default="CD45")
@@ -497,12 +587,12 @@ def main() -> None:
 
     processed_dir = Path(args.processed)
     assignments_path = (
-        Path(args.assignments_csv) if args.assignments_csv
+        Path(args.assignments_csv)
+        if args.assignments_csv
         else processed_dir / "cell_assignments.csv"
     )
     out_prefix = (
-        Path(args.out_prefix) if args.out_prefix
-        else processed_dir / "codex_comparison"
+        Path(args.out_prefix) if args.out_prefix else processed_dir / "codex_comparison"
     )
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
 

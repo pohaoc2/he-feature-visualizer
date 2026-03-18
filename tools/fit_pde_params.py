@@ -17,6 +17,7 @@ Usage
         --n-patches 10
 
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,11 +45,15 @@ from stages.multiplex_layers_lib.channels import (
 from utils.normalize import percentile_norm
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-                    datefmt="%H:%M:%S")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 
 # ── Patch loading ─────────────────────────────────────────────────────────────
+
 
 def _load_patch(
     mx_path: pathlib.Path,
@@ -66,12 +71,14 @@ def _load_patch(
     demand_map = compute_metabolic_demand_map(ki67_raw)
     immune_map = (
         percentile_norm(arr[cd68_idx].astype(np.float32))
-        if cd68_idx is not None else None
+        if cd68_idx is not None
+        else None
     )
     return vessel_mask, ki67_norm, demand_map, immune_map
 
 
 # ── O2 profile simulation ─────────────────────────────────────────────────────
+
 
 def _simulate_o2_profile(
     patches: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]],
@@ -117,6 +124,7 @@ def _simulate_o2_profile(
 
 # ── Correlation objective ─────────────────────────────────────────────────────
 
+
 def _correlation(
     log_D: float,
     patches: list,
@@ -136,8 +144,9 @@ def _correlation(
     )
 
     # Align bins with ki67_df distance_um
-    ki67_interp = np.interp(dist_um, ki67_df["distance_um"], ki67_df["ki67_mean"],
-                            left=np.nan, right=np.nan)
+    ki67_interp = np.interp(
+        dist_um, ki67_df["distance_um"], ki67_df["ki67_mean"], left=np.nan, right=np.nan
+    )
 
     valid = np.isfinite(mean_o2) & np.isfinite(ki67_interp)
     if valid.sum() < 3:
@@ -148,6 +157,7 @@ def _correlation(
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -156,34 +166,74 @@ def main() -> None:
             "best correlates with observed Ki67 per distance bin."
         )
     )
-    parser.add_argument("--processed", required=True,
-                        help="Processed directory (contains multiplex/, vasculature_mask/, "
-                             "validation/ki67_vs_distance.csv, index.json).")
-    parser.add_argument("--metadata-csv", required=True,
-                        help="Channel metadata CSV.")
-    parser.add_argument("--channels", nargs="+", default=None,
-                        help="Channel names in .npy order. Default: from index.json.")
-    parser.add_argument("--n-patches", type=int, default=20,
-                        help="Number of patches to sample for fitting (default: 20).")
+    parser.add_argument(
+        "--processed",
+        required=True,
+        help="Processed directory (contains multiplex/, vasculature_mask/, "
+        "validation/ki67_vs_distance.csv, index.json).",
+    )
+    parser.add_argument("--metadata-csv", required=True, help="Channel metadata CSV.")
+    parser.add_argument(
+        "--channels",
+        nargs="+",
+        default=None,
+        help="Channel names in .npy order. Default: from index.json.",
+    )
+    parser.add_argument(
+        "--n-patches",
+        type=int,
+        default=20,
+        help="Number of patches to sample for fitting (default: 20).",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
-    parser.add_argument("--k-base", type=float, default=0.1,
-                        help="Base consumption rate to use during search (default: 0.1).")
-    parser.add_argument("--demand-weight", type=float, default=0.3,
-                        help="Ki67 demand weight (default: 0.3).")
-    parser.add_argument("--immune-weight", type=float, default=0.1,
-                        help="CD68 immune weight (default: 0.1).")
-    parser.add_argument("--bin-um", type=float, default=10.0,
-                        help="Distance bin width in µm (default: 10).")
-    parser.add_argument("--d-min", type=float, default=1.0,
-                        help="Minimum D to search (default: 1).")
-    parser.add_argument("--d-max", type=float, default=1e6,
-                        help="Maximum D to search (default: 1e6).")
-    parser.add_argument("--n-steps", type=int, default=25,
-                        help="Number of log-spaced D values to evaluate (default: 25).")
-    parser.add_argument("--max-iters", type=int, default=1000,
-                        help="PDE solver iterations per candidate D (default: 1000).")
-    parser.add_argument("--tol", type=float, default=1e-3,
-                        help="PDE convergence tolerance (default: 1e-3).")
+    parser.add_argument(
+        "--k-base",
+        type=float,
+        default=0.1,
+        help="Base consumption rate to use during search (default: 0.1).",
+    )
+    parser.add_argument(
+        "--demand-weight",
+        type=float,
+        default=0.3,
+        help="Ki67 demand weight (default: 0.3).",
+    )
+    parser.add_argument(
+        "--immune-weight",
+        type=float,
+        default=0.1,
+        help="CD68 immune weight (default: 0.1).",
+    )
+    parser.add_argument(
+        "--bin-um",
+        type=float,
+        default=10.0,
+        help="Distance bin width in µm (default: 10).",
+    )
+    parser.add_argument(
+        "--d-min", type=float, default=1.0, help="Minimum D to search (default: 1)."
+    )
+    parser.add_argument(
+        "--d-max", type=float, default=1e6, help="Maximum D to search (default: 1e6)."
+    )
+    parser.add_argument(
+        "--n-steps",
+        type=int,
+        default=25,
+        help="Number of log-spaced D values to evaluate (default: 25).",
+    )
+    parser.add_argument(
+        "--max-iters",
+        type=int,
+        default=1000,
+        help="PDE solver iterations per candidate D (default: 1000).",
+    )
+    parser.add_argument(
+        "--tol",
+        type=float,
+        default=1e-3,
+        help="PDE convergence tolerance (default: 1e-3).",
+    )
     args = parser.parse_args()
 
     processed_dir = pathlib.Path(args.processed)
@@ -207,10 +257,15 @@ def main() -> None:
     # Physical calibration reference
     L_o2_px = 160.0 / mpp
     L_glc_px = 450.0 / mpp
-    D_phys_o2 = L_o2_px ** 2 * args.k_base
-    D_phys_glc = L_glc_px ** 2 * args.k_base
-    log.info("Physical calibration: D_O2=%.1f  D_glucose=%.1f  (k_base=%.4f, mpp=%.4f)",
-             D_phys_o2, D_phys_glc, args.k_base, mpp)
+    D_phys_o2 = L_o2_px**2 * args.k_base
+    D_phys_glc = L_glc_px**2 * args.k_base
+    log.info(
+        "Physical calibration: D_O2=%.1f  D_glucose=%.1f  (k_base=%.4f, mpp=%.4f)",
+        D_phys_o2,
+        D_phys_glc,
+        args.k_base,
+        mpp,
+    )
 
     # Resolve channel indices
     cd31_idx = get_channel_index(channels, "CD31")
@@ -222,8 +277,12 @@ def main() -> None:
     ki67_df = ki67_df[ki67_df["pixel_count"] > 50]  # skip low-count bins
     if ki67_df.empty:
         raise RuntimeError("Ki67 validation CSV is empty or all bins have < 50 pixels.")
-    log.info("Ki67 curve: %d bins, distance %.1f–%.1f µm",
-             len(ki67_df), ki67_df["distance_um"].min(), ki67_df["distance_um"].max())
+    log.info(
+        "Ki67 curve: %d bins, distance %.1f–%.1f µm",
+        len(ki67_df),
+        ki67_df["distance_um"].min(),
+        ki67_df["distance_um"].max(),
+    )
 
     # Sample patches
     mx_files = sorted(mx_dir.glob("*.npy"))
@@ -240,14 +299,26 @@ def main() -> None:
 
     # Grid search over D in log space
     D_candidates = np.logspace(np.log10(args.d_min), np.log10(args.d_max), args.n_steps)
-    log.info("Searching %d D values from %.1f to %.1e …", args.n_steps, args.d_min, args.d_max)
+    log.info(
+        "Searching %d D values from %.1f to %.1e …",
+        args.n_steps,
+        args.d_min,
+        args.d_max,
+    )
 
     results = []
     for D in D_candidates:
         r = _correlation(
-            np.log(D), patches, ki67_df,
-            args.k_base, args.demand_weight, args.immune_weight,
-            mpp, args.bin_um, args.max_iters, args.tol,
+            np.log(D),
+            patches,
+            ki67_df,
+            args.k_base,
+            args.demand_weight,
+            args.immune_weight,
+            mpp,
+            args.bin_um,
+            args.max_iters,
+            args.tol,
         )
         results.append((D, r))
         log.info("  D=%10.1f  r=%.4f", D, r)
@@ -261,7 +332,9 @@ def main() -> None:
     print("=" * 60)
     print(f"  Physical calibration (Krogh 160 µm):  D = {D_phys_o2:.1f}")
     print(f"  Physical calibration (Krogh 450 µm):  D = {D_phys_glc:.1f}")
-    print(f"  Ki67-fitted D (oxygen):                D = {D_opt:.1f}  (r = {r_opt:.4f})")
+    print(
+        f"  Ki67-fitted D (oxygen):                D = {D_opt:.1f}  (r = {r_opt:.4f})"
+    )
     print()
     print("Suggested CLI (physically calibrated, recommended):")
     print(f"  --oxygen-model pde --oxygen-krogh-um 160")

@@ -12,7 +12,6 @@ from PIL import Image
 
 import tools.scientific_vis_cellvit_mx as patch_vis
 
-
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 
 
@@ -40,9 +39,18 @@ def test_add_state_legend_contains_expected_labels() -> None:
 
 
 def test_state_palette_is_distinct_from_type_palette() -> None:
-    assert patch_vis.CELL_STATE_COLORS["proliferative"][:3] != patch_vis.CELL_TYPE_COLORS["healthy"][:3]
-    assert patch_vis.CELL_STATE_COLORS["quiescent"][:3] != patch_vis.CELL_TYPE_COLORS["immune"][:3]
-    assert patch_vis.CELL_STATE_COLORS["dead"][:3] != patch_vis.MODEL_FINE_COLORS["treg"][:3]
+    assert (
+        patch_vis.CELL_STATE_COLORS["proliferative"][:3]
+        != patch_vis.CELL_TYPE_COLORS["healthy"][:3]
+    )
+    assert (
+        patch_vis.CELL_STATE_COLORS["quiescent"][:3]
+        != patch_vis.CELL_TYPE_COLORS["immune"][:3]
+    )
+    assert (
+        patch_vis.CELL_STATE_COLORS["dead"][:3]
+        != patch_vis.MODEL_FINE_COLORS["treg"][:3]
+    )
 
 
 def test_state_colors_cover_all_states() -> None:
@@ -51,7 +59,9 @@ def test_state_colors_cover_all_states() -> None:
         r, g, b, a = patch_vis.CELL_STATE_COLORS[state]
         assert 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255
     # All four non-other states should be unique RGB triplets
-    non_other = {k: v[:3] for k, v in patch_vis.CELL_STATE_COLORS.items() if k != "other"}
+    non_other = {
+        k: v[:3] for k, v in patch_vis.CELL_STATE_COLORS.items() if k != "other"
+    }
     assert len(set(non_other.values())) == len(non_other), "duplicate state colors"
 
 

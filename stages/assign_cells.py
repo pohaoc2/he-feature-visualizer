@@ -77,14 +77,14 @@ CODEX_FINE_TYPE_MARKERS: dict[str, list[str]] = {
 # cell with uniform fine-type probabilities maps to equal 3-class probabilities (0.33 each)
 # rather than immune=0.625 from the structural 5:1:2 imbalance.
 CODEX_FINE_TO_FINAL_WEIGHTS: dict[str, dict[str, float]] = {
-    "epithelial": {"cancer": 1.0},    # 1/1 cancer
-    "cd4_t":      {"immune": 0.2},    # 1/5 immune
-    "cd8_t":      {"immune": 0.2},    # 1/5 immune
-    "treg":       {"immune": 0.2},    # 1/5 immune
-    "b_cell":     {"immune": 0.2},    # 1/5 immune
-    "macrophage": {"immune": 0.2},    # 1/5 immune
-    "endothelial":  {"healthy": 0.5}, # 1/2 healthy
-    "sma_stromal":  {"healthy": 0.5}, # 1/2 healthy
+    "epithelial": {"cancer": 1.0},  # 1/1 cancer
+    "cd4_t": {"immune": 0.2},  # 1/5 immune
+    "cd8_t": {"immune": 0.2},  # 1/5 immune
+    "treg": {"immune": 0.2},  # 1/5 immune
+    "b_cell": {"immune": 0.2},  # 1/5 immune
+    "macrophage": {"immune": 0.2},  # 1/5 immune
+    "endothelial": {"healthy": 0.5},  # 1/2 healthy
+    "sma_stromal": {"healthy": 0.5},  # 1/2 healthy
 }
 
 NON_TYPING_MARKERS: tuple[str, ...] = ("Hoechst", "AF1", "Argo550", "PD-L1")
@@ -158,7 +158,9 @@ def _collapse_weighted_fine_probabilities(
     for fine_type, weights in fine_to_final.items():
         if fine_type not in probs.columns:
             continue
-        series = pd.to_numeric(probs[fine_type], errors="coerce").fillna(0.0).clip(lower=0.0)
+        series = (
+            pd.to_numeric(probs[fine_type], errors="coerce").fillna(0.0).clip(lower=0.0)
+        )
         for final_type, weight in weights.items():
             if final_type in collapsed.columns and weight != 0.0:
                 collapsed[final_type] = collapsed[final_type] + float(weight) * series
@@ -224,7 +226,9 @@ def _compute_codex_cluster_scores(
 ) -> pd.DataFrame:
     """Score cluster centers against fine cell-type signatures."""
     positive = centers.clip(lower=0.0)
-    scores = pd.DataFrame(index=centers.index, columns=list(fine_type_markers), dtype=float)
+    scores = pd.DataFrame(
+        index=centers.index, columns=list(fine_type_markers), dtype=float
+    )
 
     for fine_type, markers in fine_type_markers.items():
         present = [marker for marker in markers if marker in centers.columns]
@@ -262,7 +266,7 @@ def _compute_codex_probabilities(
         centers = pd.DataFrame([normalized.mean(axis=0)], columns=normalized.columns)
     else:
         try:
-            from sklearn.cluster import KMeans
+            from sklearn.cluster import KMeans  # pylint: disable=import-error
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("CODEX classifier requires scikit-learn.") from exc
 
@@ -272,7 +276,9 @@ def _compute_codex_probabilities(
 
     centers.index = pd.Index(range(len(centers)), name="cluster_id")
     cluster_scores = _compute_codex_cluster_scores(centers, CODEX_FINE_TYPE_MARKERS)
-    cluster_probs = _stable_softmax(cluster_scores, temperature=CODEX_CLUSTER_TEMPERATURE)
+    cluster_probs = _stable_softmax(
+        cluster_scores, temperature=CODEX_CLUSTER_TEMPERATURE
+    )
 
     cell_cluster_ids = pd.Series(cluster_ids, index=expr_df.index, name="cluster_id")
     fine_probs = cluster_probs.loc[cell_cluster_ids.to_numpy()].set_index(expr_df.index)
@@ -344,7 +350,9 @@ def _compute_rule_probabilities(df: pd.DataFrame) -> pd.DataFrame:
     immune_t_markers = ["CD3e", "CD4", "CD8a", "CD45RO", "FOXP3", "PD1"]
     immune_mb_markers = ["CD20", "CD68", "CD163"]
 
-    immune_t = _mean_available([_normalized_marker_series(df, m) for m in immune_t_markers])
+    immune_t = _mean_available(
+        [_normalized_marker_series(df, m) for m in immune_t_markers]
+    )
     immune_mb = _mean_available(
         [_normalized_marker_series(df, m) for m in immune_mb_markers]
     )
@@ -367,9 +375,13 @@ def _compute_rule_probabilities(df: pd.DataFrame) -> pd.DataFrame:
     return probs.div(denom, axis=0)
 
 
-def _build_marker_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, dict[str, object]]]:
+def _build_marker_matrix(
+    df: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, dict[str, object]]]:
     """Build marker matrix and return marker coverage metadata."""
-    required = sorted({m for markers in CODEX_FINE_TYPE_MARKERS.values() for m in markers})
+    required = sorted(
+        {m for markers in CODEX_FINE_TYPE_MARKERS.values() for m in markers}
+    )
     data: dict[str, pd.Series] = {}
     coverage: dict[str, dict[str, object]] = {}
 
@@ -417,12 +429,15 @@ def compute_state_thresholds(
     if ki67_col is None:
         out["Ki67"] = float("inf")
     else:
-        out["Ki67"] = float(np.nanpercentile(df[ki67_col].to_numpy(dtype=float), state_percentile))
+        out["Ki67"] = float(
+            np.nanpercentile(df[ki67_col].to_numpy(dtype=float), state_percentile)
+        )
     return out
 
 
 def assign_type(row: pd.Series, thresholds: dict[str, float] | None) -> str:
     """Legacy type assignment kept for compatibility with older tests/tools."""
+
     def _get(marker: str) -> float:
         return _get_marker_value(row, marker)
 
@@ -468,11 +483,15 @@ def compute_thresholds(
     return out
 
 
-def assign_state(row: pd.Series, thresholds: dict[str, float] | None, type_cellvit: int = 0) -> str:
+def assign_state(
+    row: pd.Series, thresholds: dict[str, float] | None, type_cellvit: int = 0
+) -> str:
     """State assignment with Astir-first mode and legacy compatibility mode."""
     legacy_mode = bool(
         isinstance(thresholds, dict)
-        and any(k in thresholds for k in ("PCNA", "Vimentin", "Ecadherin_high", "Keratin"))
+        and any(
+            k in thresholds for k in ("PCNA", "Vimentin", "Ecadherin_high", "Keratin")
+        )
     )
 
     try:
@@ -493,17 +512,17 @@ def assign_state(row: pd.Series, thresholds: dict[str, float] | None, type_cellv
                 "PCNA", float("inf")
             ):
                 return "proliferative"
-            if vimentin >= thresholds.get("Vimentin", float("inf")) and ecad < thresholds.get(
-                "Ecadherin", float("-inf")
-            ):
+            if vimentin >= thresholds.get(
+                "Vimentin", float("inf")
+            ) and ecad < thresholds.get("Ecadherin", float("-inf")):
                 return "emt"
-            if keratin >= thresholds.get("Keratin", float("inf")) and ecad >= thresholds.get(
-                "Ecadherin_high", float("inf")
-            ):
-                return "quiescent"
-            if ecad >= thresholds.get("Ecadherin_high", float("inf")) and keratin < thresholds.get(
+            if keratin >= thresholds.get(
                 "Keratin", float("inf")
-            ):
+            ) and ecad >= thresholds.get("Ecadherin_high", float("inf")):
+                return "quiescent"
+            if ecad >= thresholds.get(
+                "Ecadherin_high", float("inf")
+            ) and keratin < thresholds.get("Keratin", float("inf")):
                 return "healthy"
             return "other"
 
@@ -573,7 +592,9 @@ def match_cells(
 
             if dist <= max_dist:
                 row = df.iloc[idx]
-                model_probs = {c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES}
+                model_probs = {
+                    c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES
+                }
                 model_type = _argmax_label(model_probs)
                 model_type_fine = str(row.get("type_codex_fine", model_type))
                 # If the CODEX model is uncertain (ambiguous cluster), fall back to CellViT
@@ -582,9 +603,12 @@ def match_cells(
                     fused_probs = prior_probs.copy()
                     final_type = prior_type
                 else:
-                    effective_weight = CELLVIT_TYPE_MODEL_WEIGHTS.get(type_cellvit, model_weight)
+                    effective_weight = CELLVIT_TYPE_MODEL_WEIGHTS.get(
+                        type_cellvit, model_weight
+                    )
                     fused_probs = {
-                        c: effective_weight * model_probs[c] + (1.0 - effective_weight) * prior_probs[c]
+                        c: effective_weight * model_probs[c]
+                        + (1.0 - effective_weight) * prior_probs[c]
                         for c in CELL_TYPES
                     }
                     final_type = _argmax_label(fused_probs)
@@ -653,7 +677,9 @@ def build_assignment_record(
             "type_cellvit": int(cell.get("type_cellvit", 0)),
             "type_cellvit_prior": str(cell.get("type_cellvit_prior", "other")),
             "type_codex": str(cell.get("type_codex", "other")),
-            "type_codex_fine": str(cell.get("type_codex_fine", cell.get("type_codex", "other"))),
+            "type_codex_fine": str(
+                cell.get("type_codex_fine", cell.get("type_codex", "other"))
+            ),
             "cell_type": str(cell.get("cell_type", "other")),
             "cell_state": str(cell.get("cell_state", "other")),
             "cell_type_confidence": str(cell.get("cell_type_confidence", "low")),
@@ -863,30 +889,53 @@ def _ac_patch_worker(patch_meta: dict) -> tuple | None:
         )
 
     binary_masks = rasterize_binary_masks(cells, ctx["patch_size"])
-    Image.fromarray(binary_masks["cancer"]).save(ctx["types_cancers_dir"] / f"{patch_id}.png")
-    Image.fromarray(binary_masks["immune"]).save(ctx["types_immune_dir"] / f"{patch_id}.png")
-    Image.fromarray(binary_masks["healthy"]).save(ctx["types_healthy_dir"] / f"{patch_id}.png")
+    Image.fromarray(binary_masks["cancer"]).save(
+        ctx["types_cancers_dir"] / f"{patch_id}.png"
+    )
+    Image.fromarray(binary_masks["immune"]).save(
+        ctx["types_immune_dir"] / f"{patch_id}.png"
+    )
+    Image.fromarray(binary_masks["healthy"]).save(
+        ctx["types_healthy_dir"] / f"{patch_id}.png"
+    )
     type_union_rgb = compose_union_rgb(
         binary_masks,
         ("cancer", "immune", "healthy"),
         CELL_TYPE_COLORS,
     )
-    Image.fromarray(type_union_rgb, mode="RGB").save(ctx["types_union_dir"] / f"{patch_id}.png")
-    Image.fromarray(binary_masks["proliferative"]).save(ctx["states_proliferative_dir"] / f"{patch_id}.png")
-    Image.fromarray(binary_masks["quiescent"]).save(ctx["states_quiescent_dir"] / f"{patch_id}.png")
-    Image.fromarray(binary_masks["dead"]).save(ctx["states_dead_dir"] / f"{patch_id}.png")
+    Image.fromarray(type_union_rgb, mode="RGB").save(
+        ctx["types_union_dir"] / f"{patch_id}.png"
+    )
+    Image.fromarray(binary_masks["proliferative"]).save(
+        ctx["states_proliferative_dir"] / f"{patch_id}.png"
+    )
+    Image.fromarray(binary_masks["quiescent"]).save(
+        ctx["states_quiescent_dir"] / f"{patch_id}.png"
+    )
+    Image.fromarray(binary_masks["dead"]).save(
+        ctx["states_dead_dir"] / f"{patch_id}.png"
+    )
     state_union_rgb = compose_union_rgb(
         binary_masks,
         ("proliferative", "quiescent", "dead"),
         CELL_STATE_COLORS,
     )
-    Image.fromarray(state_union_rgb, mode="RGB").save(ctx["states_union_dir"] / f"{patch_id}.png")
+    Image.fromarray(state_union_rgb, mode="RGB").save(
+        ctx["states_union_dir"] / f"{patch_id}.png"
+    )
     type_counts = Counter(c.get("cell_type", "other") for c in cells)
     state_counts = Counter(c.get("cell_state", "other") for c in cells)
     return (
-        patch_id, x0, y0, len(cells),
-        patch_records, type_counts, state_counts,
-        patch_confidence_counts, patch_mismatch_count, patch_conflict_pairs,
+        patch_id,
+        x0,
+        y0,
+        len(cells),
+        patch_records,
+        type_counts,
+        state_counts,
+        patch_confidence_counts,
+        patch_mismatch_count,
+        patch_conflict_pairs,
     )
 
 
@@ -1034,6 +1083,7 @@ def main() -> None:
     def _create_dir(dir: pathlib.Path) -> pathlib.Path:
         dir.mkdir(parents=True, exist_ok=True)
         return dir
+
     types_cancers_dir = _create_dir(types_dir / "cancers")
     types_immune_dir = _create_dir(types_dir / "immune")
     types_healthy_dir = _create_dir(types_dir / "healthy")
@@ -1112,7 +1162,9 @@ def main() -> None:
     for cls in CELL_TYPES:
         df[f"p_model_{cls}"] = probs[cls].to_numpy(dtype=float)
 
-    state_thresholds = compute_state_thresholds(df, state_percentile=args.state_percentile)
+    state_thresholds = compute_state_thresholds(
+        df, state_percentile=args.state_percentile
+    )
     log.info("State thresholds: %s", state_thresholds)
 
     # ------------------------------------------------------------------
@@ -1178,9 +1230,16 @@ def main() -> None:
                 skipped += 1
                 continue
             (
-                patch_id, x0, y0, n_cells,
-                patch_records, type_counts, state_counts,
-                patch_confidence_counts, patch_mismatch_count, patch_conflict_pairs,
+                patch_id,
+                x0,
+                y0,
+                n_cells,
+                patch_records,
+                type_counts,
+                state_counts,
+                patch_confidence_counts,
+                patch_mismatch_count,
+                patch_conflict_pairs,
             ) = result
             total_cells += n_cells
             assignment_records.extend(patch_records)
@@ -1198,7 +1257,9 @@ def main() -> None:
             global_conflict_pairs += patch_conflict_pairs
             processed += 1
             if processed % 50 == 0:
-                log.info("  Progress: %d patches processed, %d skipped …", processed, skipped)
+                log.info(
+                    "  Progress: %d patches processed, %d skipped …", processed, skipped
+                )
 
     # ------------------------------------------------------------------
     # 4. Summary
@@ -1207,25 +1268,25 @@ def main() -> None:
     assignment_columns = list(
         dict.fromkeys(
             [
-        "patch_id",
-        "patch_x0",
-        "patch_y0",
-        "type_cellvit",
-        "type_cellvit_prior",
-        "type_codex",
-        "type_codex_fine",
-        "cell_type",
-        "cell_state",
-        "cell_type_confidence",
-        "is_mismatch",
-        "centroid_x_local",
-        "centroid_y_local",
-        "centroid_x_global",
-        "centroid_y_global",
-        "match_distance",
-        *list(df.columns),
-        *(f"p_model_{cls}" for cls in CELL_TYPES),
-        *(f"p_final_{cls}" for cls in CELL_TYPES),
+                "patch_id",
+                "patch_x0",
+                "patch_y0",
+                "type_cellvit",
+                "type_cellvit_prior",
+                "type_codex",
+                "type_codex_fine",
+                "cell_type",
+                "cell_state",
+                "cell_type_confidence",
+                "is_mismatch",
+                "centroid_x_local",
+                "centroid_y_local",
+                "centroid_x_global",
+                "centroid_y_global",
+                "match_distance",
+                *list(df.columns),
+                *(f"p_model_{cls}" for cls in CELL_TYPES),
+                *(f"p_final_{cls}" for cls in CELL_TYPES),
             ]
         )
     )

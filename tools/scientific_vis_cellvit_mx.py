@@ -45,9 +45,14 @@ CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferative": (230, 50, 180, 200),   # magenta — distinct from red/blue/green types
-    "quiescent": (240, 140, 30, 200),        # amber/orange
-    "dead": (110, 40, 160, 200),             # purple
+    "proliferative": (
+        230,
+        50,
+        180,
+        200,
+    ),  # magenta — distinct from red/blue/green types
+    "quiescent": (240, 140, 30, 200),  # amber/orange
+    "dead": (110, 40, 160, 200),  # purple
     "other": (160, 160, 160, 120),
 }
 
@@ -84,7 +89,9 @@ def _load_summary(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _composite_rgba_on_rgb(base_rgb: np.ndarray, overlay_rgba: np.ndarray) -> np.ndarray:
+def _composite_rgba_on_rgb(
+    base_rgb: np.ndarray, overlay_rgba: np.ndarray
+) -> np.ndarray:
     base = base_rgb.astype(np.float32)
     if overlay_rgba.ndim != 3 or overlay_rgba.shape[-1] != 4:
         return base_rgb
@@ -92,7 +99,6 @@ def _composite_rgba_on_rgb(base_rgb: np.ndarray, overlay_rgba: np.ndarray) -> np
     alpha = (overlay_rgba[:, :, 3:4].astype(np.float32) / 255.0).clip(0.0, 1.0)
     out = (alpha * ov + (1.0 - alpha) * base).clip(0, 255).astype(np.uint8)
     return out
-
 
 
 def _resolve_mx_channel(
@@ -147,8 +153,13 @@ def _scientific_style(sci_vis_root: Path):
 
     sys.path.insert(0, str(scripts_dir))
     try:
-        from figure_export import save_publication_figure
-        from style_presets import apply_publication_style, set_color_palette
+        from figure_export import (  # pylint: disable=import-error
+            save_publication_figure,
+        )
+        from style_presets import (  # pylint: disable=import-error
+            apply_publication_style,
+            set_color_palette,
+        )
 
         apply_publication_style("default")
         set_color_palette("okabe_ito")
@@ -222,7 +233,9 @@ def _render_overlay(
     return canvas
 
 
-def _add_type_legend(ax: plt.Axes, color_map: dict[str, tuple[int, int, int, int]], title: str = "Type") -> None:
+def _add_type_legend(
+    ax: plt.Axes, color_map: dict[str, tuple[int, int, int, int]], title: str = "Type"
+) -> None:
     labels = [k for k in color_map if k != "other"]
     handles = [
         Patch(
@@ -286,8 +299,16 @@ def _make_vasc_rgb(
     shape: tuple[int, int],
 ) -> np.ndarray:
     """R=CD31, G=SMA, B=0.  Yellow pixels = co-localised (larger vessels)."""
-    r = (cd31 * 255).clip(0, 255).astype(np.uint8) if cd31 is not None else np.zeros(shape, np.uint8)
-    g = (sma * 255).clip(0, 255).astype(np.uint8) if sma is not None else np.zeros(shape, np.uint8)
+    r = (
+        (cd31 * 255).clip(0, 255).astype(np.uint8)
+        if cd31 is not None
+        else np.zeros(shape, np.uint8)
+    )
+    g = (
+        (sma * 255).clip(0, 255).astype(np.uint8)
+        if sma is not None
+        else np.zeros(shape, np.uint8)
+    )
     b = np.zeros(shape, np.uint8)
     return np.stack([r, g, b], axis=-1)
 
@@ -304,8 +325,13 @@ def _show_channel_or_placeholder(
     else:
         ax.imshow(np.full((*shape, 3), 220, dtype=np.uint8))
         ax.text(
-            0.5, 0.5, f"{unavailable_label}\nnot in panel",
-            ha="center", va="center", fontsize=8, color="#555555",
+            0.5,
+            0.5,
+            f"{unavailable_label}\nnot in panel",
+            ha="center",
+            va="center",
+            fontsize=8,
+            color="#555555",
             transform=ax.transAxes,
         )
 
@@ -407,18 +433,30 @@ def main() -> None:
     model_name = model_display_name(classifier_used)
 
     assignments_all = load_cell_assignments(assignments_path)
-    assignments_patch = assignments_all[assignments_all["patch_id"].astype(str) == patch].copy()
+    assignments_patch = assignments_all[
+        assignments_all["patch_id"].astype(str) == patch
+    ].copy()
     if assignments_patch.empty:
-        raise ValueError(f"No assignment rows found for patch '{patch}' in {assignments_path}")
+        raise ValueError(
+            f"No assignment rows found for patch '{patch}' in {assignments_path}"
+        )
     model_col = model_label_column(assignments_patch, classifier_used, prefer_fine=True)
-    model_colors = MODEL_FINE_COLORS if model_col == "type_codex_fine" else CELL_TYPE_COLORS
-    model_title = f"{model_name} fine type" if model_col == "type_codex_fine" else f"{model_name} top class"
+    model_colors = (
+        MODEL_FINE_COLORS if model_col == "type_codex_fine" else CELL_TYPE_COLORS
+    )
+    model_title = (
+        f"{model_name} fine type"
+        if model_col == "type_codex_fine"
+        else f"{model_name} top class"
+    )
 
     index_data = json.loads(index_path.read_text(encoding="utf-8"))
     channels = [str(x) for x in index_data.get("channels", [])]
     marker_name = args.mx_marker
     if marker_name is None and channels:
-        marker_candidates = [name for name in channels if name in assignments_patch.columns]
+        marker_candidates = [
+            name for name in channels if name in assignments_patch.columns
+        ]
         marker_name = choose_marker_for_patch(assignments_patch, marker_candidates)
     mx_idx, mx_name = _resolve_mx_channel(index_path, args.mx_channel, marker_name)
 
@@ -461,13 +499,17 @@ def main() -> None:
     final_overlay = _render_overlay(
         cell_pairs,
         patch_shape,
-        lambda _cell, row: row.get("cell_type", "other") if row is not None else "other",
+        lambda _cell, row: (
+            row.get("cell_type", "other") if row is not None else "other"
+        ),
         CELL_TYPE_COLORS,
     )
     state_overlay = _render_overlay(
         cell_pairs,
         patch_shape,
-        lambda _cell, row: row.get("cell_state", "other") if row is not None else "other",
+        lambda _cell, row: (
+            row.get("cell_state", "other") if row is not None else "other"
+        ),
         CELL_STATE_COLORS,
     )
 
@@ -476,7 +518,9 @@ def main() -> None:
     final_on_he = _composite_rgba_on_rgb(he_rgb, final_overlay)
     state_on_he = _composite_rgba_on_rgb(he_rgb, state_overlay)
 
-    save_publication_figure, style_warning = _scientific_style(Path(args.scientific_vis_root))
+    save_publication_figure, style_warning = _scientific_style(
+        Path(args.scientific_vis_root)
+    )
     if style_warning:
         print(f"Warning: {style_warning}")
 
@@ -500,7 +544,9 @@ def main() -> None:
     _add_state_legend(ax[2])
     _panel_label(ax[2], "C")
 
-    _show_channel_or_placeholder(ax[3], vasc_cd31_img, patch_shape_hw, "Reds", cd31_name)
+    _show_channel_or_placeholder(
+        ax[3], vasc_cd31_img, patch_shape_hw, "Reds", cd31_name
+    )
     ax[3].set_title(f"{cd31_name} (vasculature)")
     ax[3].axis("off")
     _panel_label(ax[3], "D")
