@@ -20,22 +20,29 @@ Given a pair of H&E and multiplex OME-TIFF images, this pipeline:
 
 ```
 stages/
-  patchify.py            # Stage 1: extract 256×256 H&E patches + multiplex arrays (MPP-ratio coordinate mapping)
+  patchify.py              # Stage 1: extract 256×256 H&E patches + multiplex arrays (MPP-ratio coordinate mapping)
   extract_cell_features.py # Stage 2.5: extract CellViT-aligned MX marker features to CSV
-  assign_cells.py        # Stage 3: assign cell types/states (CSV or auto CellViT+MX)
-  multiplex_layers.py    # Stage 4: derive vasculature/signaling layers
+  assign_cells.py          # Stage 3: assign cell types/states (CSV or auto CellViT+MX)
+  multiplex_layers.py      # Stage 4: derive vasculature/signaling layers
 utils/
-  normalize.py           # percentile_norm, percentile_to_uint8
-  channels.py            # load_channel_metadata, resolve_channel_indices
-  ome.py                 # get_ome_mpp, open_zarr_store, read_overview_chw, get_image_dims
-  group_visualizer.py    # Shared H&E + multiplex group rendering helpers
+  normalize.py             # percentile_norm, percentile_to_uint8
+  channels.py              # load_channel_metadata, resolve_channel_indices
+  ome.py                   # get_ome_mpp, open_zarr_store, read_overview_chw, get_image_dims
+  marker_aliases.py        # Marker name alias resolution
+  cell_assignment_reports.py # Cell assignment reporting helpers
 tools/
   build_pyramid.py              # Convert mask TIF to pyramidal OME-TIFF
   viz_mask.py                   # Visualize mask + OME side-by-side (overview / crop)
   check_shape.py                # Inspect OME-TIFF dimensions (local or S3)
   visualize_pipeline.py         # 6-panel pipeline summary figure
-  view_groups_web.py            # Local FastAPI web viewer (H&E + multiplex groups)
   cellvit_to_binary_mask.py     # Convert CellViT JSON output to per-patch binary cell masks
+  scientific_vis_patch_grid.py  # Publication-style N-row × 8-column patch grid
+  scientific_vis_cellvit_mx.py  # Publication-style CellViT vs model patch comparison
+  scientific_vis_codex_comparison.py # CellViT vs CODEX confusion matrix figure
+  fit_pde_params.py             # Fit WSI-PDE parameters from CA9/hypoxia data
+  map_csv_seg.py                # Map external CSV cell segmentation to pipeline format
+  viz_he_centroid_overlap.py    # Visualize H&E with cell centroid overlays
+  viz_patch_overlay.py          # Per-patch overlay viewer
 notebooks/               # Stage 2: GPU cell segmentation on Colab
 tests/                   # pytest test suite
 ```
@@ -46,16 +53,16 @@ tests/                   # pytest test suite
 Local machine                          Google Colab (GPU)
 ─────────────────────────────          ──────────────────────────────────
 Stage 1: python -m stages.patchify
-  → processed_wd/he/*.png
-  → processed_wd/multiplex/*.npy
-  → processed_wd/masks/*.npy   (optional, if --mask-image given)
-  → processed_wd/index.json
+  → processed_crc33/he/*.png
+  → processed_crc33/multiplex/*.npy
+  → processed_crc33/masks/*.npy   (optional, if --mask-image given)
+  → processed_crc33/index.json
          │
          │ upload patches (aws s3 sync)
          ▼
       [AWS S3]                    ──►   cellvit_colab_stage2.ipynb
                                           ↓
-                                   processed_wd/cellvit/*.json
+                                   processed_crc33/cellvit/*.json
          ◄─────────────────────────────────
          │ download results
          ▼
@@ -76,12 +83,11 @@ pip install -r requirements.txt
 ### Directory layout
 
 ```
-lin-2021-crc-atlas/
+he-feature-visualizer/
 └── data/
-    ├── WD-76845-096.ome.tif
-    ├── WD-76845-097.ome.tif
-    ├── WD-76845-097-metadata.csv
-    └── WD-76845-097.csv
+    ├── he_crc33.ome.tif
+    ├── mx_crc33.ome.tif
+    └── markers.csv
 ```
 
 ---
@@ -92,13 +98,12 @@ Run `stages.patchify` to extract 256×256 H&E patches and corresponding multiple
 
 ```bash
 python3 -m stages.patchify \
-  --he-image data/WD-76845-096.ome.tif \
-  --multiplex-image data/WD-76845-097.ome.tif \
-  --metadata-csv data/WD-76845-097-metadata.csv \
-  --out processed_wd \
-  --channels DNA \
+  --he-image data/he_crc33.ome.tif \
+  --multiplex-image data/mx_crc33.ome.tif \
+  --metadata-csv data/markers.csv \
+  --out processed_crc33 \
   --workers 8
-  # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed_wd/masks/
+  # add --mask-image path/to/cell-mask.ome.tif to extract mask patches (uint32 label IDs) to processed_crc33/masks/
   # --workers N  parallelise patch extraction over N processes (default: 4)
 ```
 
@@ -107,16 +112,16 @@ Patch extraction is parallelised with `ProcessPoolExecutor`. Each worker opens i
 ### Outputs
 
 
-| Output                         | Contents                                                                              | Used in         |
-| ------------------------------ | ------------------------------------------------------------------------------------- | --------------- |
-| `processed_wd/he/`             | RGB PNG patches                                                                       | Stage 2 (Colab) |
-| `processed_wd/multiplex/`      | Per-channel `.npy` arrays (uint16)                                                    | Stage 4         |
-| `processed_wd/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given       | Downstream      |
-| `processed_wd/index.json`      | Patch coordinate index + `mpp_scale` + flags per patch                                | All stages      |
-| `processed_wd/vis_patches.jpg` | H&E + multiplex overview with patch grid                                              | QC              |
+| Output                              | Contents                                                                              | Used in         |
+| ----------------------------------- | ------------------------------------------------------------------------------------- | --------------- |
+| `processed_crc33/he/`             | RGB PNG patches                                                                       | Stage 2 (Colab) |
+| `processed_crc33/multiplex/`      | Per-channel `.npy` arrays (uint16)                                                    | Stage 4         |
+| `processed_crc33/masks/`          | Cell segmentation mask patches (uint32 label IDs); only if `--mask-image` given       | Downstream      |
+| `processed_crc33/index.json`      | Patch coordinate index + `mpp_scale` + flags per patch                                | All stages      |
+| `processed_crc33/vis_patches.jpg` | H&E + multiplex overview with patch grid                                              | QC              |
 
 
-Only `processed_wd/he/` needs to be uploaded to Colab for Stage 2.
+Only `processed_crc33/he/` needs to be uploaded to Colab for Stage 2.
 
 ---
 
@@ -135,7 +140,7 @@ Colab provides free T4 GPU access — sufficient for up to ~2000 patches.
 ### Upload patches
 
 ```bash
-aws s3 sync processed_wd/he/ s3://YOUR-BUCKET/he-feature-visualizer/processed_wd/he/ --storage-class STANDARD_IA
+aws s3 sync processed_crc33/he/ s3://YOUR-BUCKET/he-feature-visualizer/processed_crc33/he/ --storage-class STANDARD_IA
 ```
 
 Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negligible on STANDARD_IA storage class.
@@ -152,7 +157,7 @@ Cost note: approximately 1000 patches × 60 KB = ~60 MB upload. The cost is negl
 | ----------------- | ------------------------------------ | ----------------------------------------- |
 | `STORAGE_BACKEND` | Storage backend                      | `'s3'`                                    |
 | `S3_BUCKET`       | S3 bucket name                       | `'my-bucket'`                             |
-| `S3_HE_PREFIX`    | S3 key prefix for patches            | `'he-feature-visualizer/processed_wd/he'` |
+| `S3_HE_PREFIX`    | S3 key prefix for patches            | `'he-feature-visualizer/processed_crc33/he'` |
 | `MODEL_VARIANT`   | `'CellViT-256'` or `'CellViT-SAM-H'` | `'CellViT-256'`                           |
 | `BATCH_SIZE`      | Patches per GPU batch                | `32` (reduce to 8 if OOM)                 |
 | `MAGNIFICATION`   | Scan magnification                   | `40` (use `20` if 20x slide)              |
@@ -175,7 +180,7 @@ Expected timeline on a T4 GPU:
 ### Download results
 
 ```bash
-aws s3 sync s3://YOUR-BUCKET/he-feature-visualizer/processed_wd/cellvit/ processed_wd/cellvit/
+aws s3 sync s3://YOUR-BUCKET/he-feature-visualizer/processed_crc33/cellvit/ processed_crc33/cellvit/
 ```
 
 ### Resuming interrupted runs
@@ -273,7 +278,7 @@ python -m stages.assign_cells \
 ### Mode B: Auto-extract features from CellViT + multiplex patches
 
 If `--features-csv` is omitted, Stage 3 can build one automatically from
-CellViT contours and `processed_wd/multiplex/{x0}_{y0}.npy`.
+CellViT contours and `processed_crc33/multiplex/{x0}_{y0}.npy`.
 
 ```bash
 python -m stages.assign_cells \
@@ -385,7 +390,7 @@ python -m stages.multiplex_layers \
   --index processed_crc33/index.json \
   --metadata-csv data/markers.csv \
   --out processed_crc33/ \
-  --multiplex-tiff data/mx_crc33.ome.tiff \
+  --multiplex-tiff data/mx_crc33.ome.tif \
   --oxygen-model wsi-pde \
   --oxygen-krogh-um 160 \
   --glucose-model wsi-pde \
@@ -493,16 +498,16 @@ Generate a 6-panel summary figure for a single patch or a grid of random patches
 ```bash
 # Single patch (patch key is x0_y0 in pixel coordinates)
 python -m tools.visualize_pipeline \
-  --processed processed_wd/ \
-  --patch 58624_4096 \
-  --he-image data/WD-76845-096.ome.tif
+  --processed processed_crc33/ \
+  --patch 0_0 \
+  --he-image data/he_crc33.ome.tif
 
 # Random grid of N patches
 python -m tools.visualize_pipeline \
-  --processed processed_wd/ \
+  --processed processed_crc33/ \
   --random 6 \
   --seed 42 \
-  --he-image data/WD-76845-096.ome.tif \
+  --he-image data/he_crc33.ome.tif \
   --mx-channel 0
 ```
 
