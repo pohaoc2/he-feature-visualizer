@@ -329,20 +329,21 @@ distance clamps (µm) to pixels.
 |---|---|---|---|---|
 | Vasculature | CD31 (+ SMA optional) | — | Otsu threshold → binary mask | — |
 | Oxygen | CD31 | `distance` (default) | Euclidean distance transform clamped at **160 µm** | Grimes 2014, Zaidi 2019 |
-| Oxygen | CD31, Ki67, CD68 | `wsi-pde` | Steady-state `D∇²u − k(x)u + s(x) = 0` solved **WSI-wide** at coarse resolution; per-patch results cropped from the global field | Kumar 2024 |
+| Oxygen | CD31, Ki67, CD68 | `wsi-pde` | Closed-form WKB approximation of steady-state diffusion-consumption (`u = exp(−dist/L(x))`), computed **WSI-wide** at coarse resolution; per-patch results cropped from the global field | Kumar 2024 |
 | Glucose | CD31 | `distance` | Same distance transform clamped at **450 µm** (wider supply zone) | Grimes 2014 |
 | Glucose | Ki67 | `max` (default) | `percentile_norm(Ki67)` | — |
-| Glucose | CD31, Ki67, CD68 | `wsi-pde` | Same WSI-scale PDE solver as oxygen | Kumar 2024 |
+| Glucose | CD31, Ki67, CD68 | `wsi-pde` | Same WSI-scale WKB solver as oxygen | Kumar 2024 |
 
 **Why WSI-scale?**  The Krogh oxygen diffusion radius (~160 µm) is larger than a single 256 px patch (~83 µm at 0.325 µm/px).
 Per-patch computation cannot capture nutrients supplied by vessels in adjacent patches.
 The WSI-scale solver reads CD31/Ki67 directly from the OME-TIFF pyramid at a coarse downsampling factor (`--wsi-pde-ds`, default 8), computes a Euclidean distance transform once on the full slide, and extracts per-patch slices in milliseconds.
 
-**Algorithm** (O(N), runs in seconds even for 30 M-pixel WSIs):
-1. Build vessel mask from CD31 at coarse resolution
-2. Compute `dist = distance_transform_edt(~vessel_mask)` — exact for constant k
-3. Compute spatially varying decay length `L(x) = krogh_um / (mpp_coarse × √(k(x)/k_base))` where k(x) = base + Ki67 + CD68 demand terms
-4. `u(x) = exp(−dist(x) / L(x))` — exact PDE solution for constant k; WKB approximation for varying k
+**Algorithm** (O(N), runs in ~25 s even for 30 M-pixel WSIs):
+1. Build vessel mask from CD31 at coarse resolution via Otsu threshold
+2. Compute `dist = distance_transform_edt(~vessel_mask)` — Euclidean distance from nearest vessel (coarse pixels)
+3. Build spatially varying consumption map `k(x) = k_base + demand_weight × Ki67_norm + immune_weight × CD68_norm`
+4. Compute decay length `L(x) = krogh_um / (mpp_coarse × √(k(x)/k_base))`
+5. `u(x) = exp(−dist(x) / L(x))` — exact solution to `D d²u/dx² − k·u = 0` for constant k (1D Cartesian); WKB approximation for spatially varying k(x)
 
 Only CD31, Ki67, and CD68 channels are loaded — memory ≤ 400 MB for a 30 M-pixel WSI at ds=8.
 
@@ -410,11 +411,14 @@ Key `wsi-pde` parameters:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--multiplex-tiff` | required | Path to the multiplex OME-TIFF |
-| `--wsi-pde-ds` | `4` | Downsampling factor. Use **8** for full WSIs to keep memory ≤ 500 MB and converge in ≤ 40k iters |
-| `--wsi-pde-max-iters` | `20000` | Jacobi iterations needed ≈ 4 × L_coarse² where L_coarse = krogh_um / (mpp × ds) |
-| `--wsi-pde-tol` | `1e-4` | Convergence tolerance |
-| `--oxygen-krogh-um` | `160` | Krogh radius → auto-calibrates D = (krogh_um / mpp_coarse)² × k_base |
-| `--glucose-krogh-um` | `450` | Same for glucose |
+| `--wsi-pde-ds` | `4` | Downsampling factor. At ds=4, mpp_coarse=1.3 µm/px; use **8** for very large WSIs to reduce memory |
+| `--wsi-pde-max-iters` | `20000` | **Unused** — accepted for CLI compatibility but the solver uses a closed-form WKB approximation (no iterations) |
+| `--wsi-pde-tol` | `1e-4` | **Unused** — same reason as above |
+| `--oxygen-krogh-um` | `160` | e-folding decay length L for O₂ (µm). From literature (Grimes 2014): `L = √(D/k)` where D=diffusivity, k=consumption. **Cannot be fit without a hypoxia marker (CA9/CAIX) in the panel.** |
+| `--glucose-krogh-um` | `450` | Same for glucose. Glucose diffuses ~3× farther than O₂. |
+| `--oxygen-consumption-demand-weight` | `0.3` | Weight on Ki67 in `k(x)`. Heuristic — fit from CA9 staining if available. |
+| `--glucose-consumption-demand-weight` | `0.3` | Same for glucose. |
+| `--cd68-consumption-weight` | `0.1` | Weight on CD68 (macrophage demand) in `k(x)`. |
 
 Memory footprint at ds=8 (only CD31 + Ki67 + CD68 are loaded — all other channels are skipped):
 
