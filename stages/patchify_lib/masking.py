@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 
 from utils.normalize import percentile_to_uint8
+from utils.ome import read_overview_chw
 
 
 def tissue_mask_hsv(rgb: np.ndarray, mthresh: int = 7, close: int = 4) -> np.ndarray:
@@ -54,22 +55,11 @@ def build_tissue_mask(
     -------
     bool ndarray of shape exactly (img_h // downsample, img_w // downsample).
     """
-    axes = axes.upper()
-    if "Y" not in axes or "X" not in axes:
+    if "Y" not in axes.upper() or "X" not in axes.upper():
         raise ValueError(f"axes must contain both 'Y' and 'X'; got {axes!r}")
-    c_first = "C" in axes and axes.index("C") < axes.index("Y")
 
-    img_h_trunc = (img_h // downsample) * downsample
-    img_w_trunc = (img_w // downsample) * downsample
-
-    if c_first:
-        raw = np.array(store[:, :img_h_trunc:downsample, :img_w_trunc:downsample])
-        overview = np.moveaxis(raw, 0, -1)
-    else:
-        overview = np.array(store[:img_h_trunc:downsample, :img_w_trunc:downsample, :])
-
-    if overview.shape[-1] > 3:
-        overview = overview[..., :3]
+    chw = read_overview_chw(store, axes, img_h, img_w, downsample)  # (C, H, W)
+    overview = np.moveaxis(chw[:3], 0, -1)  # (H, W, 3)
     if overview.dtype != np.uint8:
         overview = percentile_to_uint8(overview)
 

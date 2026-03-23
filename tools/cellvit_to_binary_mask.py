@@ -76,7 +76,6 @@ def build_patch_binary_masks(
         Image.fromarray(patch_buf).save(str(out_path))
         total_cells += len(cells)
 
-    coverage_per_patch = total_cells  # just count; coverage logged per patch is expensive
     print(
         f"[cellvit_to_binary_mask] {len(json_files)} patches, "
         f"{total_cells} cells → {out_dir}"

@@ -6,10 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import tempfile
 from pathlib import Path
 
 if "MPLCONFIGDIR" not in os.environ:
-    _mpl_cache = Path("/tmp/matplotlib")
+    _mpl_cache = Path(tempfile.gettempdir()) / "matplotlib-cache"
     _mpl_cache.mkdir(parents=True, exist_ok=True)
     os.environ["MPLCONFIGDIR"] = str(_mpl_cache)
 
@@ -24,12 +25,6 @@ from utils.normalize import percentile_norm
 CELL_TYPES: tuple[str, str, str] = ("cancer", "immune", "healthy")
 
 TYPE_COLORS = {
-    "cancer": "#DC3232",
-    "immune": "#3264DC",
-    "healthy": "#32B432",
-}
-
-MARKER_COLORS = {
     "cancer": "#DC3232",
     "immune": "#3264DC",
     "healthy": "#32B432",
@@ -53,17 +48,15 @@ def _compute_codex_margin(df: pd.DataFrame) -> pd.Series:
     final fused cell_type via probabilistic fusion, not to this margin.
     Caller must ensure df contains only rows where cell_type ∈ {cancer, immune, healthy}.
     """
-    margins = []
-    for _, row in df.iterrows():
-        ct = str(row["cell_type"])
-        winner = float(row.get(f"p_model_{ct}", 0.0))
-        others = [
-            float(row.get(f"p_model_{other}", 0.0))
-            for other in CELL_TYPES
-            if other != ct
-        ]
-        margins.append(winner - max(others))
-    return pd.Series(margins, index=df.index, dtype=float)
+    p_cols = [f"p_model_{ct}" for ct in CELL_TYPES]
+    probs = df.reindex(columns=p_cols).fillna(0.0).to_numpy()
+    type_to_idx = {ct: i for i, ct in enumerate(CELL_TYPES)}
+    winner_idx = df["cell_type"].map(type_to_idx).fillna(0).astype(int).to_numpy()
+    row_idx = np.arange(len(df))
+    winner_probs = probs[row_idx, winner_idx]
+    others = probs.copy()
+    others[row_idx, winner_idx] = -np.inf
+    return pd.Series(winner_probs - others.max(axis=1), index=df.index, dtype=float)
 
 
 def _select_examples(df: pd.DataFrame) -> dict[str, pd.Series | None]:
@@ -209,9 +202,9 @@ def _plot_marker_bar(
     bar_h = 0.15
     role_keys = ["cancer_marker", "immune_marker", "healthy_marker"]
     colors = [
-        MARKER_COLORS["cancer"],
-        MARKER_COLORS["immune"],
-        MARKER_COLORS["healthy"],
+        TYPE_COLORS["cancer"],
+        TYPE_COLORS["immune"],
+        TYPE_COLORS["healthy"],
     ]
 
     for bar_y, role, color in zip(bar_y_positions, role_keys, colors):

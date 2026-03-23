@@ -99,6 +99,34 @@ def open_zarr_store(tif: tifffile.TiffFile) -> zarr.Array | _NumpyStore:
         return _NumpyStore(tif.series[0].asarray(out="memmap"))
 
 
+def chw_from_axes(arr: np.ndarray, axes: str) -> np.ndarray:
+    """Transpose *arr* to ``(C, H, W)`` given its axis labels.
+
+    Handles CYX, YXC, IYX, SYX, etc.  If no channel axis exists the result
+    is ``(1, H, W)``.
+    """
+    ax_up = axes.upper()
+    ch_axis = _resolve_channel_axis(ax_up)
+
+    active: list[str] = []
+    for ax in ax_up:
+        if ch_axis is not None and ax == ch_axis:
+            active.append("C")
+        elif ax in ("Y", "X"):
+            active.append(ax)
+
+    if "C" in active:
+        target = [ax for ax in ("C", "Y", "X") if ax in active]
+        if active != target:
+            arr = arr.transpose([active.index(ax) for ax in target])
+    else:
+        target = [ax for ax in ("Y", "X") if ax in active]
+        if active != target:
+            arr = arr.transpose([active.index(ax) for ax in target])
+        arr = arr[np.newaxis]
+    return arr
+
+
 def get_image_dims(tif: tifffile.TiffFile) -> tuple[int, int, str]:
     """Return ``(img_w, img_h, axes_upper)`` from an open ``TiffFile``."""
     series = tif.series[0]

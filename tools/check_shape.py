@@ -27,20 +27,9 @@ from urllib.parse import urlparse
 
 import tifffile
 
-OME_NS = {"ome": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
+from utils.ome import OME_NS, _safe_float
+
 TAIL_SIZE = 50 * 1024 * 1024  # 50 MB — enough to hold IFDs + OME-XML for known datasets
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _safe_float(x):
-    try:
-        return float(x) if x is not None else None
-    except (ValueError, TypeError):
-        return None
 
 
 def _mpp_from_xml(xml_bytes: bytes) -> tuple[float | None, float | None, str | None]:

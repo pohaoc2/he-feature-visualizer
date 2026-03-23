@@ -7,11 +7,12 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 # Keep matplotlib cache writable in sandboxed environments.
 if "MPLCONFIGDIR" not in os.environ:
-    mpl_cache = Path("/tmp/matplotlib")
+    mpl_cache = Path(tempfile.gettempdir()) / "matplotlib-cache"
     mpl_cache.mkdir(parents=True, exist_ok=True)
     os.environ["MPLCONFIGDIR"] = str(mpl_cache)
 
@@ -30,12 +31,11 @@ from utils.cell_assignment_reports import (
     model_label_column,
 )
 from utils.marker_aliases import canonicalize_marker_name, normalize_marker_name
-from utils.normalize import percentile_norm
-
-DEFAULT_SCI_VIS_ROOT = Path(
-    "/home/pohaoc2/.claude/plugins/marketplaces/"
-    "claude-scientific-skills/scientific-skills/scientific-visualization"
+from utils.cellvit_io import (
+    composite_rgba_on_rgb as _composite_rgba_on_rgb,
+    load_patch_json as _load_patch_json,
 )
+from utils.normalize import percentile_norm
 
 CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "cancer": (220, 50, 50, 200),
@@ -69,36 +69,12 @@ MODEL_FINE_COLORS: dict[str, tuple[int, int, int, int]] = {
 }
 
 
-def _load_patch_json(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8") as fh:
-        data = json.load(fh)
-    if isinstance(data, dict):
-        cells = data.get("cells", [])
-        if isinstance(cells, list):
-            return cells
-    if isinstance(data, list):
-        return data
-    return []
-
-
 def _load_summary(path: Path) -> dict:
     if not path.exists():
         return {}
     with path.open(encoding="utf-8") as fh:
         data = json.load(fh)
     return data if isinstance(data, dict) else {}
-
-
-def _composite_rgba_on_rgb(
-    base_rgb: np.ndarray, overlay_rgba: np.ndarray
-) -> np.ndarray:
-    base = base_rgb.astype(np.float32)
-    if overlay_rgba.ndim != 3 or overlay_rgba.shape[-1] != 4:
-        return base_rgb
-    ov = overlay_rgba[:, :, :3].astype(np.float32)
-    alpha = (overlay_rgba[:, :, 3:4].astype(np.float32) / 255.0).clip(0.0, 1.0)
-    out = (alpha * ov + (1.0 - alpha) * base).clip(0, 255).astype(np.uint8)
-    return out
 
 
 def _resolve_mx_channel(
@@ -373,7 +349,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--scientific-vis-root",
-        default=str(DEFAULT_SCI_VIS_ROOT),
+        default=None,
         help="Path to scientific-visualization skill directory.",
     )
     parser.add_argument(
@@ -519,7 +495,7 @@ def main() -> None:
     state_on_he = _composite_rgba_on_rgb(he_rgb, state_overlay)
 
     save_publication_figure, style_warning = _scientific_style(
-        Path(args.scientific_vis_root)
+        Path(args.scientific_vis_root) if args.scientific_vis_root else Path(".")
     )
     if style_warning:
         print(f"Warning: {style_warning}")

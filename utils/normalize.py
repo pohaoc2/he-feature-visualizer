@@ -22,6 +22,18 @@ def percentile_norm(
     return ((clipped - lo) / (hi - lo)).astype(np.float32)
 
 
+def contrast_stretch(arr: np.ndarray) -> np.ndarray:
+    """Linearly stretch *arr* to uint8 [0, 255] using min/max."""
+    vmin, vmax = int(arr.min()), int(arr.max())
+    if vmax == vmin:
+        return np.zeros_like(arr, dtype=np.uint8)
+    return (
+        ((arr.astype(np.float32) - vmin) / (vmax - vmin) * 255)
+        .clip(0, 255)
+        .astype(np.uint8)
+    )
+
+
 def percentile_to_uint8(
     arr: np.ndarray,
     p_low: float = 1.0,

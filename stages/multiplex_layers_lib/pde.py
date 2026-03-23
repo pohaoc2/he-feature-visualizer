@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+from scipy.ndimage import distance_transform_edt
 from scipy.sparse.linalg import LinearOperator, cg
 
 from utils.normalize import percentile_norm
@@ -124,8 +125,6 @@ def solve_steady_state_diffusion(
         )
         # Warm-start: exp(-dist/L) is the exact solution for uniform k.
         # For spatially varying k(x), CG only corrects the residual → very few iters.
-        from scipy.ndimage import distance_transform_edt
-
         vessel_bool = source > 0
         if vessel_bool.any():
             dist = distance_transform_edt(~vessel_bool)

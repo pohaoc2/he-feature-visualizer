@@ -135,7 +135,7 @@ LEGACY_TYPE_MARKERS: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 
-def _safe_float(value: object, default: float = 0.0) -> float:
+def _coerce_float(value: object, default: float = 0.0) -> float:
     try:
         if value is None or pd.isna(value):
             return default
@@ -317,7 +317,7 @@ def _get_marker_value(row: pd.Series, marker: str) -> float:
                 value = getattr(row, candidate)
             if value is None:
                 continue
-            return _safe_float(value, default=0.0)
+            return _coerce_float(value, default=0.0)
         except Exception:
             continue
     return 0.0
@@ -593,7 +593,7 @@ def match_cells(
             if dist <= max_dist:
                 row = df.iloc[idx]
                 model_probs = {
-                    c: _safe_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES
+                    c: _coerce_float(row.get(f"p_model_{c}", 0.0)) for c in CELL_TYPES
                 }
                 model_type = _argmax_label(model_probs)
                 model_type_fine = str(row.get("type_codex_fine", model_type))
@@ -684,16 +684,16 @@ def build_assignment_record(
             "cell_state": str(cell.get("cell_state", "other")),
             "cell_type_confidence": str(cell.get("cell_type_confidence", "low")),
             "is_mismatch": bool(cell.get("is_mismatch", False)),
-            "centroid_x_local": _safe_float(cell.get("centroid_x_local", 0.0)),
-            "centroid_y_local": _safe_float(cell.get("centroid_y_local", 0.0)),
-            "centroid_x_global": _safe_float(cell.get("centroid_x_global", 0.0)),
-            "centroid_y_global": _safe_float(cell.get("centroid_y_global", 0.0)),
-            "match_distance": _safe_float(cell.get("match_distance", float("inf"))),
+            "centroid_x_local": _coerce_float(cell.get("centroid_x_local", 0.0)),
+            "centroid_y_local": _coerce_float(cell.get("centroid_y_local", 0.0)),
+            "centroid_x_global": _coerce_float(cell.get("centroid_x_global", 0.0)),
+            "centroid_y_global": _coerce_float(cell.get("centroid_y_global", 0.0)),
+            "match_distance": _coerce_float(cell.get("match_distance", float("inf"))),
         }
     )
     for cls in CELL_TYPES:
-        record[f"p_model_{cls}"] = _safe_float(cell.get(f"p_model_{cls}", 0.0))
-        record[f"p_final_{cls}"] = _safe_float(cell.get(f"p_final_{cls}", 0.0))
+        record[f"p_model_{cls}"] = _coerce_float(cell.get(f"p_model_{cls}", 0.0))
+        record[f"p_final_{cls}"] = _coerce_float(cell.get(f"p_final_{cls}", 0.0))
     return record
 
 

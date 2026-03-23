@@ -39,7 +39,6 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 import tifffile
-import zarr
 
 from utils.channels import resolve_channel_indices
 from utils.normalize import percentile_to_uint8
@@ -62,7 +61,6 @@ build_tissue_mask = _masking.build_tissue_mask
 
 get_tissue_patches = _readers.get_tissue_patches
 get_patch_grid = _readers.get_patch_grid
-_clip_and_read = _readers._clip_and_read
 read_he_patch = _readers.read_he_patch
 read_mask_patch = _readers.read_mask_patch
 read_multiplex_patch = _readers.read_multiplex_patch

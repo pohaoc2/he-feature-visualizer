@@ -52,8 +52,15 @@ import tifffile
 from PIL import Image
 
 from stages.patchify_lib.masking import tissue_mask_hsv
-from utils.normalize import percentile_to_uint8
-from utils.ome import get_image_dims, get_ome_mpp, open_zarr_store, read_overview_chw
+from utils.image_ops import colorize_label_mask as colorize_mask
+from utils.normalize import contrast_stretch, percentile_to_uint8
+from utils.ome import (
+    _resolve_channel_axis,
+    get_image_dims,
+    get_ome_mpp,
+    open_zarr_store,
+    read_overview_chw,
+)
 
 DEFAULT_PAIR_CROP_SIZE = 1024
 DEFAULT_OVERVIEW_DOWNSAMPLE = 64
@@ -62,36 +69,6 @@ DEFAULT_OVERVIEW_DOWNSAMPLE = 64
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-
-def _resolve_channel_axis(axes: str) -> str | None:
-    """Return preferred channel-like axis label from an axes string."""
-    axes_up = axes.upper()
-    for ax in ("C", "I", "S"):
-        if ax in axes_up:
-            return ax
-    return None
-
-
-def colorize_mask(mask: np.ndarray, seed: int = 42) -> np.ndarray:
-    """Map a uint32 label mask to an RGB image with random per-cell colours."""
-    rng = np.random.default_rng(seed)
-    max_id = int(mask.max())
-    lut = rng.integers(30, 256, size=(max_id + 1, 3), dtype=np.uint8)
-    lut[0] = 0  # background = black
-    return lut[mask]
-
-
-def contrast_stretch(arr: np.ndarray) -> np.ndarray:
-    """Linearly stretch an array to uint8 [0, 255]."""
-    vmin, vmax = int(arr.min()), int(arr.max())
-    if vmax == vmin:
-        return np.zeros_like(arr, dtype=np.uint8)
-    return (
-        ((arr.astype(np.float32) - vmin) / (vmax - vmin) * 255)
-        .clip(0, 255)
-        .astype(np.uint8)
-    )
 
 
 def side_by_side(left: np.ndarray, right: np.ndarray, gap: int = 8) -> np.ndarray:

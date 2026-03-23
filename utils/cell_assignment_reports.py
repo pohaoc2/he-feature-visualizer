@@ -190,9 +190,8 @@ def _pick_first(
     return None
 
 
-def select_representative_cells(df: pd.DataFrame, per_class: int = 3) -> pd.DataFrame:
+def select_representative_cells(df: pd.DataFrame) -> pd.DataFrame:
     """Pick representative examples per final cell type."""
-    del per_class  # v1 locks to three semantic buckets at most.
 
     work = df.copy().reset_index(drop=True)
     if "final_margin" not in work.columns:
