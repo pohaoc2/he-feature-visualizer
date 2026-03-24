@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
+from utils.normalize import percentile_norm
+
 
 def load_patch(processed: Path, patch_id: str) -> tuple[np.ndarray, np.ndarray | None]:
     """Return (he_rgb uint8, multiplex float32 CHW or None)."""
@@ -24,11 +26,6 @@ def load_patch(processed: Path, patch_id: str) -> tuple[np.ndarray, np.ndarray |
     mx_path = processed / "multiplex" / f"{x}_{y}.npy"
     mx = np.load(mx_path).astype(np.float32) if mx_path.exists() else None
     return he, mx
-
-
-def norm_channel(arr: np.ndarray, plo: float = 2.0, phi: float = 98.0) -> np.ndarray:
-    lo, hi = np.percentile(arr, [plo, phi])
-    return np.clip((arr - lo) / (hi - lo + 1e-9), 0, 1)
 
 
 def make_overlay(he: np.ndarray, dna: np.ndarray) -> np.ndarray:
@@ -109,7 +106,7 @@ def main() -> None:
             col_ov = col_raw + 1
 
             if mx is not None and ch_idx < mx.shape[0]:
-                ch_data = norm_channel(mx[ch_idx])
+                ch_data = percentile_norm(mx[ch_idx], p_low=2.0, p_high=98.0)
                 ch_label = ch_names[ch_idx] if ch_idx < len(ch_names) else f"ch{ch_idx}"
 
                 axes[row, col_raw].imshow(ch_data, cmap="hot", vmin=0, vmax=1)

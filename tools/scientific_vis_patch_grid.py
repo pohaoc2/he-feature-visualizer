@@ -7,10 +7,11 @@ import argparse
 import json
 import os
 import random
+import tempfile
 from pathlib import Path
 
 if "MPLCONFIGDIR" not in os.environ:
-    mpl_cache = Path("/tmp/matplotlib")
+    mpl_cache = Path(tempfile.gettempdir()) / "matplotlib-cache"
     mpl_cache.mkdir(parents=True, exist_ok=True)
     os.environ["MPLCONFIGDIR"] = str(mpl_cache)
 
@@ -19,10 +20,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
 from PIL import Image
 
+from utils.cellvit_io import (
+    composite_rgba_on_rgb as _composite_rgba_on_rgb,
+    load_patch_json as _load_patch_json,
+)
+from utils.colormaps import HOECHST_CMAP
 from utils.marker_aliases import canonicalize_marker_name, normalize_marker_name
 from utils.normalize import percentile_norm
 
@@ -41,18 +47,6 @@ CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "dead": (110, 40, 160, 200),  # purple
     "other": (160, 160, 160, 120),
 }
-
-# Hoechst 33342 fluorescence look: black background → electric blue → blue-white peak
-HOECHST_CMAP = LinearSegmentedColormap.from_list(
-    "hoechst33342",
-    [
-        (0.00, (0.00, 0.00, 0.00)),  # black background
-        (0.35, (0.04, 0.10, 0.55)),  # deep blue
-        (0.65, (0.10, 0.35, 0.90)),  # electric blue
-        (0.85, (0.35, 0.65, 1.00)),  # bright blue-cyan
-        (1.00, (0.80, 0.93, 1.00)),  # near-white peak
-    ],
-)
 
 COL_TITLES = [
     "H&E",
@@ -77,29 +71,6 @@ ASSIGNMENT_COLUMNS: tuple[str, ...] = (
 )
 
 # ── Small rendering helpers ───────────────────────────────────────────────────
-
-
-def _load_patch_json(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8") as fh:
-        data = json.load(fh)
-    if isinstance(data, dict):
-        cells = data.get("cells", [])
-        if isinstance(cells, list):
-            return cells
-    if isinstance(data, list):
-        return data
-    return []
-
-
-def _composite_rgba_on_rgb(
-    base_rgb: np.ndarray, overlay_rgba: np.ndarray
-) -> np.ndarray:
-    base = base_rgb.astype(np.float32)
-    if overlay_rgba.ndim != 3 or overlay_rgba.shape[-1] != 4:
-        return base_rgb
-    ov = overlay_rgba[:, :, :3].astype(np.float32)
-    alpha = (overlay_rgba[:, :, 3:4].astype(np.float32) / 255.0).clip(0.0, 1.0)
-    return (alpha * ov + (1.0 - alpha) * base).clip(0, 255).astype(np.uint8)
 
 
 def _resolve_marker_soft(

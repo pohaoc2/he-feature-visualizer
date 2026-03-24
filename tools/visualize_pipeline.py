@@ -27,25 +27,25 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
+import zarr
 from PIL import Image
 
+from utils.image_ops import colorize_label_mask as _colorize_label_mask
 from utils.normalize import percentile_norm, percentile_to_uint8
 
 # ---------------------------------------------------------------------------
 # Color legends (must match assign_cells.py CELL_TYPE_COLORS / CELL_STATE_COLORS)
 # ---------------------------------------------------------------------------
 TYPE_LEGEND = [
-    ("tumor", (220, 50, 50)),
+    ("cancer", (220, 50, 50)),
     ("immune", (50, 100, 220)),
-    ("stromal", (50, 180, 50)),
+    ("healthy", (50, 180, 50)),
     ("other", (150, 150, 150)),
 ]
 STATE_LEGEND = [
-    ("proliferating", (0, 255, 0)),
-    ("emt", (255, 165, 0)),
-    ("apoptotic", (139, 0, 139)),
-    ("quiescent", (100, 149, 237)),
-    ("healthy", (144, 238, 144)),
+    ("proliferative", (240, 190, 0)),
+    ("quiescent", (120, 120, 120)),
+    ("dead", (110, 60, 20)),
     ("other", (80, 80, 80)),
 ]
 
@@ -127,8 +127,6 @@ def build_original_location(
 
             # Read the thumbnail
             store = level.aszarr()
-            import zarr
-
             raw = zarr.open(store, mode="r")
             arr = raw if isinstance(raw, zarr.Array) else raw["0"]
             arr = np.array(arr)
@@ -263,7 +261,6 @@ def build_cellseg_panel(
                 pass  # already (N, 1, 2) or similar
             else:
                 continue
-            yellow = (255, 255, 0)
             cv2.polylines(
                 overlay, [pts], isClosed=True, color=(255, 255, 255), thickness=2
             )
@@ -296,19 +293,6 @@ def _extract_2d_mask(arr: np.ndarray) -> np.ndarray | None:
         if arr.shape[-1] <= 4:
             return arr[:, :, 0]
     return None
-
-
-def _colorize_label_mask(mask: np.ndarray, seed: int = 42) -> np.ndarray:
-    """Map integer label IDs to deterministic RGB colors (0 -> black)."""
-    label_ids, inverse = np.unique(mask, return_inverse=True)
-    colors = np.zeros((label_ids.shape[0], 3), dtype=np.uint8)
-    non_bg = label_ids != 0
-    if np.any(non_bg):
-        rng = np.random.default_rng(seed)
-        colors[non_bg] = rng.integers(
-            30, 256, size=(int(non_bg.sum()), 3), dtype=np.uint8
-        )
-    return colors[inverse].reshape(mask.shape + (3,))
 
 
 def build_cell_mask_panel(mask_npy_path: Path) -> tuple[np.ndarray, bool]:

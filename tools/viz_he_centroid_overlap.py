@@ -38,26 +38,11 @@ import tifffile
 from PIL import Image
 
 from utils.normalize import percentile_to_uint8
-from utils.ome import get_image_dims
+from utils.ome import chw_from_axes, get_image_dims
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-
-
-def _to_chw(arr: np.ndarray, axes: str) -> np.ndarray:
-    ax = axes.upper()
-    active = [a for a in ax if a in ("C", "Y", "X")]
-    if "C" in active:
-        target = [a for a in ("C", "Y", "X") if a in active]
-        if active != target:
-            arr = arr.transpose([active.index(a) for a in target])
-        return arr
-
-    target = [a for a in ("Y", "X") if a in active]
-    if active != target:
-        arr = arr.transpose([active.index(a) for a in target])
-    return arr[np.newaxis, ...]
 
 
 def _read_he_overview(
@@ -84,7 +69,7 @@ def _read_he_overview(
                 best_level_idx = i
 
         arr = series.levels[best_level_idx].asarray()
-        he_chw = _to_chw(arr, axes)
+        he_chw = chw_from_axes(arr, axes)
 
     if he_chw.shape[0] >= 3:
         he_chw = he_chw[:3]

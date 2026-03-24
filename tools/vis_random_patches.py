@@ -17,10 +17,11 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import tempfile
 from pathlib import Path
 
 if "MPLCONFIGDIR" not in os.environ:
-    _mpl_cache = Path("/tmp/matplotlib")
+    _mpl_cache = Path(tempfile.gettempdir()) / "matplotlib-cache"
     _mpl_cache.mkdir(parents=True, exist_ok=True)
     os.environ["MPLCONFIGDIR"] = str(_mpl_cache)
 
@@ -28,24 +29,13 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
 from PIL import Image
 
+from utils.cellvit_io import composite_rgba_on_rgb
+from utils.colormaps import HOECHST_CMAP
 from utils.normalize import percentile_norm
-
-# ── Colour maps ───────────────────────────────────────────────────────────────
-
-HOECHST_CMAP = LinearSegmentedColormap.from_list(
-    "hoechst33342",
-    [
-        (0.00, (0.00, 0.00, 0.00)),
-        (0.35, (0.04, 0.10, 0.55)),
-        (0.65, (0.10, 0.35, 0.90)),
-        (0.85, (0.35, 0.65, 1.00)),
-        (1.00, (0.80, 0.93, 1.00)),
-    ],
-)
 
 # Keys must be substrings of the subdirectory names under cell_types/ and cell_states/
 CELL_TYPE_COLORS: dict[str, tuple[int, int, int]] = {
@@ -55,14 +45,14 @@ CELL_TYPE_COLORS: dict[str, tuple[int, int, int]] = {
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int]] = {
-    "prolif":    (230,  50, 180),
-    "nonprolif": (240, 140,  30),
-    "dead":      (110,  40, 160),
+    "proliferative": (230,  50, 180),
+    "quiescent":     (240, 140,  30),
+    "dead":          (110,  40, 160),
 }
 
 # Legend display names (same order as dicts above)
 CELL_TYPE_LABELS  = ["cancer", "immune", "healthy"]
-CELL_STATE_LABELS = ["prolif.", "nonprolif", "dead"]
+CELL_STATE_LABELS = ["proliferative", "quiescent", "dead"]
 
 COL_TITLES = [
     "H&E",
@@ -313,9 +303,7 @@ def main() -> None:
         # C6: Vasculature (RGBA composited onto H&E)
         vasc = _load_rgba(processed / "vasculature" / f"{pid}.png")
         if vasc is not None:
-            ov    = vasc[:, :, :3].astype(np.float32)
-            alpha = vasc[:, :, 3:4].astype(np.float32) / 255.0
-            blended = (alpha * ov + (1 - alpha) * he.astype(np.float32)).clip(0, 255).astype(np.uint8)
+            blended = composite_rgba_on_rgb(he, vasc)
             ax[5].imshow(blended)
         else:
             _placeholder((h, w), "Vasculature\nnot found", ax[5])

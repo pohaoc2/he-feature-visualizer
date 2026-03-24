@@ -23,6 +23,7 @@ import pathlib
 import cv2
 import numpy as np
 import tifffile
+import zarr
 
 from stages.multiplex_layers_lib.masks import binarize_otsu, refine_vasculature_with_sma
 from stages.multiplex_layers_lib.pde import (
@@ -30,6 +31,7 @@ from stages.multiplex_layers_lib.pde import (
     compute_metabolic_demand_map,
 )
 from utils.normalize import percentile_norm
+from utils.ome import _resolve_channel_axis
 
 
 def read_wsi_channel_stack(
@@ -58,16 +60,10 @@ def read_wsi_channel_stack(
     -------
     ``(len(channel_indices), H_c, W_c)`` float32 array.
     """
-    import zarr as _zarr
-
     with tifffile.TiffFile(str(tiff_path)) as tif:
         series = tif.series[0]
         axes = series.axes.upper()
-        ch_ax = None
-        for _a in ("C", "I", "S"):
-            if _a in axes:
-                ch_ax = _a
-                break
+        ch_ax = _resolve_channel_axis(axes)
 
         full_h = series.shape[axes.index("Y")]
         n_total_ch = series.shape[axes.index(ch_ax)] if ch_ax else 1
@@ -91,8 +87,8 @@ def read_wsi_channel_stack(
         # Open the zarr group and select the chosen level.
         # ------------------------------------------------------------------
         try:
-            raw = _zarr.open(series.aszarr(), mode="r")
-            if isinstance(raw, _zarr.Array):
+            raw = zarr.open(series.aszarr(), mode="r")
+            if isinstance(raw, zarr.Array):
                 lv_arr = raw  # single-level TIFF, no pyramid group
             else:
                 lv_arr = raw[str(best_lvl_idx)]

@@ -245,7 +245,8 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
     )
 
     if oxygen_model == "wsi-pde":
-        assert wsi_o2_coarse is not None
+        if wsi_o2_coarse is None:
+            raise RuntimeError("wsi_o2_coarse must be set when oxygen_model='wsi-pde'")
         o2_patch = extract_patch_from_coarse(
             wsi_o2_coarse,
             x0,
@@ -260,7 +261,8 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
         oxygen_rgba = make_oxygen_map(vessel_mask, mpp=mpp, max_dist_um=oxygen_krogh_um)
 
     if glucose_model == "wsi-pde":
-        assert wsi_glc_coarse is not None
+        if wsi_glc_coarse is None:
+            raise RuntimeError("wsi_glc_coarse must be set when glucose_model='wsi-pde'")
         glc_patch = extract_patch_from_coarse(
             wsi_glc_coarse,
             x0,
