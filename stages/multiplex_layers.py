@@ -456,9 +456,21 @@ def main() -> None:
         type=float,
         default=160.0,
         help=(
-            "Krogh cylinder O2 diffusion radius in µm. Used by both the "
-            "'distance' model (distance clamp) and 'wsi-pde' model (D calibration). "
+            "O2 Krogh cylinder radius in µm for the 'distance' model (hard clamp). "
             "Default: 160 µm (Grimes 2014)."
+        ),
+    )
+    parser.add_argument(
+        "--oxygen-pde-krogh-um",
+        type=float,
+        default=200.0,
+        help=(
+            "e-folding decay length L = sqrt(D/k) in µm for the 'wsi-pde' O2 model. "
+            "Default: 200 µm, derived from L = sqrt(D_O2 / k_O2) with "
+            "D_O2 = 2000 µm²/s and k_O2 ≈ 0.011–0.033 µM/s (in-vivo tumor; "
+            "Secomb 1995, Grimes 2014). Distinct from --oxygen-krogh-um (160 µm), "
+            "which is the Krogh cylinder *radius* (c=0) from the zero-order cylindrical "
+            "PDE and is not equivalent to the first-order e-folding length."
         ),
     )
     parser.add_argument(
@@ -466,9 +478,22 @@ def main() -> None:
         type=float,
         default=450.0,
         help=(
-            "Krogh cylinder glucose diffusion radius in µm. Used by both the "
-            "'distance' model (distance clamp) and 'wsi-pde' model (D calibration). "
+            "Glucose Krogh cylinder radius in µm for the 'distance' model (hard clamp). "
             "Default: 450 µm (Grimes 2014)."
+        ),
+    )
+    parser.add_argument(
+        "--glucose-pde-krogh-um",
+        type=float,
+        default=120.0,
+        help=(
+            "e-folding decay length L = sqrt(D/k) in µm for the 'wsi-pde' glucose model. "
+            "Default: 120 µm, derived from L = sqrt(D_glc / k_glc) with "
+            "D_glc ≈ 75 µm²/s and k_glc ≈ 0.005–0.01 µM/s (Freyer 1988, Grimes 2014). "
+            "Much shorter than --glucose-krogh-um (450 µm): the 450 µm Krogh radius is "
+            "driven by high plasma glucose concentration (~5 mM) in the zero-order "
+            "cylindrical model; in the normalized exponential model that concentration "
+            "advantage disappears and only L = sqrt(D/k) governs the gradient shape."
         ),
     )
     parser.add_argument(
@@ -689,13 +714,18 @@ def main() -> None:
         wsi_pcna_idx = _remap.get(pcna_idx)
 
         if args.oxygen_model == "wsi-pde":
+            o2_pde_krogh = (
+                args.oxygen_pde_krogh_um
+                if args.oxygen_pde_krogh_um is not None
+                else args.oxygen_krogh_um
+            )
             mpp_coarse = mpp * args.wsi_pde_ds
-            L_coarse = args.oxygen_krogh_um / mpp_coarse
+            L_coarse = o2_pde_krogh / mpp_coarse
             D_coarse = L_coarse**2 * args.oxygen_consumption_base
             log.info(
                 "  O2 WSI-PDE: Krogh=%.0f µm, mpp_coarse=%.3f, L_coarse=%.1f px, "
                 "D_coarse=%.1f, max_iters=%d",
-                args.oxygen_krogh_um,
+                o2_pde_krogh,
                 mpp_coarse,
                 L_coarse,
                 D_coarse,
@@ -707,7 +737,7 @@ def main() -> None:
                 ki67_idx=wsi_ki67_idx,
                 mpp=mpp,
                 ds=args.wsi_pde_ds,
-                krogh_um=args.oxygen_krogh_um,
+                krogh_um=o2_pde_krogh,
                 k_base=args.oxygen_consumption_base,
                 demand_weight=args.oxygen_consumption_demand_weight,
                 immune_weight=args.cd68_consumption_weight,
@@ -726,13 +756,18 @@ def main() -> None:
             )
 
         if args.glucose_model == "wsi-pde":
+            glc_pde_krogh = (
+                args.glucose_pde_krogh_um
+                if args.glucose_pde_krogh_um is not None
+                else args.glucose_krogh_um
+            )
             mpp_coarse = mpp * args.wsi_pde_ds
-            L_coarse = args.glucose_krogh_um / mpp_coarse
+            L_coarse = glc_pde_krogh / mpp_coarse
             D_coarse = L_coarse**2 * args.glucose_consumption_base
             log.info(
                 "  Glucose WSI-PDE: Krogh=%.0f µm, mpp_coarse=%.3f, L_coarse=%.1f px, "
                 "D_coarse=%.1f, max_iters=%d",
-                args.glucose_krogh_um,
+                glc_pde_krogh,
                 mpp_coarse,
                 L_coarse,
                 D_coarse,
@@ -744,7 +779,7 @@ def main() -> None:
                 ki67_idx=wsi_ki67_idx,
                 mpp=mpp,
                 ds=args.wsi_pde_ds,
-                krogh_um=args.glucose_krogh_um,
+                krogh_um=glc_pde_krogh,
                 k_base=args.glucose_consumption_base,
                 demand_weight=args.glucose_consumption_demand_weight,
                 immune_weight=args.cd68_consumption_weight,

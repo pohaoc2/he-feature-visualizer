@@ -385,7 +385,7 @@ Solves `D∇²u − k(x)u + s(x) = 0` once on the full WSI at coarse resolution
 Requires the raw multiplex OME-TIFF via `--multiplex-tiff`.
 
 ```bash
-# Full WSI (recommended: ds=8 keeps memory ~400 MB and converges in <30k iters)
+# Full WSI (ds=4 default; use ds=8 for very large WSIs to reduce memory)
 python -m stages.multiplex_layers \
   --multiplex-dir processed_crc33/multiplex/ \
   --index processed_crc33/index.json \
@@ -393,11 +393,12 @@ python -m stages.multiplex_layers \
   --out processed_crc33/ \
   --multiplex-tiff data/mx_crc33.ome.tif \
   --oxygen-model wsi-pde \
-  --oxygen-krogh-um 160 \
+  --oxygen-krogh-um 160 \          # distance model clamp (unused here)
+  --oxygen-pde-krogh-um 200 \      # wsi-pde e-folding length L=√(D/k) ≈ 200–400 µm (Secomb 1995)
   --glucose-model wsi-pde \
-  --glucose-krogh-um 450 \
-  --wsi-pde-ds 8 \
-  --wsi-pde-max-iters 40000 \
+  --glucose-krogh-um 450 \         # distance model clamp (unused here)
+  --glucose-pde-krogh-um 120 \     # wsi-pde e-folding length (~120 µm, Freyer 1988)
+  --wsi-pde-ds 4 \
   --oxygen-consumption-base 0.1 \
   --oxygen-consumption-demand-weight 0.3 \
   --glucose-consumption-base 0.1 \
@@ -414,9 +415,11 @@ Key `wsi-pde` parameters:
 | `--wsi-pde-ds` | `4` | Downsampling factor. At ds=4, mpp_coarse=1.3 µm/px; use **8** for very large WSIs to reduce memory |
 | `--wsi-pde-max-iters` | `20000` | **Unused** — accepted for CLI compatibility but the solver uses a closed-form WKB approximation (no iterations) |
 | `--wsi-pde-tol` | `1e-4` | **Unused** — same reason as above |
-| `--oxygen-krogh-um` | `160` | e-folding decay length L for O₂ (µm). From literature (Grimes 2014): `L = √(D/k)` where D=diffusivity, k=consumption. **Cannot be fit without a hypoxia marker (CA9/CAIX) in the panel.** |
-| `--glucose-krogh-um` | `450` | Same for glucose. Glucose diffuses ~3× farther than O₂. |
-| `--oxygen-consumption-demand-weight` | `0.3` | Weight on Ki67 in `k(x)`. Heuristic — fit from CA9 staining if available. |
+| `--oxygen-krogh-um` | `160` | O₂ Krogh cylinder radius for the **distance model** (hard clamp, Grimes 2014). Not used by wsi-pde. |
+| `--oxygen-pde-krogh-um` | `200` | e-folding decay length L = √(D_O2/k_O2) for the **wsi-pde** O₂ model. Literature: L ≈ 200–400 µm (D=2000 µm²/s, k≈0.011–0.033 µM/s in-vivo; Secomb 1995, Grimes 2014). Note: `--oxygen-krogh-um` (160 µm) is the Krogh *radius* from zero-order cylindrical PDE — a different quantity. |
+| `--glucose-krogh-um` | `450` | Glucose Krogh cylinder radius for the **distance model** (hard clamp, Grimes 2014). |
+| `--glucose-pde-krogh-um` | `120` | e-folding decay length L = √(D_glc/k_glc) for the **wsi-pde** glucose model. Literature: L ≈ 120 µm (D_glc≈75 µm²/s, k_glc≈0.005–0.01 µM/s; Freyer 1988). The 450 µm `--glucose-krogh-um` is the Krogh *radius* driven by high plasma glucose (5 mM) — irrelevant for the normalized model. |
+| `--oxygen-consumption-demand-weight` | `0.3` | Weight on Ki67 in `k(x)`. Heuristic — fit from CA9 staining if available (Kumar 2024). |
 | `--glucose-consumption-demand-weight` | `0.3` | Same for glucose. |
 | `--cd68-consumption-weight` | `0.1` | Weight on CD68 (macrophage demand) in `k(x)`. |
 
