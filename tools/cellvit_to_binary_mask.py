@@ -69,8 +69,8 @@ def build_patch_binary_masks(
             contour = cell.get("contour", [])
             if len(contour) < 3:
                 continue
-            pts = np.array(contour, dtype=np.int32).reshape(-1, 1, 2)
-            cv2.fillPoly(patch_buf, [pts], color=255)
+            pts = np.array(contour, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.fillPoly(patch_buf, [pts], 255)
 
         out_path = out_dir / f"{json_path.stem}.png"
         Image.fromarray(patch_buf).save(str(out_path))

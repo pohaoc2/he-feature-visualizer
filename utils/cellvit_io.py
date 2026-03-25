@@ -21,9 +21,7 @@ def load_patch_json(path: Path) -> list[dict]:
     return []
 
 
-def composite_rgba_on_rgb(
-    base_rgb: np.ndarray, overlay_rgba: np.ndarray
-) -> np.ndarray:
+def composite_rgba_on_rgb(base_rgb: np.ndarray, overlay_rgba: np.ndarray) -> np.ndarray:
     """Alpha-composite an RGBA overlay onto an RGB base image."""
     base = base_rgb.astype(np.float32)
     if overlay_rgba.ndim != 3 or overlay_rgba.shape[-1] != 4:

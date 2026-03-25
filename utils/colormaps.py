@@ -15,3 +15,22 @@ HOECHST_CMAP = LinearSegmentedColormap.from_list(
         (1.00, (0.80, 0.93, 1.00)),  # near-white peak
     ],
 )
+
+# O₂ / glucose proxy RGBA overlays use fixed palettes; colorbars use these gradients.
+OXYGEN_PROXY_CMAP = LinearSegmentedColormap.from_list(
+    "oxygen_proxy",
+    [
+        (0.00, (0.35, 0.00, 0.08)),  # hypoxic — deep red
+        (0.45, (0.75, 0.35, 0.20)),
+        (1.00, (0.45, 0.92, 1.00)),  # oxygenated — light cyan
+    ],
+)
+
+GLUCOSE_PROXY_CMAP = LinearSegmentedColormap.from_list(
+    "glucose_proxy",
+    [
+        (0.00, (0.12, 0.02, 0.22)),  # depleted — dark violet
+        (0.50, (0.55, 0.40, 0.08)),
+        (1.00, (0.98, 0.95, 0.35)),  # high — bright yellow
+    ],
+)

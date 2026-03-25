@@ -39,19 +39,19 @@ from utils.normalize import percentile_norm
 
 # Keys must be substrings of the subdirectory names under cell_types/ and cell_states/
 CELL_TYPE_COLORS: dict[str, tuple[int, int, int]] = {
-    "cancer":   (220,  50,  50),
-    "immune":   ( 50, 100, 220),
-    "healthy":  ( 50, 180,  50),
+    "cancer": (220, 50, 50),
+    "immune": (50, 100, 220),
+    "healthy": (50, 180, 50),
 }
 
 CELL_STATE_COLORS: dict[str, tuple[int, int, int]] = {
-    "proliferative": (230,  50, 180),
-    "quiescent":     (240, 140,  30),
-    "dead":          (110,  40, 160),
+    "proliferative": (230, 50, 180),
+    "quiescent": (240, 140, 30),
+    "dead": (110, 40, 160),
 }
 
 # Legend display names (same order as dicts above)
-CELL_TYPE_LABELS  = ["cancer", "immune", "healthy"]
+CELL_TYPE_LABELS = ["cancer", "immune", "healthy"]
 CELL_STATE_LABELS = ["proliferative", "quiescent", "dead"]
 
 COL_TITLES = [
@@ -65,10 +65,10 @@ COL_TITLES = [
     "Glucose",
 ]
 
-_COL_TYPE  = 3
+_COL_TYPE = 3
 _COL_STATE = 4
-_COL_O2    = 6
-_COL_GLC   = 7
+_COL_O2 = 6
+_COL_GLC = 7
 
 # ── Image helpers ─────────────────────────────────────────────────────────────
 
@@ -87,8 +87,16 @@ def _load_gray(path: Path) -> np.ndarray | None:
 
 def _placeholder(shape: tuple[int, int], text: str, ax: plt.Axes) -> None:
     ax.imshow(np.full((*shape, 3), 220, dtype=np.uint8))
-    ax.text(0.5, 0.5, text, ha="center", va="center",
-            fontsize=7, color="#555555", transform=ax.transAxes)
+    ax.text(
+        0.5,
+        0.5,
+        text,
+        ha="center",
+        va="center",
+        fontsize=7,
+        color="#555555",
+        transform=ax.transAxes,
+    )
 
 
 def _class_overlay(
@@ -110,7 +118,7 @@ def _class_overlay(
         return None
 
     h, w = he_rgb.shape[:2]
-    base    = he_rgb.astype(np.float32)
+    base = he_rgb.astype(np.float32)
     overlay = np.zeros((h, w, 3), dtype=np.float32)
     painted = np.zeros((h, w), dtype=bool)
 
@@ -191,24 +199,31 @@ def _draw_colorbar(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Random patch grid (no index.json needed): "
-                    "H&E | Hoechst | Cell mask | Cell type | Cell state | "
-                    "Vasculature | O₂ | Glucose"
+        "H&E | Hoechst | Cell mask | Cell type | Cell state | "
+        "Vasculature | O₂ | Glucose"
     )
     parser.add_argument("--processed", required=True, help="Processed directory.")
     parser.add_argument(
-        "--random", dest="n_patches", type=int, required=True,
+        "--random",
+        dest="n_patches",
+        type=int,
+        required=True,
         help="Number of patches to sample randomly.",
     )
     parser.add_argument("--seed", type=int, default=None, help="Random seed.")
     parser.add_argument(
-        "--out-prefix", default=None,
+        "--out-prefix",
+        default=None,
         help="Output path prefix (default: <processed>/patch_grid).",
     )
     parser.add_argument(
-        "--formats", default="png",
+        "--formats",
+        default="png",
         help="Comma-separated output formats (default: png).",
     )
-    parser.add_argument("--dpi", type=int, default=150, help="Raster DPI (default: 150).")
+    parser.add_argument(
+        "--dpi", type=int, default=150, help="Raster DPI (default: 150)."
+    )
     args = parser.parse_args()
 
     processed = Path(args.processed)
@@ -231,10 +246,12 @@ def main() -> None:
     annot_h = 0.45
     n_cols = len(COL_TITLES)
 
-    fig = plt.figure(figsize=(n_cols * col_w, n * row_h + annot_h),
-                     constrained_layout=True)
+    fig = plt.figure(
+        figsize=(n_cols * col_w, n * row_h + annot_h), constrained_layout=True
+    )
     gs = gridspec.GridSpec(
-        n + 1, n_cols,
+        n + 1,
+        n_cols,
         figure=fig,
         height_ratios=[*([1] * n), annot_h / row_h],
     )
@@ -244,10 +261,10 @@ def main() -> None:
     )
 
     _annot_used = {_COL_TYPE, _COL_STATE, _COL_O2, _COL_GLC}
-    leg_type_ax  = fig.add_subplot(gs[n, _COL_TYPE])
+    leg_type_ax = fig.add_subplot(gs[n, _COL_TYPE])
     leg_state_ax = fig.add_subplot(gs[n, _COL_STATE])
-    cax_o2       = fig.add_subplot(gs[n, _COL_O2])
-    cax_glc      = fig.add_subplot(gs[n, _COL_GLC])
+    cax_o2 = fig.add_subplot(gs[n, _COL_O2])
+    cax_glc = fig.add_subplot(gs[n, _COL_GLC])
     for c in range(n_cols):
         if c not in _annot_used:
             fig.add_subplot(gs[n, c]).set_visible(False)
@@ -272,8 +289,12 @@ def main() -> None:
             mx_path = processed / "multiplex" / f"{pid}.npy"
             if mx_path.exists():
                 mx = np.load(mx_path)
-                ax[1].imshow(percentile_norm(mx[0].astype(np.float32)),
-                             cmap=HOECHST_CMAP, vmin=0.0, vmax=1.0)
+                ax[1].imshow(
+                    percentile_norm(mx[0].astype(np.float32)),
+                    cmap=HOECHST_CMAP,
+                    vmin=0.0,
+                    vmax=1.0,
+                )
             else:
                 _placeholder((h, w), "Hoechst\nnot found", ax[1])
         else:
@@ -327,10 +348,12 @@ def main() -> None:
             a.set_yticks([])
 
     # ── Annotation row ────────────────────────────────────────────────────────
-    _draw_legend(leg_type_ax,  CELL_TYPE_COLORS,  CELL_TYPE_LABELS)
+    _draw_legend(leg_type_ax, CELL_TYPE_COLORS, CELL_TYPE_LABELS)
     _draw_legend(leg_state_ax, CELL_STATE_COLORS, CELL_STATE_LABELS)
-    _draw_colorbar(fig, cax_o2,  OXYGEN_PROXY_CMAP,  "O₂ proxy",      "hypoxic", "oxygenated")
-    _draw_colorbar(fig, cax_glc, GLUCOSE_PROXY_CMAP, "Glucose proxy", "depleted", "high")
+    _draw_colorbar(fig, cax_o2, OXYGEN_PROXY_CMAP, "O₂ proxy", "hypoxic", "oxygenated")
+    _draw_colorbar(
+        fig, cax_glc, GLUCOSE_PROXY_CMAP, "Glucose proxy", "depleted", "high"
+    )
 
     # ── Save ──────────────────────────────────────────────────────────────────
     formats = [f.strip() for f in args.formats.split(",") if f.strip()] or ["png"]

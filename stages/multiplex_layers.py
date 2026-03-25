@@ -262,7 +262,9 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
 
     if glucose_model == "wsi-pde":
         if wsi_glc_coarse is None:
-            raise RuntimeError("wsi_glc_coarse must be set when glucose_model='wsi-pde'")
+            raise RuntimeError(
+                "wsi_glc_coarse must be set when glucose_model='wsi-pde'"
+            )
         glc_patch = extract_patch_from_coarse(
             wsi_glc_coarse,
             x0,

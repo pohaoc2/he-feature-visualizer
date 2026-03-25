@@ -16,5 +16,7 @@ def colorize_label_mask(mask: np.ndarray, seed: int = 42) -> np.ndarray:
     non_bg = label_ids != 0
     if np.any(non_bg):
         rng = np.random.default_rng(seed)
-        colors[non_bg] = rng.integers(30, 256, size=(int(non_bg.sum()), 3), dtype=np.uint8)
+        colors[non_bg] = rng.integers(
+            30, 256, size=(int(non_bg.sum()), 3), dtype=np.uint8
+        )
     return colors[inverse].reshape(mask.shape + (3,))
