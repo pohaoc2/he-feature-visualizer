@@ -8,7 +8,7 @@ Columns: H&E | Hoechst | Cell mask | Cell type | Cell state | Vasculature | O₂
 Below each patch grid:
   - Cell type column  → colour legend (cancer / immune / healthy)
   - Cell state column → colour legend (proliferative / nonprolif / dead)
-  - Oxygen column     → horizontal colorbar spanning the column width
+  - Oxygen column     → horizontal colorbar spanning the column width；
   - Glucose column    → horizontal colorbar spanning the column width
 """
 
@@ -29,12 +29,12 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize
+from matplotlib.colors import Colormap, Normalize
 from matplotlib.patches import Patch
 from PIL import Image
 
 from utils.cellvit_io import composite_rgba_on_rgb
-from utils.colormaps import HOECHST_CMAP
+from utils.colormaps import GLUCOSE_PROXY_CMAP, HOECHST_CMAP, OXYGEN_PROXY_CMAP
 from utils.normalize import percentile_norm
 
 # Keys must be substrings of the subdirectory names under cell_types/ and cell_states/
@@ -171,7 +171,7 @@ def _draw_legend(
 def _draw_colorbar(
     fig: plt.Figure,
     ax: plt.Axes,
-    cmap: str,
+    cmap: str | Colormap,
     label: str,
     lo_label: str,
     hi_label: str,
@@ -329,8 +329,8 @@ def main() -> None:
     # ── Annotation row ────────────────────────────────────────────────────────
     _draw_legend(leg_type_ax,  CELL_TYPE_COLORS,  CELL_TYPE_LABELS)
     _draw_legend(leg_state_ax, CELL_STATE_COLORS, CELL_STATE_LABELS)
-    _draw_colorbar(fig, cax_o2,  "RdYlBu", "O₂ proxy",     "hypoxic",  "oxygenated")
-    _draw_colorbar(fig, cax_glc, "hot",    "Glucose proxy", "depleted", "high")
+    _draw_colorbar(fig, cax_o2,  OXYGEN_PROXY_CMAP,  "O₂ proxy",      "hypoxic", "oxygenated")
+    _draw_colorbar(fig, cax_glc, GLUCOSE_PROXY_CMAP, "Glucose proxy", "depleted", "high")
 
     # ── Save ──────────────────────────────────────────────────────────────────
     formats = [f.strip() for f in args.formats.split(",") if f.strip()] or ["png"]
