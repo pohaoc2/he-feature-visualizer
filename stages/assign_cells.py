@@ -2,7 +2,7 @@
 assign_cells.py — Stage 3 of the histopathology pipeline.
 
 CODEX-based cell typing (cancer/immune/healthy) with CellViT prior fusion,
-plus state assignment (dead/proliferative/quiescent).
+plus state assignment (dead/proliferative/nonprolif).
 
 Dual mode:
   1) Existing mode: read --features-csv directly.
@@ -35,19 +35,7 @@ from utils.marker_aliases import marker_candidates, resolve_first_present_column
 
 CELL_TYPES: tuple[str, str, str] = ("cancer", "immune", "healthy")
 
-CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "cancer": (220, 50, 50, 200),
-    "immune": (50, 100, 220, 200),
-    "healthy": (50, 180, 50, 200),
-    "other": (150, 150, 150, 150),
-}
-
-CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferative": (240, 190, 0, 200),
-    "quiescent": (120, 120, 120, 200),
-    "dead": (110, 60, 20, 200),
-    "other": (80, 80, 80, 150),
-}
+from utils.colormaps import CELL_STATE_COLORS, CELL_TYPE_COLORS
 
 # ---------------------------------------------------------------------------
 # CellViT priors and marker config
@@ -519,7 +507,7 @@ def assign_state(
             if keratin >= thresholds.get(
                 "Keratin", float("inf")
             ) and ecad >= thresholds.get("Ecadherin_high", float("inf")):
-                return "quiescent"
+                return "nonprolif"
             if ecad >= thresholds.get(
                 "Ecadherin_high", float("inf")
             ) and keratin < thresholds.get("Keratin", float("inf")):
@@ -529,7 +517,7 @@ def assign_state(
         ki67 = _get_marker_value(row, "Ki67")
         if ki67 >= thresholds.get("Ki67", float("inf")):
             return "proliferative"
-        return "quiescent"
+        return "nonprolif"
     except Exception:
         return "other"
 
@@ -624,7 +612,7 @@ def match_cells(
                 final_type = prior_type
                 mismatch = False
                 confidence = "low"
-                state = "dead" if type_cellvit == 4 else "quiescent"
+                state = "dead" if type_cellvit == 4 else "nonprolif"
                 matched_row_idx = None
 
             cell["cell_type"] = final_type
@@ -646,7 +634,7 @@ def match_cells(
             prior_type = _argmax_label(prior_probs)
             cell["cell_type"] = prior_type
             cell["cell_type_confidence"] = "low"
-            cell["cell_state"] = "dead" if type_cellvit == 4 else "quiescent"
+            cell["cell_state"] = "dead" if type_cellvit == 4 else "nonprolif"
             cell["type_codex"] = "error"
             cell["type_codex_fine"] = "error"
             cell["type_cellvit_prior"] = prior_type
@@ -728,12 +716,12 @@ def rasterize_binary_masks(
 
     Returns a dict of (patch_size, patch_size) uint8 arrays (0 or 255):
       - cell type masks: cancer/immune/healthy
-      - cell state masks: proliferative/quiescent/dead
+      - cell state masks: proliferative/nonprolif/dead
     """
     masks: dict[str, np.ndarray] = {}
     for cell_type in CELL_TYPES:
         masks[cell_type] = np.zeros((patch_size, patch_size), dtype=np.uint8)
-    for cell_state in ("proliferative", "quiescent", "dead"):
+    for cell_state in ("proliferative", "nonprolif", "dead"):
         masks[cell_state] = np.zeros((patch_size, patch_size), dtype=np.uint8)
 
     for cell in cells:
@@ -909,15 +897,15 @@ def _ac_patch_worker(patch_meta: dict) -> tuple | None:
     Image.fromarray(binary_masks["proliferative"]).save(
         ctx["states_proliferative_dir"] / f"{patch_id}.png"
     )
-    Image.fromarray(binary_masks["quiescent"]).save(
-        ctx["states_quiescent_dir"] / f"{patch_id}.png"
+    Image.fromarray(binary_masks["nonprolif"]).save(
+        ctx["states_nonprolif_dir"] / f"{patch_id}.png"
     )
     Image.fromarray(binary_masks["dead"]).save(
         ctx["states_dead_dir"] / f"{patch_id}.png"
     )
     state_union_rgb = compose_union_rgb(
         binary_masks,
-        ("proliferative", "quiescent", "dead"),
+        ("proliferative", "nonprolif", "dead"),
         CELL_STATE_COLORS,
     )
     Image.fromarray(state_union_rgb, mode="RGB").save(
@@ -1084,14 +1072,14 @@ def main() -> None:
         dir.mkdir(parents=True, exist_ok=True)
         return dir
 
-    types_cancers_dir = _create_dir(types_dir / "cancers")
-    types_immune_dir = _create_dir(types_dir / "immune")
-    types_healthy_dir = _create_dir(types_dir / "healthy")
+    types_cancers_dir = _create_dir(types_dir / "cell_type_cancer")
+    types_immune_dir = _create_dir(types_dir / "cell_type_immune")
+    types_healthy_dir = _create_dir(types_dir / "cell_type_healthy")
     types_union_dir = _create_dir(types_dir / "union")
     states_dir = _create_dir(states_dir)
-    states_proliferative_dir = _create_dir(states_dir / "proliferative")
-    states_quiescent_dir = _create_dir(states_dir / "quiescent")
-    states_dead_dir = _create_dir(states_dir / "dead")
+    states_proliferative_dir = _create_dir(states_dir / "cell_state_prolif")
+    states_nonprolif_dir = _create_dir(states_dir / "cell_state_nonprolif")
+    states_dead_dir = _create_dir(states_dir / "cell_state_dead")
     states_union_dir = _create_dir(states_dir / "union")
     auto_extracted = False
     if features_csv is None:
@@ -1214,7 +1202,7 @@ def main() -> None:
         "types_union_dir": types_union_dir,
         "states_dir": states_dir,
         "states_proliferative_dir": states_proliferative_dir,
-        "states_quiescent_dir": states_quiescent_dir,
+        "states_nonprolif_dir": states_nonprolif_dir,
         "states_dead_dir": states_dead_dir,
         "states_union_dir": states_union_dir,
     }

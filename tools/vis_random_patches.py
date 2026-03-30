@@ -34,25 +34,20 @@ from matplotlib.patches import Patch
 from PIL import Image
 
 from utils.cellvit_io import composite_rgba_on_rgb
-from utils.colormaps import GLUCOSE_PROXY_CMAP, HOECHST_CMAP, OXYGEN_PROXY_CMAP
+from utils.colormaps import (
+    CELL_STATE_COLORS,
+    CELL_STATE_DIR,
+    CELL_TYPE_COLORS,
+    CELL_TYPE_DIR,
+    GLUCOSE_PROXY_CMAP,
+    HOECHST_CMAP,
+    OXYGEN_PROXY_CMAP,
+)
 from utils.normalize import percentile_norm
-
-# Keys must be substrings of the subdirectory names under cell_types/ and cell_states/
-CELL_TYPE_COLORS: dict[str, tuple[int, int, int]] = {
-    "cancer": (220, 50, 50),
-    "immune": (50, 100, 220),
-    "healthy": (50, 180, 50),
-}
-
-CELL_STATE_COLORS: dict[str, tuple[int, int, int]] = {
-    "proliferative": (230, 50, 180),
-    "quiescent": (240, 140, 30),
-    "dead": (110, 40, 160),
-}
 
 # Legend display names (same order as dicts above)
 CELL_TYPE_LABELS = ["cancer", "immune", "healthy"]
-CELL_STATE_LABELS = ["proliferative", "quiescent", "dead"]
+CELL_STATE_LABELS = ["proliferative", "nonprolif", "dead"]
 
 COL_TITLES = [
     "H&E",
@@ -103,14 +98,15 @@ def _class_overlay(
     he_rgb: np.ndarray,
     class_dir: Path,
     pid: str,
-    color_map: dict[str, tuple[int, int, int]],
+    color_map: dict[str, tuple[int, ...]],
+    dir_map: dict[str, str],
     alpha: float = 0.75,
 ) -> np.ndarray | None:
     """Composite per-class binary masks for one patch onto the H&E background.
 
-    Subdirectories under *class_dir* are matched by substring: key ``"cancer"``
-    matches directory ``cell_type_cancer``, etc.  Each matched mask (0/255 PNG)
-    is painted with the corresponding solid colour at *alpha* opacity.
+    *dir_map* maps each key in *color_map* to the exact subdirectory name under
+    *class_dir*.  Using exact names avoids substring-matching ambiguity (e.g.
+    ``"prolif"`` is a substring of ``"nonprolif"``).
 
     Returns the composited RGB uint8 image, or ``None`` if no masks exist.
     """
@@ -123,16 +119,17 @@ def _class_overlay(
     painted = np.zeros((h, w), dtype=bool)
 
     for key, color in color_map.items():
-        for subdir in sorted(class_dir.iterdir()):
-            if not subdir.is_dir() or key not in subdir.name:
-                continue
-            mask_path = subdir / f"{pid}.png"
-            if not mask_path.exists():
-                break
-            mask = np.array(Image.open(mask_path).convert("L")) > 128
-            painted |= mask
-            overlay[mask] = color
-            break
+        if key not in dir_map:
+            continue
+        subdir = class_dir / dir_map[key]
+        if not subdir.is_dir():
+            continue
+        mask_path = subdir / f"{pid}.png"
+        if not mask_path.exists():
+            continue
+        mask = np.array(Image.open(mask_path).convert("L")) > 128
+        painted |= mask
+        overlay[mask] = color[:3]
 
     if not painted.any():
         return None
@@ -308,14 +305,14 @@ def main() -> None:
             _placeholder((h, w), "Cell mask\nnot found", ax[2])
 
         # C4: Cell type — composited from per-class binary masks
-        ct = _class_overlay(he, processed / "cell_types", pid, CELL_TYPE_COLORS)
+        ct = _class_overlay(he, processed / "cell_types", pid, CELL_TYPE_COLORS, CELL_TYPE_DIR)
         if ct is not None:
             ax[3].imshow(ct)
         else:
             _placeholder((h, w), "Cell type\nnot found", ax[3])
 
         # C5: Cell state — composited from per-class binary masks
-        cs = _class_overlay(he, processed / "cell_states", pid, CELL_STATE_COLORS)
+        cs = _class_overlay(he, processed / "cell_states", pid, CELL_STATE_COLORS, CELL_STATE_DIR)
         if cs is not None:
             ax[4].imshow(cs)
         else:
@@ -351,9 +348,7 @@ def main() -> None:
     _draw_legend(leg_type_ax, CELL_TYPE_COLORS, CELL_TYPE_LABELS)
     _draw_legend(leg_state_ax, CELL_STATE_COLORS, CELL_STATE_LABELS)
     _draw_colorbar(fig, cax_o2, OXYGEN_PROXY_CMAP, "O₂ proxy", "hypoxic", "oxygenated")
-    _draw_colorbar(
-        fig, cax_glc, GLUCOSE_PROXY_CMAP, "Glucose proxy", "depleted", "high"
-    )
+    _draw_colorbar(fig, cax_glc, GLUCOSE_PROXY_CMAP, "Glucose proxy", "depleted", "high")
 
     # ── Save ──────────────────────────────────────────────────────────────────
     formats = [f.strip() for f in args.formats.split(",") if f.strip()] or ["png"]

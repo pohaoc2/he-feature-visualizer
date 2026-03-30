@@ -74,6 +74,8 @@ from stages.multiplex_layers_lib.pde import (
 )
 from stages.multiplex_layers_lib.render import (
     apply_colormap,
+    compute_glucose_proxy,
+    compute_oxygen_proxy,
     make_glucose_map,
     make_glucose_map_distance,
     make_glucose_map_pde,
@@ -81,6 +83,7 @@ from stages.multiplex_layers_lib.render import (
     make_oxygen_map_pde,
     make_vasculature_overlay,
 )
+from utils.colormaps import GLUCOSE_PROXY_CMAP, OXYGEN_PROXY_CMAP
 from stages.multiplex_layers_lib.wsi_pde import (
     extract_patch_from_coarse,
     read_wsi_channel_stack,
@@ -174,7 +177,9 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
     vasc_dir: pathlib.Path = ctx["vasc_dir"]
     vasc_mask_dir: pathlib.Path = ctx["vasc_mask_dir"]
     oxygen_dir: pathlib.Path = ctx["oxygen_dir"]
+    oxygen_npy_dir: pathlib.Path = ctx["oxygen_npy_dir"]
     glucose_dir: pathlib.Path = ctx["glucose_dir"]
+    glucose_npy_dir: pathlib.Path = ctx["glucose_npy_dir"]
     validate_ki67_distance: bool = ctx["validate_ki67_distance"]
     validate_bin_um: float = ctx["validate_bin_um"]
     val_n_bins: int = ctx["val_n_bins"]
@@ -247,7 +252,7 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
     if oxygen_model == "wsi-pde":
         if wsi_o2_coarse is None:
             raise RuntimeError("wsi_o2_coarse must be set when oxygen_model='wsi-pde'")
-        o2_patch = extract_patch_from_coarse(
+        o2_raw = extract_patch_from_coarse(
             wsi_o2_coarse,
             x0,
             y0,
@@ -256,16 +261,17 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
             mpp,
             wsi_pde_ds,
         )
-        oxygen_rgba = apply_colormap(o2_patch, "RdYlBu")
     else:
-        oxygen_rgba = make_oxygen_map(vessel_mask, mpp=mpp, max_dist_um=oxygen_krogh_um)
+        o2_raw = compute_oxygen_proxy(vessel_mask, mpp=mpp, max_dist_um=oxygen_krogh_um)
+    np.save(oxygen_npy_dir / f"{patch_id}.npy", o2_raw, allow_pickle=False)
+    oxygen_rgba = apply_colormap(o2_raw, OXYGEN_PROXY_CMAP)
 
     if glucose_model == "wsi-pde":
         if wsi_glc_coarse is None:
             raise RuntimeError(
                 "wsi_glc_coarse must be set when glucose_model='wsi-pde'"
             )
-        glc_patch = extract_patch_from_coarse(
+        glc_raw = extract_patch_from_coarse(
             wsi_glc_coarse,
             x0,
             y0,
@@ -274,15 +280,12 @@ def _ml_patch_worker(patch_meta: dict) -> dict:
             mpp,
             wsi_pde_ds,
         )
-        glucose_rgba = apply_colormap(glc_patch, "hot")
     elif glucose_model == "distance":
-        glucose_rgba = make_glucose_map_distance(
-            vessel_mask,
-            mpp=mpp,
-            max_dist_um=glucose_krogh_um,
-        )
+        glc_raw = compute_glucose_proxy(vessel_mask, mpp=mpp, max_dist_um=glucose_krogh_um)
     else:
-        glucose_rgba = make_glucose_map(ki67_raw, pcna_raw)
+        glc_raw = compute_metabolic_demand_map(ki67_raw, pcna_raw)
+    np.save(glucose_npy_dir / f"{patch_id}.npy", glc_raw, allow_pickle=False)
+    glucose_rgba = apply_colormap(glc_raw, GLUCOSE_PROXY_CMAP)
 
     val_sum_patch: np.ndarray | None = None
     val_count_patch: np.ndarray | None = None
@@ -670,8 +673,10 @@ def main() -> None:
     vasc_dir = out_dir / "vasculature"
     vasc_mask_dir = out_dir / "vasculature_mask"
     oxygen_dir = out_dir / "oxygen"
+    oxygen_npy_dir = out_dir / "oxygen_npy"
     glucose_dir = out_dir / "glucose"
-    for d in (vasc_dir, vasc_mask_dir, oxygen_dir, glucose_dir):
+    glucose_npy_dir = out_dir / "glucose_npy"
+    for d in (vasc_dir, vasc_mask_dir, oxygen_dir, oxygen_npy_dir, glucose_dir, glucose_npy_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
@@ -844,7 +849,9 @@ def main() -> None:
         "vasc_dir": vasc_dir,
         "vasc_mask_dir": vasc_mask_dir,
         "oxygen_dir": oxygen_dir,
+        "oxygen_npy_dir": oxygen_npy_dir,
         "glucose_dir": glucose_dir,
+        "glucose_npy_dir": glucose_npy_dir,
         "validate_ki67_distance": args.validate_ki67_distance,
         "validate_bin_um": args.validate_bin_um,
         "val_n_bins": val_n_bins,
@@ -896,7 +903,9 @@ def main() -> None:
     log.info("  Vasculature PNGs  → %s", vasc_dir)
     log.info("  Vasculature masks → %s", vasc_mask_dir)
     log.info("  Oxygen PNGs       → %s", oxygen_dir)
+    log.info("  Oxygen .npy       → %s", oxygen_npy_dir)
     log.info("  Glucose PNGs      → %s", glucose_dir)
+    log.info("  Glucose .npy      → %s", glucose_npy_dir)
 
 
 if __name__ == "__main__":

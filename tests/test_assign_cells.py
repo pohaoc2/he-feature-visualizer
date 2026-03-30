@@ -180,7 +180,7 @@ def test_match_cells_mismatch_downgrades_confidence_to_medium():
     assert out[0]["cell_type"] == "cancer"
     assert out[0]["is_mismatch"] is True
     assert out[0]["cell_type_confidence"] == "medium"
-    assert out[0]["cell_state"] == "quiescent"
+    assert out[0]["cell_state"] == "nonprolif"
 
 
 def test_match_cells_unmatched_uses_prior_and_low_confidence():
@@ -217,7 +217,7 @@ def test_match_cells_unmatched_uses_prior_and_low_confidence():
     )
     assert out[0]["cell_type"] == "cancer"
     assert out[0]["cell_type_confidence"] == "low"
-    assert out[0]["cell_state"] == "quiescent"
+    assert out[0]["cell_state"] == "nonprolif"
 
 
 def test_rasterize_cells_returns_rgba():
@@ -228,7 +228,7 @@ def test_rasterize_cells_returns_rgba():
             "centroid": [30, 30],
             "contour": _small_rect_contour(30, 30, half=6),
             "cell_type": "cancer",
-            "cell_state": "quiescent",
+            "cell_state": "nonprolif",
         }
     ]
     out = rasterize_cells(

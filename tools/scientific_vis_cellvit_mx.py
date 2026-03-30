@@ -37,24 +37,7 @@ from utils.cellvit_io import (
 )
 from utils.normalize import percentile_norm
 
-CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "cancer": (220, 50, 50, 200),
-    "immune": (50, 100, 220, 200),
-    "healthy": (50, 180, 50, 200),
-    "other": (150, 150, 150, 120),
-}
-
-CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferative": (
-        230,
-        50,
-        180,
-        200,
-    ),  # magenta — distinct from red/blue/green types
-    "quiescent": (240, 140, 30, 200),  # amber/orange
-    "dead": (110, 40, 160, 200),  # purple
-    "other": (160, 160, 160, 120),
-}
+from utils.colormaps import CELL_STATE_COLORS, CELL_TYPE_COLORS
 
 MODEL_FINE_COLORS: dict[str, tuple[int, int, int, int]] = {
     "epithelial": (220, 50, 50, 200),
@@ -240,7 +223,7 @@ def _add_state_legend(ax: plt.Axes) -> None:
             edgecolor="none",
             label=label,
         )
-        for label in ("proliferative", "quiescent", "dead")
+        for label in ("proliferative", "nonprolif", "dead")
     ]
     ax.legend(
         handles=handles,

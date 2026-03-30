@@ -391,13 +391,13 @@ python -m stages.multiplex_layers \
   --index processed_crc33/index.json \
   --metadata-csv data/markers.csv \
   --out processed_crc33/ \
-  --multiplex-tiff data/mx_crc33.ome.tif \
+  --multiplex-tiff data/mx_crc33.ome.tiff \
   --oxygen-model wsi-pde \
-  --oxygen-krogh-um 160 \          # distance model clamp (unused here)
-  --oxygen-pde-krogh-um 200 \      # wsi-pde e-folding length L=√(D/k) ≈ 200–400 µm (Secomb 1995)
+  --oxygen-krogh-um 160 \
+  --oxygen-pde-krogh-um 200 \
   --glucose-model wsi-pde \
-  --glucose-krogh-um 450 \         # distance model clamp (unused here)
-  --glucose-pde-krogh-um 120 \     # wsi-pde e-folding length (~120 µm, Freyer 1988)
+  --glucose-krogh-um 450 \
+  --glucose-pde-krogh-um 120 \
   --wsi-pde-ds 4 \
   --oxygen-consumption-base 0.1 \
   --oxygen-consumption-demand-weight 0.3 \

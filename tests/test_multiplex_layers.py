@@ -574,16 +574,15 @@ def test_make_oxygen_map_shape_and_dtype():
     Contract: make_oxygen_map applies a distance-transform oxygen proxy to a
     binary vessel mask and returns a (H, W, 4) RGBA uint8 array.
 
-    The RdYlBu colormap is used with inverted distances so that pixels near
-    a vessel (distance ≈ 0) map to the blue (oxygenated) end and distant
-    pixels map to the red (hypoxic) end.
+    OXYGEN_PROXY_CMAP (black → cyan): high value (near vessel, oxygenated) → cyan
+    (G=255, B=255); low value (hypoxic) → black (G=0, B=0).
 
     A (64, 64) mask with a center 8×8 vessel blob is used.  The output must:
     - have shape (64, 64, 4), dtype uint8
-    - have higher blue channel at the vessel center than at the image corners
-      (near-vessel pixels are oxygenated → blue end of RdYlBu)
+    - have higher green channel at the vessel center than at the image corners
+      (near-vessel pixels are oxygenated → cyan end of OXYGEN_PROXY_CMAP)
 
-    Verifies shape, dtype, and that vessel-center blue > corner blue.
+    Verifies shape, dtype, and that vessel-center green > corner green.
     """
     from stages.multiplex_layers import make_oxygen_map  # noqa: WPS433
 
@@ -595,14 +594,13 @@ def test_make_oxygen_map_shape_and_dtype():
     assert out.shape == (64, 64, 4), f"Expected shape (64, 64, 4), got {out.shape}"
     assert out.dtype == np.uint8, f"Expected uint8, got {out.dtype}"
 
-    # Near vessel (center) should be less red than far from vessel (corner).
-    # RdYlBu: high value (near vessel, oxygenated) → deep blue (low R);
-    # lower value (farther away) → light blue / yellow (higher R).
-    center_r = int(out[32, 32, 0])
-    corner_r = int(out[0, 0, 0])
+    # Near vessel (center) should be more cyan than far from vessel (corner).
+    # OXYGEN_PROXY_CMAP: high value (near vessel) → cyan (G=255); black (G=0) = hypoxic.
+    center_g = int(out[32, 32, 1])
+    corner_g = int(out[0, 0, 1])
     assert (
-        center_r < corner_r
-    ), f"Vessel center red ({center_r}) should be less than corner red ({corner_r})"
+        center_g > corner_g
+    ), f"Vessel center green ({center_g}) should exceed corner green ({corner_g})"
 
 
 def test_make_oxygen_map_pde_shape_and_dtype():
@@ -641,11 +639,11 @@ def test_make_oxygen_map_pde_shape_and_dtype():
 def test_make_glucose_map_high_ki67_gives_bright_pixels():
     """
     Contract: make_glucose_map produces a metabolic demand proxy from Ki67
-    and PCNA channels using the 'hot' colormap and returns (H, W, 4) RGBA uint8.
+    and PCNA channels using GLUCOSE_PROXY_CMAP and returns (H, W, 4) RGBA uint8.
 
     The metabolic demand is max(percentile_norm(ki67), percentile_norm(pcna)).
-    In the 'hot' colormap, high values map to bright (R=255, high G) and low
-    values map to dark (R≈0).
+    In GLUCOSE_PROXY_CMAP (black → yellow), high values map to bright (R=255, high G)
+    and low values map to dark (R=0).
 
     Setup:
     - ki67: a 24×24 block of value 5000 centered at rows/cols 20–44; rest zero.

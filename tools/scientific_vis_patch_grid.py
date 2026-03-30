@@ -32,21 +32,7 @@ from utils.colormaps import HOECHST_CMAP
 from utils.marker_aliases import canonicalize_marker_name, normalize_marker_name
 from utils.normalize import percentile_norm
 
-# ── Color maps ────────────────────────────────────────────────────────────────
-
-CELL_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "cancer": (220, 50, 50, 200),
-    "immune": (50, 100, 220, 200),
-    "healthy": (50, 180, 50, 200),
-    "other": (150, 150, 150, 120),
-}
-
-CELL_STATE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "proliferative": (230, 50, 180, 200),  # magenta
-    "quiescent": (240, 140, 30, 200),  # amber
-    "dead": (110, 40, 160, 200),  # purple
-    "other": (160, 160, 160, 120),
-}
+from utils.colormaps import CELL_STATE_COLORS, CELL_TYPE_COLORS
 
 COL_TITLES = [
     "H&E",

@@ -4,7 +4,9 @@ import matplotlib
 import matplotlib.cm
 import numpy as np
 import scipy.ndimage
+from matplotlib.colors import Colormap
 
+from utils.colormaps import GLUCOSE_PROXY_CMAP, OXYGEN_PROXY_CMAP
 from utils.normalize import percentile_norm
 
 from .pde import (
@@ -15,12 +17,15 @@ from .pde import (
 )
 
 
-def apply_colormap(arr_01: np.ndarray, colormap: str) -> np.ndarray:
-    """Apply a matplotlib named colormap to (H, W) float32 [0,1]."""
-    try:
-        cmap = matplotlib.colormaps[colormap]
-    except (AttributeError, KeyError):
-        cmap = matplotlib.cm.get_cmap(colormap)  # type: ignore[attr-defined]
+def apply_colormap(arr_01: np.ndarray, colormap: str | Colormap) -> np.ndarray:
+    """Apply a matplotlib named colormap (or Colormap object) to (H, W) float32 [0,1]."""
+    if isinstance(colormap, str):
+        try:
+            cmap = matplotlib.colormaps[colormap]
+        except (AttributeError, KeyError):
+            cmap = matplotlib.cm.get_cmap(colormap)  # type: ignore[attr-defined]
+    else:
+        cmap = colormap
     rgba_float = cmap(arr_01)
     return (rgba_float * 255).clip(0, 255).astype(np.uint8)
 
@@ -51,6 +56,16 @@ def _clamped_distance_map(
     return np.clip(dist_px / max_dist_px, 0.0, 1.0).astype(np.float32)
 
 
+def compute_oxygen_proxy(
+    cd31_mask: np.ndarray,
+    mpp: float = 1.0,
+    max_dist_um: float = 160.0,
+) -> np.ndarray:
+    """Return float32 [0,1] oxygenation proxy: 1 = near vessel (oxygenated), 0 = hypoxic."""
+    norm = _clamped_distance_map(cd31_mask, mpp, max_dist_um)
+    return (1.0 - norm).astype(np.float32)
+
+
 def make_oxygen_map(
     cd31_mask: np.ndarray,
     mpp: float = 1.0,
@@ -59,11 +74,9 @@ def make_oxygen_map(
     """Oxygen proxy via physically clamped distance transform.
 
     Clamp at *max_dist_um* (default 160 µm, Grimes 2014 / Zaidi 2019).
-    RdYlBu colormap: blue = near vessel (oxygenated), red = beyond clamp (hypoxic).
+    Black = hypoxic, cyan = oxygenated (OXYGEN_PROXY_CMAP).
     """
-    norm = _clamped_distance_map(cd31_mask, mpp, max_dist_um)
-    inverted = (1.0 - norm).astype(np.float32)
-    return apply_colormap(inverted, "RdYlBu")
+    return apply_colormap(compute_oxygen_proxy(cd31_mask, mpp, max_dist_um), OXYGEN_PROXY_CMAP)
 
 
 def make_oxygen_map_pde(
@@ -97,7 +110,17 @@ def make_oxygen_map_pde(
         max_iters=max_iters,
         tol=tol,
     )
-    return apply_colormap(oxygen_density, "RdYlBu")
+    return apply_colormap(oxygen_density, OXYGEN_PROXY_CMAP)
+
+
+def compute_glucose_proxy(
+    cd31_mask: np.ndarray,
+    mpp: float = 1.0,
+    max_dist_um: float = 450.0,
+) -> np.ndarray:
+    """Return float32 [0,1] glucose proxy: 1 = near vessel (available), 0 = depleted."""
+    norm = _clamped_distance_map(cd31_mask, mpp, max_dist_um)
+    return (1.0 - norm).astype(np.float32)
 
 
 def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray | None = None) -> np.ndarray:
@@ -106,7 +129,7 @@ def make_glucose_map(ki67: np.ndarray, pcna: np.ndarray | None = None) -> np.nda
     If *pcna* is None, Ki67 alone is used.
     """
     metabolic = compute_metabolic_demand_map(ki67, pcna)
-    return apply_colormap(metabolic, "hot")
+    return apply_colormap(metabolic, GLUCOSE_PROXY_CMAP)
 
 
 def make_glucose_map_distance(
@@ -119,11 +142,9 @@ def make_glucose_map_distance(
     Clamp at *max_dist_um* (default 450 µm, Grimes 2014).  Glucose diffuses
     further than O2 (higher plasma concentration compensates for lower D),
     so the supply zone is ~2.8× wider than the oxygen zone.
-    Hot colormap: black/red = near vessel (glucose available), white = depleted.
+    Black = depleted, yellow = glucose-rich (GLUCOSE_PROXY_CMAP).
     """
-    norm = _clamped_distance_map(cd31_mask, mpp, max_dist_um)
-    inverted = (1.0 - norm).astype(np.float32)
-    return apply_colormap(inverted, "hot")
+    return apply_colormap(compute_glucose_proxy(cd31_mask, mpp, max_dist_um), GLUCOSE_PROXY_CMAP)
 
 
 def make_glucose_map_pde(
@@ -157,4 +178,4 @@ def make_glucose_map_pde(
         max_iters=max_iters,
         tol=tol,
     )
-    return apply_colormap(glucose_density, "hot")
+    return apply_colormap(glucose_density, GLUCOSE_PROXY_CMAP)

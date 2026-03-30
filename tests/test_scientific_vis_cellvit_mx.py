@@ -33,7 +33,7 @@ def test_add_state_legend_contains_expected_labels() -> None:
     legend = ax.get_legend()
     assert legend is not None
     labels = [text.get_text() for text in legend.get_texts()]
-    assert labels == ["proliferative", "quiescent", "dead"]
+    assert labels == ["proliferative", "nonprolif", "dead"]
 
     plt.close(fig)
 
@@ -44,7 +44,7 @@ def test_state_palette_is_distinct_from_type_palette() -> None:
         != patch_vis.CELL_TYPE_COLORS["healthy"][:3]
     )
     assert (
-        patch_vis.CELL_STATE_COLORS["quiescent"][:3]
+        patch_vis.CELL_STATE_COLORS["nonprolif"][:3]
         != patch_vis.CELL_TYPE_COLORS["immune"][:3]
     )
     assert (
@@ -54,7 +54,7 @@ def test_state_palette_is_distinct_from_type_palette() -> None:
 
 
 def test_state_colors_cover_all_states() -> None:
-    for state in ("proliferative", "quiescent", "dead", "other"):
+    for state in ("proliferative", "nonprolif", "dead", "other"):
         assert state in patch_vis.CELL_STATE_COLORS, f"missing state: {state}"
         r, g, b, a = patch_vis.CELL_STATE_COLORS[state]
         assert 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255
@@ -127,7 +127,7 @@ def test_patch_comparison_figure_smoke(tmp_path: Path) -> None:
                 "type_codex": "cancer",
                 "type_codex_fine": "epithelial",
                 "cell_type": "cancer",
-                "cell_state": "quiescent",
+                "cell_state": "nonprolif",
                 "cell_type_confidence": "high",
                 "is_mismatch": False,
                 "centroid_x_local": 16.0,
@@ -257,7 +257,7 @@ def test_patch_comparison_figure_supports_codex_fine_overlay(tmp_path: Path) -> 
                 "type_codex": "cancer",
                 "type_codex_fine": "epithelial",
                 "cell_type": "cancer",
-                "cell_state": "quiescent",
+                "cell_state": "nonprolif",
                 "cell_type_confidence": "high",
                 "is_mismatch": False,
                 "centroid_x_local": 16.0,
@@ -305,7 +305,7 @@ def test_patch_comparison_figure_supports_codex_fine_overlay(tmp_path: Path) -> 
                 "type_codex": "healthy",
                 "type_codex_fine": "sma_stromal",
                 "cell_type": "healthy",
-                "cell_state": "quiescent",
+                "cell_state": "nonprolif",
                 "cell_type_confidence": "high",
                 "is_mismatch": False,
                 "centroid_x_local": 48.0,

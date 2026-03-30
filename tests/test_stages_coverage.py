@@ -4,7 +4,7 @@ review of stages/, utils/channels.py, and utils/ome.py.
 
 Coverage targets (lines previously at 0%):
   stages/assign_cells.py  — assign_type exception guards, assign_state
-                             (apoptotic/quiescent/healthy/exception branches),
+                             (apoptotic/nonprolif/healthy/exception branches),
                              rasterize_cells short-contour skip,
                              compute_thresholds state-marker and Ecadherin-missing paths,
                              _resolve_coord_cols X/Y fallback + missing columns error.
@@ -72,8 +72,8 @@ def test_assign_state_apoptotic_type4():
     assert assign_state(row, thresholds, type_cellvit=4) == "apoptotic"
 
 
-def test_assign_state_quiescent():
-    """assign_state returns 'quiescent' when Keratin is high and E-cad is high."""
+def test_assign_state_nonprolif():
+    """assign_state returns 'nonprolif' when Keratin is high and E-cad is high."""
     from stages.assign_cells import assign_state
 
     thresholds = {
@@ -84,7 +84,7 @@ def test_assign_state_quiescent():
         "Ecadherin_high": 400.0,
         "Keratin": 500.0,
     }
-    # High Keratin + E-cad above 'high' threshold → quiescent (resting tumor)
+    # High Keratin + E-cad above 'high' threshold → nonprolif (resting tumor)
     row = pd.Series(
         {
             "Ki67": 0.0,
@@ -94,7 +94,7 @@ def test_assign_state_quiescent():
             "Keratin": 1000.0,
         }
     )
-    assert assign_state(row, thresholds) == "quiescent"
+    assert assign_state(row, thresholds) == "nonprolif"
 
 
 def test_assign_state_healthy():

@@ -44,7 +44,7 @@ TYPE_LEGEND = [
 ]
 STATE_LEGEND = [
     ("proliferative", (240, 190, 0)),
-    ("quiescent", (120, 120, 120)),
+    ("nonprolif", (120, 120, 120)),
     ("dead", (110, 60, 20)),
     ("other", (80, 80, 80)),
 ]

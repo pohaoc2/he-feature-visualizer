@@ -56,7 +56,7 @@ def _make_processed(tmp_path: Path, n_patches: int = 3) -> tuple[Path, list[str]
             {
                 "patch_id": pid,
                 "cell_type": "cancer",
-                "cell_state": "quiescent",
+                "cell_state": "nonprolif",
                 "cellvit_mapped_type": "cancer",
                 "type_cellvit": 1,
                 "type_codex": "cancer",
