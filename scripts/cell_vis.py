@@ -33,25 +33,31 @@ COLORS = {
     ct: "#{:02X}{:02X}{:02X}".format(*CELL_TYPE_COLORS[ct][:3])
     for ct in CELL_TYPES
 }
-# ── Dark theme constants ───────────────────────────────────────────────────
-_BG = "#0e1015"          # figure background
-_PANEL_BG = "#13182a"    # axes background
-_GRID = "#1d2438"        # gridlines / spine edges
-_TEXT = "#cdd3ef"        # primary text
-_TEXT_DIM = "#5a6080"    # secondary text / tick labels
+# ── Nat Comm publication theme ─────────────────────────────────────────────
+_BG = "#FFFFFF"          # figure background
+_PANEL_BG = "#FFFFFF"    # axes background
+_GRID = "#E5E5E5"        # gridlines / spine edges
+_TEXT = "#1A1A1A"        # primary text
+_TEXT_DIM = "#888888"    # secondary text / tick labels
 
 # ── Cell states ────────────────────────────────────────────────────────────
 STATE_TYPES = ["quiescent", "proliferative", "dead"]
+# Display names: quiescent → nonproliferative (biologically accurate label)
+STATE_DISPLAY = {
+    "quiescent":     "nonproliferative",
+    "proliferative": "proliferative",
+    "dead":          "dead",
+}
 STATE_COLORS = {
     "quiescent":     "#{:02X}{:02X}{:02X}".format(*CELL_STATE_COLORS["nonprolif"][:3]),
     "proliferative": "#{:02X}{:02X}{:02X}".format(*CELL_STATE_COLORS["proliferative"][:3]),
     "dead":          "#{:02X}{:02X}{:02X}".format(*CELL_STATE_COLORS["dead"][:3]),
 }
 
-# ── Heatmap colormap: blue (low) → near-black (mid) → red (high) ───────────
+# ── Heatmap colormap: blue (low) → white (mid) → red (high) — light bg ─────
 _HEAT_CMAP = LinearSegmentedColormap.from_list(
-    "cell_rdbu",
-    [(0.0, "#2355cc"), (0.5, "#1a1f30"), (1.0, "#cc2020")],
+    "nat_rdbu",
+    [(0.0, "#2166AC"), (0.5, "#F7F7F7"), (1.0, "#D6604D")],
 )
 
 # Diagnostic subset: validates cell type assignments + proliferation state
@@ -268,27 +274,41 @@ def plot_violin_markers(df: pd.DataFrame, save_path: Path) -> None:
 
 
 def _style_ax_dark(ax: plt.Axes) -> None:
-    """Apply dark theme styling to an axes."""
+    """Apply Nat Comm publication styling to an axes."""
     ax.set_facecolor(_PANEL_BG)
     for spine in ax.spines.values():
         spine.set_edgecolor(_GRID)
-        spine.set_linewidth(0.6)
-    ax.tick_params(colors=_TEXT_DIM, labelsize=8, length=3)
+        spine.set_linewidth(0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.tick_params(colors=_TEXT_DIM, labelsize=8, length=3, width=0.8)
     ax.xaxis.label.set_color(_TEXT)
     ax.yaxis.label.set_color(_TEXT)
     ax.title.set_color(_TEXT)
 
 
 def _style_colorbar(cbar) -> None:
-    """Apply dark theme to a colorbar."""
+    """Apply publication styling to a colorbar."""
     cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=7)
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color=_TEXT_DIM)
     cbar.outline.set_edgecolor(_GRID)
+    cbar.outline.set_linewidth(0.6)
     cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=8)
 
 
-def _violin_dark(ax: plt.Axes, data: list, ylabel: str, title: str) -> None:
-    """Styled vertical violin plot for cell-type comparisons."""
+def _violin_dark(
+    ax: plt.Axes,
+    data: list,
+    ylabel: str,
+    title: str,
+    counts: dict[str, int] | None = None,
+    ylim_pct: float = 97.0,
+) -> None:
+    """Styled violin plot for cell-type comparisons (Nat Comm theme).
+
+    counts  — if provided, shown below each x-tick label as "n=N"
+    ylim_pct — cap y-axis at this percentile of all data to suppress outliers
+    """
     plot_data = [arr for arr in data if len(arr) >= 2]
     positions = [i for i, arr in enumerate(data) if len(arr) >= 2]
     if not plot_data:
@@ -298,17 +318,27 @@ def _violin_dark(ax: plt.Axes, data: list, ylabel: str, title: str) -> None:
         ct = CELL_TYPES[pos]
         body.set_facecolor(COLORS[ct])
         body.set_edgecolor(COLORS[ct])
-        body.set_alpha(0.78)
+        body.set_alpha(0.70)
     for key in ("cmedians", "cmins", "cmaxes", "cbars"):
         if key in parts:
-            parts[key].set_color(_TEXT_DIM)
+            parts[key].set_color(_TEXT)
             parts[key].set_linewidth(0.9)
     ax.set_xticks(range(len(CELL_TYPES)))
-    ax.set_xticklabels(CELL_TYPES, fontsize=9)
+    if counts:
+        labels = [f"{ct}\nn={counts[ct]:,}" for ct in CELL_TYPES]
+    else:
+        labels = list(CELL_TYPES)
+    ax.set_xticklabels(labels, fontsize=8)
     ax.set_ylabel(ylabel, fontsize=9)
     ax.set_title(title, fontsize=10, loc="left", pad=7)
-    ax.yaxis.grid(True, color=_GRID, linewidth=0.5, linestyle="--", alpha=0.9)
+    ax.yaxis.grid(True, color=_GRID, linewidth=0.6, linestyle="-", alpha=1.0)
     ax.set_axisbelow(True)
+    # Suppress extreme outliers: cap y-axis at ylim_pct of pooled data
+    all_vals = np.concatenate([arr for arr in plot_data if len(arr) > 0])
+    if len(all_vals) > 0:
+        ymax = float(np.percentile(all_vals, ylim_pct))
+        ymin = max(0.0, float(np.percentile(all_vals, 100 - ylim_pct)))
+        ax.set_ylim(ymin, ymax * 1.05)
     _style_ax_dark(ax)
 
 
@@ -334,8 +364,10 @@ def _heatmap(
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             val = matrix[i, j]
+            # On light bg: dark text on pale cells, white text on saturated cells
+            text_color = _TEXT if abs(val) < vmax * 0.6 else "#FFFFFF"
             ax.text(j, i, f"{val:.2f}", ha="center", va="center",
-                    fontsize=annotation_fontsize, color=_TEXT,
+                    fontsize=annotation_fontsize, color=text_color,
                     fontfamily="monospace")
     _style_ax_dark(ax)
     return im
@@ -401,11 +433,15 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
     ax_type  = fig.add_subplot(gs[0, 2])
     ax_state = fig.add_subplot(gs[1, :])
 
+    # ── Cell-type counts for violin N labels ──────────────────────────────
+    counts = {ct: int((df["cell_type"] == ct).sum()) for ct in CELL_TYPES}
+
     # ── Panel A: morphology violins ────────────────────────────────────────
-    _violin_dark(ax_area, area_data, "Area (µm²)", "A  Cell Area by Type")
-    _violin_dark(ax_circ, circ_data, "Circularity", "Cell Circularity by Type")
+    _violin_dark(ax_area, area_data, "Area (µm²)", "A  Cell Area by Type",
+                 counts=counts)
+    _violin_dark(ax_circ, circ_data, "Circularity", "Cell Circularity by Type",
+                 counts=counts, ylim_pct=99.0)
     ax_circ.set_ylim(0, 1.08)
-    ax_circ.axhline(1.0, color=_GRID, linewidth=0.7, linestyle=":")
 
     # ── Panel B: markers × cell type ──────────────────────────────────────
     im_b = _heatmap(ax_type, type_mat,
@@ -417,7 +453,8 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
 
     # ── Panel C: cell states × markers (full width) ────────────────────────
     im_c = _heatmap(ax_state, state_mat,
-                    row_labels=STATE_TYPES, col_labels=available,
+                    row_labels=[STATE_DISPLAY[s] for s in STATE_TYPES],
+                    col_labels=available,
                     title="C  Markers × Cell State",
                     col_rotation=35, annotation_fontsize=8.5)
     cb_c = fig.colorbar(im_c, ax=ax_state, shrink=0.55, pad=0.01)
@@ -445,7 +482,7 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
 
 
 def _ordered_states(df: pd.DataFrame) -> list[str]:
-    """Return preferred cell-state display order with extras appended."""
+    """Return preferred cell-state data values in display order."""
     preferred = ["quiescent", "proliferative", "dead"]
     seen = [state for state in preferred if state in set(df["cell_state"].dropna().astype(str))]
     extras = sorted(
@@ -454,6 +491,11 @@ def _ordered_states(df: pd.DataFrame) -> list[str]:
         if state not in preferred
     )
     return [*seen, *extras]
+
+
+def _display_state(state: str) -> str:
+    """Map internal state key to publication display label."""
+    return STATE_DISPLAY.get(state, state)
 
 
 def _markdown_table(headers: list[str], rows: list[list[str]]) -> list[str]:
@@ -506,9 +548,9 @@ def write_summary_md(df: pd.DataFrame, out_path: Path) -> None:
     for state in states:
         count = int((df["cell_state"] == state).sum())
         pct = (100.0 * count / n_cells) if n_cells else 0.0
-        state_rows.append([state, f"{count:,}", f"{pct:.1f}%"])
+        state_rows.append([_display_state(state), f"{count:,}", f"{pct:.1f}%"])
 
-    count_headers = ["cell_type", *states, "Total"]
+    count_headers = ["cell_type", *[_display_state(s) for s in states], "Total"]
     count_rows = []
     for cell_type in CELL_TYPES:
         subset = df.loc[df["cell_type"] == cell_type]
@@ -517,7 +559,7 @@ def write_summary_md(df: pd.DataFrame, out_path: Path) -> None:
     total_counts = [int((df["cell_state"] == state).sum()) for state in states]
     count_rows.append(["**Total**", *(f"{value:,}" for value in total_counts), f"{n_cells:,}"])
 
-    pct_headers = ["cell_type", *(f"{state} %" for state in states)]
+    pct_headers = ["cell_type", *(f"{_display_state(s)} %" for s in states)]
     pct_rows = []
     for cell_type in CELL_TYPES:
         subset = df.loc[df["cell_type"] == cell_type]

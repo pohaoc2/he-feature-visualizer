@@ -130,6 +130,6 @@ def test_write_summary_md_contains_tables() -> None:
         assert "immune" in text
         assert "healthy" in text
         assert "proliferative" in text
-        assert "quiescent" in text
+        assert "nonproliferative" in text
         assert "cell_type" in text
         assert "%" in text
