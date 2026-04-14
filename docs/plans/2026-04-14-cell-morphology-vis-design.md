@@ -18,19 +18,19 @@ Two-script pipeline:
 
 - 263,446 cells across 10,379 patches
 - Cell types: cancer (41.9%), healthy (44.0%), immune (14.1%)
-- Cell states: quiescent (74.8%), proliferative (24.9%), dead (0.3%)
+- Cell states: nonproliferative (74.8%), proliferative (24.9%), dead (0.3%)
 - Notable: cancer cells are 48% proliferative vs ~8-11% for immune/healthy
 
 ### Cross-tabulation (type × state)
 
-| cell_type | quiescent | proliferative | dead | Total |
+| cell_type | nonproliferative | proliferative | dead | Total |
 |---|---|---|---|---|
 | cancer | 57,025 | 53,027 | 439 | 110,491 |
 | immune | 33,021 | 3,943 | 159 | 37,123 |
 | healthy | 106,944 | 8,767 | 121 | 115,832 |
 | **Total** | 196,990 | 65,737 | 719 | 263,446 |
 
-| cell_type | quiescent % | proliferative % | dead % |
+| cell_type | nonproliferative % | proliferative % | dead % |
 |---|---|---|---|
 | cancer | 51.6% | 48.0% | 0.4% |
 | immune | 89.0% | 10.6% | 0.4% |
@@ -138,6 +138,6 @@ processed_crc33/
 
 ## Out of Scope
 
-- Per-state breakdown within each cell type (quiescent vs proliferative violin — not in this spec)
+- Per-state breakdown within each cell type (nonproliferative vs proliferative violin — not in this spec)
 - H&E pixel intensity extraction (not in this spec)
 - Statistical significance testing between groups

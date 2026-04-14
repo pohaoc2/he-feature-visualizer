@@ -367,7 +367,7 @@ def _make_csv_pair(tmp_dir: Path):
         "CellID": [1, 2, 3],
         "PatchID": ["0_0", "0_0", "0_0"],
         "cell_type": ["cancer", "immune", "healthy"],
-        "cell_state": ["proliferative", "quiescent", "quiescent"],
+        "cell_state": ["proliferative", "nonproliferative", "nonproliferative"],
         "Area_cellvit_px": [500, 200, 300],
         "Pan-CK": [10.0, 1.0, 2.0],
         "CD45": [1.0, 9.0, 2.0],
@@ -746,7 +746,7 @@ def test_write_summary_md_contains_tables():
         assert "immune" in text
         assert "healthy" in text
         assert "proliferative" in text
-        assert "quiescent" in text
+        assert "nonproliferative" in text
         # Cross-tab header present
         assert "cell_type" in text
         assert "%" in text
@@ -769,7 +769,7 @@ def write_summary_md(df: pd.DataFrame, out_path: Path) -> None:
     """Write cell count tables and cross-tab to a markdown file."""
     n_cells = len(df)
     n_patches = df["PatchID"].nunique()
-    states = ["quiescent", "proliferative", "dead"]
+    states = ["nonproliferative", "proliferative", "dead"]
 
     lines: list[str] = [
         f"# CRC33 Cell Summary (n = {n_cells:,} cells, {n_patches:,} patches)\n",
@@ -794,7 +794,7 @@ def write_summary_md(df: pd.DataFrame, out_path: Path) -> None:
     lines += [
         "",
         "## Cell Type × State — Counts\n",
-        "| cell_type | quiescent | proliferative | dead | Total |",
+        "| cell_type | nonproliferative | proliferative | dead | Total |",
         "|---|---|---|---|---|",
     ]
     for ct in CELL_TYPES:
@@ -807,7 +807,7 @@ def write_summary_md(df: pd.DataFrame, out_path: Path) -> None:
     lines += [
         "",
         "## Cell Type × State — Row %\n",
-        "| cell_type | quiescent % | proliferative % | dead % |",
+        "| cell_type | nonproliferative % | proliferative % | dead % |",
         "|---|---|---|---|",
     ]
     for ct in CELL_TYPES:

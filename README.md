@@ -245,7 +245,7 @@ Assign cell types and states using **CODEX-style clustering** plus CellViT prior
 
 Stage 3 label schema:
 - Cell type: `cancer`, `immune`, `healthy`
-- Cell state: `dead`, `proliferative`, `quiescent`
+- Cell state: `dead`, `proliferative`, `nonproliferative`
 
 CellViT `type_cellvit=4` is a dead-state override.
 
@@ -554,7 +554,7 @@ Column layout (one row per patch):
 | C2 | Hoechst/DNA channel (Blues colormap) |
 | C3 | CellViT segmentation mask — contours filled by 5-class type (neoplastic / inflammatory / connective / dead / epithelial) |
 | C4 | Final fused type overlay — contours matched to Stage 3 assignments (cancer / immune / healthy) |
-| C5 | Cell state overlay (proliferative / quiescent / dead) |
+| C5 | Cell state overlay (proliferative / nonproliferative / dead) |
 | C6 | Vasculature RGBA overlay (CD31 mask composited on H&E) |
 | C7 | Oxygen proxy (RdYlBu: blue = near vessel / oxygenated, red = hypoxic) + colorbar |
 | C8 | Glucose proxy (hot colormap: bright = high supply, dark = depleted) + colorbar |
@@ -609,7 +609,7 @@ Output figure panels (2×4, figsize 11.2×5.6 in):
 |-------|----------|
 | A | H&E patch |
 | B | Selected MX marker channel (auto-selected or `--mx-marker`) |
-| C | Cell state overlay (`proliferative` / `quiescent` / `dead`) with color legend |
+| C | Cell state overlay (`proliferative` / `nonproliferative` / `dead`) with color legend |
 | D | CD31 channel in `Reds` colormap — vasculature proxy (`--vasc-cd31`, default `CD31`) |
 | E | Model type overlay (`CODEX fine type` when `--classifier codex`) with color legend |
 | F | Final fused type overlay with color legend |
@@ -621,7 +621,7 @@ a "not in panel" placeholder renders and the figure still saves normally.
 
 **Color palettes** are designed to be non-overlapping:
 - Cell types: red (cancer), blue (immune), green (healthy)
-- Cell states: magenta (proliferative), amber (quiescent), purple (dead)
+- Cell states: magenta (proliferative), amber (nonproliferative), purple (dead)
 
 ### Scientific-Vis Figure: CellViT vs CODEX Comparison
 
@@ -679,7 +679,7 @@ At low zoom a kernel-density heatmap is shown; zoom past level 3 for individual 
 Stage 3 is documented around the **CODEX-style clustering** workflow:
 
 - Type labels: `cancer`, `immune`, `healthy`
-- State labels: `dead`, `proliferative`, `quiescent`
+- State labels: `dead`, `proliferative`, `nonproliferative`
 - Fine model subtypes: `epithelial`, `cd4_t`, `cd8_t`, `treg`, `b_cell`, `macrophage`, `endothelial`, `sma_stromal`
 - Final collapse: immune subtypes → `immune`, endothelial/stromal → `healthy`, epithelial → `cancer`
 - Fusion: `P_final = w * P_model + (1-w) * P_cellvit_prior` where `w` is adaptive per CellViT type:

@@ -10,7 +10,7 @@ The current Stage 3 rules are threshold-first and tuned for a broader historical
 For current CRC usage, we want a stricter, clearer ontology:
 
 1. **Cell type**: `cancer`, `immune`, `healthy`
-2. **Cell state**: `proliferative`, `quiescent`, `dead`
+2. **Cell state**: `proliferative`, `nonproliferative`, `dead`
 
 We also want MX marker evidence to be primary while still using CellViT morphology as a prior.
 
@@ -36,7 +36,7 @@ We also want MX marker evidence to be primary while still using CellViT morpholo
 
 - `dead`
 - `proliferative`
-- `quiescent`
+- `nonproliferative`
 
 ## CellViT Class Mapping
 
@@ -103,7 +103,7 @@ type_final = argmax_class S_fused(class)
 
 1. `dead` if CellViT type is `4` (hard override)
 2. else `proliferative` if `Ki67_norm >= 0.75` (p75)
-3. else `quiescent`
+3. else `nonproliferative`
 
 ## Mismatch, Confidence, and Explainability
 
@@ -126,7 +126,7 @@ If mismatch is true, downgrade one level (high->medium, medium->low).
 ### Per-cell output additions
 
 - `cell_type` (`cancer|immune|healthy`)
-- `cell_state` (`dead|proliferative|quiescent`)
+- `cell_state` (`dead|proliferative|nonproliferative`)
 - `cell_type_confidence` (`high|medium|low`)
 - `mx_top_type`
 - `cellvit_prior_type`

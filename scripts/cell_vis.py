@@ -21,6 +21,8 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
+from scipy import stats as _scipy_stats
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from utils.colormaps import CELL_TYPE_COLORS, CELL_STATE_COLORS
 from utils.marker_aliases import resolve_first_present_column
@@ -58,7 +60,7 @@ STATE_COLORS = {
 # Matches reference style: negative z-score = orange-red, positive = blue
 _HEAT_CMAP = LinearSegmentedColormap.from_list(
     "nat_rdbu",
-    [(0.0, "#D6604D"), (0.5, "#F7F7F7"), (1.0, "#2166AC")],
+    [(0.0, "#B2182B"), (0.5, "#F7F7F7"), (1.0, "#2166AC")],
 )
 
 # Diagnostic subset: validates cell type assignments + proliferation state
@@ -301,7 +303,7 @@ def _style_ax_dark(ax: plt.Axes, heatmap: bool = False) -> None:
             spine.set_linewidth(0.8)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-    ax.tick_params(colors=_TEXT, labelsize=8, length=3, width=0.8)
+    ax.tick_params(colors=_TEXT, labelsize=10, length=3, width=1.2)
     ax.xaxis.label.set_color(_TEXT)
     ax.yaxis.label.set_color(_TEXT)
     ax.title.set_color(_TEXT)
@@ -309,56 +311,116 @@ def _style_ax_dark(ax: plt.Axes, heatmap: bool = False) -> None:
 
 def _style_colorbar(cbar) -> None:
     """Apply publication styling to a colorbar."""
-    cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=7)
+    cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=9)
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color=_TEXT_DIM)
-    cbar.outline.set_edgecolor(_GRID)
-    cbar.outline.set_linewidth(0.6)
-    cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=8)
+    cbar.outline.set_edgecolor("#000000")
+    cbar.outline.set_linewidth(1.0)
+    for spine in cbar.ax.spines.values():
+        spine.set_visible(True)
+        spine.set_edgecolor("#000000")
+        spine.set_linewidth(1.0)
+    cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=12)
+
+
+def _add_stat_brackets(
+    ax: plt.Axes,
+    y_max: float,
+    step: float,
+    pairs: list[tuple[int, int, str]],
+    x_positions: list[float],
+) -> None:
+    """Draw horizontal significance brackets with end ticks above bars."""
+    for rank, (i, j, sig_label) in enumerate(pairs):
+        y_bracket = y_max + step * (rank + 1)
+        tick = step * 0.25
+        x_i = x_positions[i]
+        x_j = x_positions[j]
+        ax.plot([x_i, x_j], [y_bracket, y_bracket], color="#000000", lw=0.9, zorder=5, clip_on=False)
+        ax.plot([x_i, x_i], [y_bracket - tick, y_bracket], color="#000000", lw=0.9, zorder=5, clip_on=False)
+        ax.plot([x_j, x_j], [y_bracket - tick, y_bracket], color="#000000", lw=0.9, zorder=5, clip_on=False)
+        ax.text((x_i + x_j) / 2, y_bracket + step * 0.1, sig_label,
+                ha="center", va="bottom", fontsize=11, color=_TEXT, clip_on=False)
 
 
 def _bar_pub(
     ax: plt.Axes,
     data: list,
     ylabel: str,
-    title: str,
+    title: str | None,
     counts: dict[str, int] | None = None,
+    value_decimals: int = 1,
 ) -> None:
-    """Bar chart (mean ± SD) for compact cell-type morphology comparisons.
+    """Bar chart (median ± IQR) for compact cell-type morphology comparisons.
 
-    Bars show mean; error bars show ±1 SD; median value annotated in the
-    middle of each bar. counts — if provided, shown below each x-tick label
-    as "n=N".
+    Bars show median; error bars show Q1–Q3 asymmetric IQR; median value
+    annotated above each bar. Kruskal-Wallis + pairwise Mann-Whitney with
+    Bonferroni correction; significant pairs shown with bracket + star.
     """
-    for i, (arr, ct) in enumerate(zip(data, CELL_TYPES)):
+    q3_tops: list[float] = []
+    bar_positions = [0.0, 0.82, 1.64]
+    bar_width = 0.52
+    for pos, arr, ct in zip(bar_positions, data, CELL_TYPES):
         if len(arr) < 2:
+            q3_tops.append(0.0)
             continue
-        mean = float(np.mean(arr))
-        std = float(np.std(arr))
         median = float(np.median(arr))
-        ax.bar(i, mean, width=0.55, color=COLORS[ct], alpha=0.85,
-               zorder=3, linewidth=0.8, edgecolor="#000000")
-        ax.errorbar(i, mean, yerr=std, color="#000000", linewidth=1.0,
-                    capsize=4, capthick=1.0, zorder=4, fmt="none")
-        # Median value centered inside the bar
-        ax.text(i, median / 2, f"{median:.1f}",
-                ha="center", va="center", fontsize=7, color=_TEXT)
+        q1 = float(np.percentile(arr, 25))
+        q3 = float(np.percentile(arr, 75))
+        ax.bar(pos, median, width=bar_width, color=COLORS[ct], alpha=0.85,
+               zorder=3, linewidth=1.5, edgecolor="#000000")
+        ax.errorbar(pos, median, yerr=[[median - q1], [q3 - median]],
+                    color="#000000", linewidth=1.2,
+                    capsize=4, capthick=1.2, zorder=4, fmt="none")
+        q3_tops.append(q3)
+        ax.text(pos, median * 0.5, f"{median:.{value_decimals}f}",
+                ha="center", va="center", fontsize=11, color=_TEXT, zorder=6)
 
-    ax.set_xticks(range(len(CELL_TYPES)))
+    # ── Statistics: Kruskal-Wallis + pairwise Mann-Whitney + Bonferroni ───
+    valid = [(i, arr) for i, arr in enumerate(data) if len(arr) >= 2]
+    if len(valid) >= 2:
+        kw_result = _scipy_stats.kruskal(*[arr for _, arr in valid])
+        if kw_result.pvalue < 0.05:
+            pairs_idx = [
+                (valid[a][0], valid[b][0])
+                for a in range(len(valid))
+                for b in range(a + 1, len(valid))
+            ]
+            n_pairs = len(pairs_idx)
+            sig_pairs: list[tuple[int, int, str]] = []
+            for i_pos, j_pos in pairs_idx:
+                p_raw = _scipy_stats.mannwhitneyu(
+                    data[i_pos], data[j_pos], alternative="two-sided"
+                ).pvalue
+                p_corr = min(p_raw * n_pairs, 1.0)
+                if p_corr < 0.001:
+                    sig_pairs.append((i_pos, j_pos, "***"))
+                elif p_corr < 0.01:
+                    sig_pairs.append((i_pos, j_pos, "**"))
+                elif p_corr < 0.05:
+                    sig_pairs.append((i_pos, j_pos, "*"))
+            if sig_pairs:
+                y_top = max(q3_tops)
+                step = max(y_top * 0.10, 0.01)
+                _add_stat_brackets(ax, y_top, step, sig_pairs, bar_positions)
+
+    ax.set_xlim(-0.45, bar_positions[-1] + 0.45)
+    ax.set_xticks(bar_positions)
     labels: list[str]
     if counts:
         labels = [f"{ct}\nn={counts[ct]:,}" for ct in CELL_TYPES]
     else:
         labels = list(CELL_TYPES)
-    ax.set_xticklabels(labels, fontsize=8)
-    ax.set_ylabel(ylabel, fontsize=9)
-    ax.set_title(title, fontsize=10, loc="left", pad=6)
+    ax.set_xticklabels(labels, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    if title:
+        ax.set_title(title, fontsize=13, loc="left", pad=3)
     ax.yaxis.grid(True, color=_GRID, linewidth=0.6, linestyle="-")
     ax.set_axisbelow(True)
     _style_ax_dark(ax)
     for spine in ax.spines.values():
         spine.set_visible(True)
         spine.set_edgecolor("#000000")
-        spine.set_linewidth(0.8)
+        spine.set_linewidth(1.5)
 
 
 def _heatmap(
@@ -366,7 +428,7 @@ def _heatmap(
     matrix: np.ndarray,
     row_labels: list[str],
     col_labels: list[str],
-    title: str,
+    title: str | None,
     col_rotation: float = 0.0,
     annotation_fontsize: float = 7.5,
 ) -> plt.cm.ScalarMappable:
@@ -376,10 +438,11 @@ def _heatmap(
                    vmin=-vmax, vmax=vmax, interpolation="nearest")
     ax.set_xticks(range(len(col_labels)))
     ax.set_xticklabels(col_labels, rotation=col_rotation,
-                       ha="right" if col_rotation > 0 else "center", fontsize=9)
+                       ha="right" if col_rotation > 0 else "center", fontsize=12)
     ax.set_yticks(range(len(row_labels)))
-    ax.set_yticklabels(row_labels, fontsize=9)
-    ax.set_title(title, fontsize=10, loc="left", pad=7)
+    ax.set_yticklabels(row_labels, fontsize=12)
+    if title:
+        ax.set_title(title, fontsize=13, loc="left", pad=7)
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             val = matrix[i, j]
@@ -445,13 +508,13 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
     })
 
     # ── Figure layout ──────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(14, 9), facecolor=_BG)
+    fig = plt.figure(figsize=(12.6, 9), facecolor=_BG)
     fig.patch.set_facecolor(_BG)
     gs = fig.add_gridspec(
         2, 2,
         height_ratios=[1.05, 1.30],
-        hspace=0.55, wspace=0.38,
-        left=0.07, right=0.96, top=0.91, bottom=0.12,
+        hspace=0.2, wspace=0.18,
+        left=0.08, right=0.92, top=0.91, bottom=0.12,
     )
     ax_area     = fig.add_subplot(gs[0, 0])
     ax_circ     = fig.add_subplot(gs[0, 1])
@@ -461,11 +524,10 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
     counts = {ct: int((df["cell_type"] == ct).sum()) for ct in CELL_TYPES}
 
     # ── Panel A: morphology bar charts ────────────────────────────────────
-    _bar_pub(ax_area, area_data, "Area (µm²)", "A  Cell Area by Type",
+    _bar_pub(ax_area, area_data, "Area (µm²)", None,
              counts=counts)
-    _bar_pub(ax_circ, circ_data, "Circularity", "Cell Circularity by Type",
-             counts=counts)
-    ax_circ.set_ylim(0, 1.08)
+    _bar_pub(ax_circ, circ_data, "Circularity", None,
+             counts=counts, value_decimals=2)
 
     # ── Panel B: combined markers × (cell type × state) heatmap ───────────
     short_state = {
@@ -480,26 +542,32 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
     im_combined = _heatmap(
         ax_combined, combined_mat,
         row_labels=available, col_labels=col_labels,
-        title="B  Markers by Cell Type × State",
-        col_rotation=0, annotation_fontsize=7.5,
+        title=None,
+        col_rotation=0, annotation_fontsize=11.0,
     )
+
+    # Column separators within and between cell-type groups
+    for sep in [0.5, 1.5, 3.5, 4.5, 6.5, 7.5]:
+        ax_combined.axvline(sep, color="#000000", linewidth=0.8, zorder=5)
 
     # Vertical separators between cell type groups
     for sep in [2.5, 5.5]:
-        ax_combined.axvline(sep, color="#000000", linewidth=1.2, zorder=5)
+        ax_combined.axvline(sep, color="#000000", linewidth=1.4, zorder=6)
 
     # Cell type group header labels (centered over each 3-column block)
     for k, ct in enumerate(CELL_TYPES):
         x_frac = (k * 3 + 1.5) / n_cols
         ax_combined.text(
-            x_frac, 1.03, ct.capitalize(),
+            x_frac, 1.02, ct.capitalize(),
             transform=ax_combined.transAxes,
             ha="center", va="bottom",
-            fontsize=10, fontweight="bold",
+            fontsize=12, fontweight="bold",
             color=COLORS[ct],
         )
 
-    cb_combined = fig.colorbar(im_combined, ax=ax_combined, shrink=0.75, pad=0.01)
+    divider = make_axes_locatable(ax_combined)
+    ax_cbar = divider.append_axes("right", size="2.5%", pad=0.08)
+    cb_combined = fig.colorbar(im_combined, cax=ax_cbar)
     _style_colorbar(cb_combined)
 
     # ── Title ─────────────────────────────────────────────────────────────

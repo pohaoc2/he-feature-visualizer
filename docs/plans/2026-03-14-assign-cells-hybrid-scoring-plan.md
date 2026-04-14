@@ -8,7 +8,7 @@
 Implement the approved MX-first hybrid scoring classifier in Stage 3:
 
 - types: `cancer`, `immune`, `healthy`
-- states: `dead`, `proliferative`, `quiescent`
+- states: `dead`, `proliferative`, `nonproliferative`
 - fused score: `0.75 * MX + 0.25 * CellViT prior`
 - split epithelial prior
 
@@ -73,13 +73,13 @@ Implement the approved MX-first hybrid scoring classifier in Stage 3:
 - Replace state logic with:
   1. dead if CellViT type 4
   2. proliferative if `Ki67_norm >= 0.75`
-  3. quiescent otherwise
+  3. nonproliferative otherwise
 
 **Validation**
 - Unit tests:
   - dead override always wins
   - Ki67 p75 boundary behavior
-  - non-dead, low Ki67 -> quiescent
+  - non-dead, low Ki67 -> nonproliferative
 
 ## Task 5: Mismatch and confidence outputs
 
@@ -161,5 +161,5 @@ pytest tests/test_assign_cells.py -v
 - Both CLI modes succeed.
 - New labels used end-to-end:
   - types: cancer/immune/healthy
-  - states: dead/proliferative/quiescent
+  - states: dead/proliferative/nonproliferative
 - Summary contains mismatch and confidence metrics.
