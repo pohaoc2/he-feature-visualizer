@@ -17,11 +17,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
-from utils.colormaps import CELL_TYPE_COLORS
+from utils.colormaps import CELL_TYPE_COLORS, CELL_STATE_COLORS
 from utils.marker_aliases import resolve_first_present_column
 
 
@@ -32,6 +33,27 @@ COLORS = {
     ct: "#{:02X}{:02X}{:02X}".format(*CELL_TYPE_COLORS[ct][:3])
     for ct in CELL_TYPES
 }
+# ── Dark theme constants ───────────────────────────────────────────────────
+_BG = "#0e1015"          # figure background
+_PANEL_BG = "#13182a"    # axes background
+_GRID = "#1d2438"        # gridlines / spine edges
+_TEXT = "#cdd3ef"        # primary text
+_TEXT_DIM = "#5a6080"    # secondary text / tick labels
+
+# ── Cell states ────────────────────────────────────────────────────────────
+STATE_TYPES = ["quiescent", "proliferative", "dead"]
+STATE_COLORS = {
+    "quiescent":     "#{:02X}{:02X}{:02X}".format(*CELL_STATE_COLORS["nonprolif"][:3]),
+    "proliferative": "#{:02X}{:02X}{:02X}".format(*CELL_STATE_COLORS["proliferative"][:3]),
+    "dead":          "#{:02X}{:02X}{:02X}".format(*CELL_STATE_COLORS["dead"][:3]),
+}
+
+# ── Heatmap colormap: blue (low) → near-black (mid) → red (high) ───────────
+_HEAT_CMAP = LinearSegmentedColormap.from_list(
+    "cell_rdbu",
+    [(0.0, "#2355cc"), (0.5, "#1a1f30"), (1.0, "#cc2020")],
+)
+
 # Diagnostic subset: validates cell type assignments + proliferation state
 MARKERS = [
     "Hoechst",    # nuclear baseline (all types)
@@ -245,6 +267,183 @@ def plot_violin_markers(df: pd.DataFrame, save_path: Path) -> None:
     print(f"Saved {save_path}")
 
 
+def _style_ax_dark(ax: plt.Axes) -> None:
+    """Apply dark theme styling to an axes."""
+    ax.set_facecolor(_PANEL_BG)
+    for spine in ax.spines.values():
+        spine.set_edgecolor(_GRID)
+        spine.set_linewidth(0.6)
+    ax.tick_params(colors=_TEXT_DIM, labelsize=8, length=3)
+    ax.xaxis.label.set_color(_TEXT)
+    ax.yaxis.label.set_color(_TEXT)
+    ax.title.set_color(_TEXT)
+
+
+def _style_colorbar(cbar) -> None:
+    """Apply dark theme to a colorbar."""
+    cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=7)
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color=_TEXT_DIM)
+    cbar.outline.set_edgecolor(_GRID)
+    cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=8)
+
+
+def _violin_dark(ax: plt.Axes, data: list, ylabel: str, title: str) -> None:
+    """Styled vertical violin plot for cell-type comparisons."""
+    plot_data = [arr for arr in data if len(arr) >= 2]
+    positions = [i for i, arr in enumerate(data) if len(arr) >= 2]
+    if not plot_data:
+        return
+    parts = ax.violinplot(plot_data, positions=positions, showmedians=True, widths=0.65)
+    for body, pos in zip(parts["bodies"], positions):
+        ct = CELL_TYPES[pos]
+        body.set_facecolor(COLORS[ct])
+        body.set_edgecolor(COLORS[ct])
+        body.set_alpha(0.78)
+    for key in ("cmedians", "cmins", "cmaxes", "cbars"):
+        if key in parts:
+            parts[key].set_color(_TEXT_DIM)
+            parts[key].set_linewidth(0.9)
+    ax.set_xticks(range(len(CELL_TYPES)))
+    ax.set_xticklabels(CELL_TYPES, fontsize=9)
+    ax.set_ylabel(ylabel, fontsize=9)
+    ax.set_title(title, fontsize=10, loc="left", pad=7)
+    ax.yaxis.grid(True, color=_GRID, linewidth=0.5, linestyle="--", alpha=0.9)
+    ax.set_axisbelow(True)
+    _style_ax_dark(ax)
+
+
+def _heatmap(
+    ax: plt.Axes,
+    matrix: np.ndarray,
+    row_labels: list[str],
+    col_labels: list[str],
+    title: str,
+    col_rotation: float = 0.0,
+    annotation_fontsize: float = 7.5,
+) -> plt.cm.ScalarMappable:
+    """Annotated imshow heatmap on dark background. Returns mappable for colorbar."""
+    vmax = max(float(np.abs(matrix).max()), 0.5)
+    im = ax.imshow(matrix, aspect="auto", cmap=_HEAT_CMAP,
+                   vmin=-vmax, vmax=vmax, interpolation="nearest")
+    ax.set_xticks(range(len(col_labels)))
+    ax.set_xticklabels(col_labels, rotation=col_rotation,
+                       ha="right" if col_rotation > 0 else "center", fontsize=9)
+    ax.set_yticks(range(len(row_labels)))
+    ax.set_yticklabels(row_labels, fontsize=9)
+    ax.set_title(title, fontsize=10, loc="left", pad=7)
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            val = matrix[i, j]
+            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
+                    fontsize=annotation_fontsize, color=_TEXT,
+                    fontfamily="monospace")
+    _style_ax_dark(ax)
+    return im
+
+
+def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
+    """Single 3-panel summary figure:
+
+    A  Cell morphology (area + circularity) by cell type   — two violin plots
+    B  MX marker medians by cell type                      — annotated heatmap
+    C  MX marker medians by cell state                     — annotated heatmap (full width)
+    """
+    # ── Resolve markers ────────────────────────────────────────────────────
+    available: list[str] = [
+        m for m in MARKERS
+        if resolve_first_present_column(df.columns, m) is not None
+    ]
+    resolved: dict[str, str] = {
+        m: resolve_first_present_column(df.columns, m)  # type: ignore[assignment]
+        for m in available
+    }
+    resolved_cols = list(resolved.values())
+
+    # ── Z-score markers (clip raw at 99th pct, then z-score) ──────────────
+    df_z = zscore_markers(df.copy(), resolved_cols)
+
+    # ── Q1 morphology arrays ───────────────────────────────────────────────
+    df_m = df.copy()
+    df_m["area_um2"] = df_m["Area_cellvit_px"] * (HE_MPP ** 2)
+    area_data = _violin_values(df_m, "area_um2")
+    circ_data = _violin_values(df, "circularity")
+
+    # ── Q2 matrix: rows=markers, cols=cell_types ───────────────────────────
+    n_m = len(available)
+    type_mat = np.zeros((n_m, len(CELL_TYPES)))
+    for j, ct in enumerate(CELL_TYPES):
+        sub = df_z[df_z["cell_type"] == ct]
+        for i, m in enumerate(available):
+            col = resolved[m]
+            if col in sub.columns:
+                type_mat[i, j] = float(sub[col].median())
+
+    # ── Q3 matrix: rows=states, cols=markers ──────────────────────────────
+    state_mat = np.zeros((len(STATE_TYPES), n_m))
+    for i, st in enumerate(STATE_TYPES):
+        sub = df_z[df_z["cell_state"] == st]
+        for j, m in enumerate(available):
+            col = resolved[m]
+            if col in sub.columns:
+                state_mat[i, j] = float(sub[col].median())
+
+    # ── Figure layout ──────────────────────────────────────────────────────
+    fig = plt.figure(figsize=(16, 13), facecolor=_BG)
+    fig.patch.set_facecolor(_BG)
+    gs = fig.add_gridspec(
+        2, 3,
+        height_ratios=[1.3, 0.85],
+        hspace=0.56, wspace=0.44,
+        left=0.07, right=0.96, top=0.91, bottom=0.11,
+    )
+    ax_area  = fig.add_subplot(gs[0, 0])
+    ax_circ  = fig.add_subplot(gs[0, 1])
+    ax_type  = fig.add_subplot(gs[0, 2])
+    ax_state = fig.add_subplot(gs[1, :])
+
+    # ── Panel A: morphology violins ────────────────────────────────────────
+    _violin_dark(ax_area, area_data, "Area (µm²)", "A  Cell Area by Type")
+    _violin_dark(ax_circ, circ_data, "Circularity", "Cell Circularity by Type")
+    ax_circ.set_ylim(0, 1.08)
+    ax_circ.axhline(1.0, color=_GRID, linewidth=0.7, linestyle=":")
+
+    # ── Panel B: markers × cell type ──────────────────────────────────────
+    im_b = _heatmap(ax_type, type_mat,
+                    row_labels=available, col_labels=CELL_TYPES,
+                    title="B  Markers × Cell Type",
+                    annotation_fontsize=6.5)
+    cb_b = fig.colorbar(im_b, ax=ax_type, shrink=0.65, pad=0.03)
+    _style_colorbar(cb_b)
+
+    # ── Panel C: cell states × markers (full width) ────────────────────────
+    im_c = _heatmap(ax_state, state_mat,
+                    row_labels=STATE_TYPES, col_labels=available,
+                    title="C  Markers × Cell State",
+                    col_rotation=35, annotation_fontsize=8.5)
+    cb_c = fig.colorbar(im_c, ax=ax_state, shrink=0.55, pad=0.01)
+    _style_colorbar(cb_c)
+
+    # ── Cell-type legend (bottom-left corner) ─────────────────────────────
+    handles = [Patch(facecolor=COLORS[ct], label=ct) for ct in CELL_TYPES]
+    fig.legend(handles=handles, loc="lower left", ncol=1,
+               bbox_to_anchor=(0.005, 0.005), frameon=False,
+               fontsize=8.5, labelcolor=_TEXT)
+
+    # ── Title ─────────────────────────────────────────────────────────────
+    n_cells = len(df)
+    fig.text(
+        0.5, 0.965,
+        f"CRC33  ·  Cell Population Summary  ·  n = {n_cells:,} cells",
+        ha="center", va="top",
+        color=_TEXT, fontsize=13, fontweight="semibold",
+    )
+
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(save_path, dpi=150, facecolor=_BG, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {save_path}")
+
+
 def _ordered_states(df: pd.DataFrame) -> list[str]:
     """Return preferred cell-state display order with extras appended."""
     preferred = ["quiescent", "proliferative", "dead"]
@@ -367,9 +566,7 @@ def main() -> None:
     save_dir.mkdir(parents=True, exist_ok=True)
 
     df = load_data(data_dir)
-    plot_violin_area(df, save_dir / "violin_area.png")
-    plot_violin_circularity(df, save_dir / "violin_circularity.png")
-    plot_violin_markers(df, save_dir / "violin_markers.png")
+    plot_summary_figure(df, save_dir / "cell_summary_figure.png")
     write_summary_md(df, data_dir / "cell_summary.md")
     print("Done.")
 
