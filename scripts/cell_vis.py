@@ -325,21 +325,23 @@ def _bar_pub(
 ) -> None:
     """Bar chart (mean ± SD) for compact cell-type morphology comparisons.
 
-    Bars show mean; error bars show ±1 SD; mean value annotated above each bar.
-    counts — if provided, shown below each x-tick label as "n=N".
+    Bars show mean; error bars show ±1 SD; median value annotated in the
+    middle of each bar. counts — if provided, shown below each x-tick label
+    as "n=N".
     """
     for i, (arr, ct) in enumerate(zip(data, CELL_TYPES)):
         if len(arr) < 2:
             continue
         mean = float(np.mean(arr))
         std = float(np.std(arr))
+        median = float(np.median(arr))
         ax.bar(i, mean, width=0.55, color=COLORS[ct], alpha=0.85,
-               zorder=3, linewidth=0, edgecolor="none")
+               zorder=3, linewidth=0.8, edgecolor="#000000")
         ax.errorbar(i, mean, yerr=std, color="#000000", linewidth=1.0,
                     capsize=4, capthick=1.0, zorder=4, fmt="none")
-        # Mean value above error bar
-        ax.text(i, mean + std + (mean + std) * 0.04, f"{mean:.1f}",
-                ha="center", va="bottom", fontsize=7, color=_TEXT)
+        # Median value centered inside the bar
+        ax.text(i, median / 2, f"{median:.1f}",
+                ha="center", va="center", fontsize=7, color=_TEXT)
 
     ax.set_xticks(range(len(CELL_TYPES)))
     labels: list[str]
@@ -353,6 +355,10 @@ def _bar_pub(
     ax.yaxis.grid(True, color=_GRID, linewidth=0.6, linestyle="-")
     ax.set_axisbelow(True)
     _style_ax_dark(ax)
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_edgecolor("#000000")
+        spine.set_linewidth(0.8)
 
 
 def _heatmap(
@@ -387,11 +393,10 @@ def _heatmap(
 
 
 def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
-    """Single 3-panel summary figure:
+    """Two-panel summary figure:
 
-    A  Cell morphology (area + circularity) by cell type   — two violin plots
-    B  MX marker medians by cell type                      — annotated heatmap
-    C  MX marker medians by cell state                     — annotated heatmap (full width)
+    A  Cell morphology (area + circularity) by cell type   — two bar plots
+    B  MX marker medians by cell type × state              — combined grouped heatmap
     """
     # ── Resolve markers ────────────────────────────────────────────────────
     available: list[str] = [
@@ -413,24 +418,21 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
     area_data = _violin_values(df_m, "area_um2")
     circ_data = _violin_values(df, "circularity")
 
-    # ── Q2 matrix: rows=markers, cols=cell_types ───────────────────────────
+    # ── Combined matrix: rows=markers, cols=cell_type × state ─────────────
     n_m = len(available)
-    type_mat = np.zeros((n_m, len(CELL_TYPES)))
-    for j, ct in enumerate(CELL_TYPES):
-        sub = df_z[df_z["cell_type"] == ct]
+    # Natural reading order: proliferative → nonproliferative → dead
+    state_order = ["proliferative", "nonproliferative", "dead"]
+    columns = [(ct, st) for ct in CELL_TYPES for st in state_order]
+    n_cols = len(columns)  # 9
+    combined_mat = np.zeros((n_m, n_cols))
+    col_counts: dict[tuple[str, str], int] = {}
+    for j, (ct, st) in enumerate(columns):
+        sub = df_z[(df_z["cell_type"] == ct) & (df_z["cell_state"] == st)]
+        col_counts[(ct, st)] = len(sub)
         for i, m in enumerate(available):
             col = resolved[m]
-            if col in sub.columns:
-                type_mat[i, j] = float(sub[col].median())
-
-    # ── Q3 matrix: rows=states, cols=markers ──────────────────────────────
-    state_mat = np.zeros((len(STATE_TYPES), n_m))
-    for i, st in enumerate(STATE_TYPES):
-        sub = df_z[df_z["cell_state"] == st]
-        for j, m in enumerate(available):
-            col = resolved[m]
-            if col in sub.columns:
-                state_mat[i, j] = float(sub[col].median())
+            if col in sub.columns and len(sub) > 0:
+                combined_mat[i, j] = float(sub[col].median())
 
     # ── Font: closest to Helvetica available ──────────────────────────────
     plt.rcParams.update({
@@ -442,21 +444,20 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
         "ytick.color": "#000000",
     })
 
-    # ── Figure layout (compact) ────────────────────────────────────────────
+    # ── Figure layout ──────────────────────────────────────────────────────
     fig = plt.figure(figsize=(14, 9), facecolor=_BG)
     fig.patch.set_facecolor(_BG)
     gs = fig.add_gridspec(
-        2, 3,
-        height_ratios=[1.05, 0.70],
-        hspace=0.62, wspace=0.42,
+        2, 2,
+        height_ratios=[1.05, 1.30],
+        hspace=0.55, wspace=0.38,
         left=0.07, right=0.96, top=0.91, bottom=0.12,
     )
-    ax_area  = fig.add_subplot(gs[0, 0])
-    ax_circ  = fig.add_subplot(gs[0, 1])
-    ax_type  = fig.add_subplot(gs[0, 2])
-    ax_state = fig.add_subplot(gs[1, :])
+    ax_area     = fig.add_subplot(gs[0, 0])
+    ax_circ     = fig.add_subplot(gs[0, 1])
+    ax_combined = fig.add_subplot(gs[1, :])
 
-    # ── Cell-type counts for violin N labels ──────────────────────────────
+    # ── Cell-type counts for bar labels ───────────────────────────────────
     counts = {ct: int((df["cell_type"] == ct).sum()) for ct in CELL_TYPES}
 
     # ── Panel A: morphology bar charts ────────────────────────────────────
@@ -466,28 +467,40 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
              counts=counts)
     ax_circ.set_ylim(0, 1.08)
 
-    # ── Panel B: markers × cell type ──────────────────────────────────────
-    im_b = _heatmap(ax_type, type_mat,
-                    row_labels=available, col_labels=CELL_TYPES,
-                    title="B  Markers × Cell Type",
-                    annotation_fontsize=6.5)
-    cb_b = fig.colorbar(im_b, ax=ax_type, shrink=0.65, pad=0.03)
-    _style_colorbar(cb_b)
+    # ── Panel B: combined markers × (cell type × state) heatmap ───────────
+    short_state = {
+        "proliferative": "prolif.",
+        "nonproliferative": "nonprolif.",
+        "dead": "dead",
+    }
+    col_labels = [
+        f"{short_state[st]}\n(n={col_counts[(ct, st)]:,})"
+        for ct, st in columns
+    ]
+    im_combined = _heatmap(
+        ax_combined, combined_mat,
+        row_labels=available, col_labels=col_labels,
+        title="B  Markers by Cell Type × State",
+        col_rotation=0, annotation_fontsize=7.5,
+    )
 
-    # ── Panel C: cell states × markers (full width) ────────────────────────
-    im_c = _heatmap(ax_state, state_mat,
-                    row_labels=[STATE_DISPLAY[s] for s in STATE_TYPES],
-                    col_labels=available,
-                    title="C  Markers × Cell State",
-                    col_rotation=35, annotation_fontsize=7.5)
-    cb_c = fig.colorbar(im_c, ax=ax_state, shrink=0.55, pad=0.01)
-    _style_colorbar(cb_c)
+    # Vertical separators between cell type groups
+    for sep in [2.5, 5.5]:
+        ax_combined.axvline(sep, color="#000000", linewidth=1.2, zorder=5)
 
-    # ── Cell-type legend (bottom-left corner) ─────────────────────────────
-    handles = [Patch(facecolor=COLORS[ct], label=ct) for ct in CELL_TYPES]
-    fig.legend(handles=handles, loc="lower left", ncol=1,
-               bbox_to_anchor=(0.005, 0.005), frameon=False,
-               fontsize=8.5, labelcolor=_TEXT)
+    # Cell type group header labels (centered over each 3-column block)
+    for k, ct in enumerate(CELL_TYPES):
+        x_frac = (k * 3 + 1.5) / n_cols
+        ax_combined.text(
+            x_frac, 1.03, ct.capitalize(),
+            transform=ax_combined.transAxes,
+            ha="center", va="bottom",
+            fontsize=10, fontweight="bold",
+            color=COLORS[ct],
+        )
+
+    cb_combined = fig.colorbar(im_combined, ax=ax_combined, shrink=0.75, pad=0.01)
+    _style_colorbar(cb_combined)
 
     # ── Title ─────────────────────────────────────────────────────────────
     n_cells = len(df)

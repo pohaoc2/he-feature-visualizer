@@ -32,7 +32,7 @@ def _make_csv_pair(tmp_dir: Path) -> None:
             "CellID": [1, 2, 3, 4, 5, 6],
             "PatchID": ["0_0"] * 6,
             "cell_type": ["cancer", "cancer", "immune", "immune", "healthy", "healthy"],
-            "cell_state": ["proliferative", "quiescent", "quiescent", "quiescent", "quiescent", "quiescent"],
+            "cell_state": ["proliferative", "nonproliferative", "nonproliferative", "nonproliferative", "nonproliferative", "nonproliferative"],
             "Area_cellvit_px": [500, 480, 200, 210, 300, 310],
             "Pan-CK": [10.0, 9.0, 1.0, 1.5, 2.0, 2.5],
             "CD45": [1.0, 1.2, 9.0, 8.5, 2.0, 2.1],
