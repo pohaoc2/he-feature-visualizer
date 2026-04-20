@@ -484,3 +484,21 @@ def test_read_overview_chw_iyx_channel_axis():
     overview = read_overview_chw(store, "IYX", img_h=h, img_w=w, ds=ds)
     assert overview.shape == (c, h // ds, w // ds)
     assert int(overview[3].max()) == 4095
+
+
+def test_read_overview_chw_channel_indices_subset():
+    """read_overview_chw(channel_indices=...) reads only those planes in order."""
+    import zarr
+    from utils.ome import read_overview_chw
+
+    c, h, w, ds = 5, 24, 24, 6
+    data = np.arange(c * h * w, dtype=np.uint16).reshape(c, h, w)
+    store = zarr.array(data)
+
+    overview = read_overview_chw(
+        store, "IYX", img_h=h, img_w=w, ds=ds, channel_indices=[4, 1, 1]
+    )
+    assert overview.shape == (3, h // ds, w // ds)
+    assert np.array_equal(overview[0], data[4, ::ds, ::ds])
+    assert np.array_equal(overview[1], data[1, ::ds, ::ds])
+    assert np.array_equal(overview[2], data[1, ::ds, ::ds])

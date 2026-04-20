@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 import warnings
+from collections.abc import Sequence
 
 import numpy as np
 import tifffile
@@ -141,22 +142,31 @@ def read_overview_chw(
     img_h: int,
     img_w: int,
     ds: int,
+    channel_indices: Sequence[int] | None = None,
 ) -> np.ndarray:
     """Read a subsampled overview from a zarr store as ``(C, H, W)``.
 
     Works for any axis ordering (CYX, YXC, XYCS, etc.) by building
     axis-aware slices then transposing to canonical ``(C, Y, X)`` order.
     If there is no C axis the result is ``(1, H, W)``.
+
+    If *channel_indices* is set, only those channel-like planes are read
+    (after transpose to ``(C, Y, X)``), in the same order as given. This
+    avoids loading all channels for large multiplex stacks.
     """
     ax_up = axes.upper()
     ch_axis = _resolve_channel_axis(ax_up)
     h_trunc = (img_h // ds) * ds
     w_trunc = (img_w // ds) * ds
 
-    sl: list[int | slice] = []
+    sl: list[int | slice | list[int]] = []
     for ax in ax_up:
         if ch_axis is not None and ax == ch_axis:
-            sl.append(slice(None))
+            if channel_indices is not None:
+                uniq = sorted(set(channel_indices))
+                sl.append(uniq)
+            else:
+                sl.append(slice(None))
         elif ax == "Y":
             sl.append(slice(0, h_trunc, ds))
         elif ax == "X":
@@ -184,5 +194,10 @@ def read_overview_chw(
             perm = [active.index(ax) for ax in target]
             arr = arr.transpose(perm)
         arr = arr[np.newaxis]
+
+    if channel_indices is not None:
+        uniq_sorted = sorted(set(channel_indices))
+        pos = {u: j for j, u in enumerate(uniq_sorted)}
+        arr = np.stack([arr[pos[i]] for i in channel_indices], axis=0)
 
     return arr
