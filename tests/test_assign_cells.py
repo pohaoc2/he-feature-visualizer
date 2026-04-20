@@ -239,6 +239,25 @@ def test_rasterize_cells_returns_rgba():
     assert out[30, 30, 3] > 0
 
 
+def test_rasterize_binary_masks_normalizes_nonproliferative_alias():
+    from stages.assign_cells import rasterize_binary_masks
+
+    cells = [
+        {
+            "centroid": [30, 30],
+            "contour": _small_rect_contour(30, 30, half=6),
+            "cell_type": "immune",
+            "cell_state": "nonproliferative",
+        }
+    ]
+
+    masks = rasterize_binary_masks(cells, patch_size=64)
+
+    assert int(masks["immune"][30, 30]) == 255
+    assert int(masks["nonprolif"][30, 30]) == 255
+    assert int(masks["proliferative"][30, 30]) == 0
+
+
 # ---------------------------------------------------------------------------
 # CLI integration tests
 # ---------------------------------------------------------------------------

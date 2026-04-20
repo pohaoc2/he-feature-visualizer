@@ -700,12 +700,25 @@ def rasterize_cells(
             continue
 
         label = str(cell.get(color_key, "other"))
+        if color_key == "cell_state":
+            label = _normalize_cell_state_label(label)
         rgba = color_map.get(label, color_map.get("other", (150, 150, 150, 150)))
 
         pts = np.array(contour, dtype=np.int32).reshape((-1, 1, 2))
         cv2.fillPoly(canvas, [pts], rgba)
 
     return canvas
+
+
+def _normalize_cell_state_label(label: str) -> str:
+    state = str(label).strip().lower()
+    if state in {"prolif", "proliferative"}:
+        return "proliferative"
+    if state in {"nonprolif", "nonproliferative"}:
+        return "nonprolif"
+    if state == "dead":
+        return "dead"
+    return str(label)
 
 
 def rasterize_binary_masks(
@@ -733,7 +746,7 @@ def rasterize_binary_masks(
             continue
         pts = np.array(contour, dtype=np.int32).reshape((-1, 1, 2))
         cv2.fillPoly(masks[label], [pts], 255)
-        state = str(cell.get("cell_state", "other"))
+        state = _normalize_cell_state_label(str(cell.get("cell_state", "other")))
         if state in masks:
             cv2.fillPoly(masks[state], [pts], 255)
 

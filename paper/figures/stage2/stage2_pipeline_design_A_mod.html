@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stage 2 Pipeline — Compact Design A</title>
+<style>
+  :root {
+    --bg: #f3f1eb;
+    --card: #fffdf9;
+    --ink: #24211d;
+    --muted: #6d675f;
+    --line: #59544f;
+    --frozen-stroke: #8e8880;
+    --train-fill: #dff4e3;
+    --train-stroke: #2d8c4f;
+    --latent-fill: #eef2f9;
+    --latent-stroke: #8aa0c3;
+    --he-fill: #f6c8d5;
+    --he-stroke: #b45b77;
+    --loss: #b33b34;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    padding: 28px;
+  }
+
+  .page {
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+    line-height: 1.2;
+  }
+
+  .subtitle {
+    margin: 0 0 18px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid #d7d0c7;
+    border-radius: 14px;
+    padding: 18px 18px 14px;
+    box-shadow: 0 8px 24px rgba(42, 35, 25, 0.08);
+  }
+
+  .caption {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 11px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .swatch {
+    width: 18px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1px solid #aaa39a;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Stage 2 — Compact Training Panel</h1>
+  <p class="subtitle">Aligned half-width version for a side-by-side layout with stage 3. Four Stage 1 TME tiles feed four separate CNNs, attention fuses them into a conditioning latent, and a frozen PixCell denoising backbone produces a denoised latent Z that is decoded by the frozen SD3.5 VAE.</p>
+
+  <div class="card">
+    <p class="caption">The denoising path is explicit here: noisy Z enters the frozen PixCell denoiser, the final denoised Z is passed down to the SD3.5 VAE, and the generated H&amp;E sits directly underneath. Frozen modules use striped fills.</p>
+
+    <svg viewBox="0 0 620 390" xmlns="http://www.w3.org/2000/svg" aria-label="Stage 2 compact architecture diagram">
+      <defs>
+        <pattern id="frozenStripe" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="8" height="8" fill="#f7f4ef"/>
+          <line x1="0" y1="0" x2="0" y2="8" stroke="#c6c0b7" stroke-width="3"/>
+        </pattern>
+        <marker id="arrowDark" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#59544f"/>
+        </marker>
+        <marker id="arrowGreen" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#2d8c4f"/>
+        </marker>
+        <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#b33b34"/>
+        </marker>
+      </defs>
+
+      <text x="8" y="18" font-size="13" font-weight="700" fill="#24211d">b  Stage 2 — Frozen PixCell backbone + trainable multi-CNN fusion</text>
+
+      <rect x="24" y="48" width="58" height="58" rx="8" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.8"/>
+      <circle cx="40" cy="66" r="2.5" fill="#93485f"/>
+      <circle cx="58" cy="61" r="2.5" fill="#93485f"/>
+      <circle cx="69" cy="82" r="2.5" fill="#93485f"/>
+      <circle cx="47" cy="91" r="2.5" fill="#93485f"/>
+      <circle cx="60" cy="97" r="2.5" fill="#93485f"/>
+      <text x="53" y="122" text-anchor="middle" font-size="11" fill="#6d675f">reference H&amp;E</text>
+
+      <line x1="82" y1="77" x2="110" y2="77" stroke="#59544f" stroke-width="1.8" marker-end="url(#arrowDark)"/>
+
+      <rect x="110" y="48" width="88" height="58" rx="8" fill="url(#frozenStripe)" stroke="#8e8880" stroke-width="1.8"/>
+      <text x="154" y="72" text-anchor="middle" font-size="14" font-weight="700" fill="#24211d">UNI</text>
+      <text x="154" y="89" text-anchor="middle" font-size="10" fill="#6d675f">frozen encoder</text>
+
+      <line x1="198" y1="77" x2="330" y2="77" stroke="#59544f" stroke-width="1.8" marker-end="url(#arrowDark)"/>
+      <text x="264" y="67" text-anchor="middle" font-size="10" fill="#33435d">UNI latent [B,1536]</text>
+
+      <text x="410" y="32" text-anchor="middle" font-size="11" fill="#33435d">noisy latent Z<tspan baseline-shift="sub" font-size="8">t</tspan></text>
+      <line x1="410" y1="38" x2="410" y2="58" stroke="#59544f" stroke-width="1.8" marker-end="url(#arrowDark)"/>
+
+      <rect x="330" y="58" width="160" height="110" rx="10" fill="url(#frozenStripe)" stroke="#8e8880" stroke-width="2"/>
+      <text x="410" y="84" text-anchor="middle" font-size="15" font-weight="700" fill="#24211d">PixCell denoiser</text>
+      <text x="410" y="101" text-anchor="middle" font-size="10" fill="#6d675f">ControlNet + base transformer</text>
+      <text x="410" y="117" text-anchor="middle" font-size="10" fill="#6d675f">frozen backbone</text>
+      <rect x="357" y="128" width="106" height="22" rx="6" fill="#ffffffc8" stroke="#bfb7ad" stroke-width="1"/>
+      <text x="410" y="143" text-anchor="middle" font-size="10" fill="#59544f">denoise Z<tspan baseline-shift="sub" font-size="8">t</tspan> → Z</text>
+
+      <path d="M490 113 H544 V176" fill="none" stroke="#59544f" stroke-width="1.8" marker-end="url(#arrowDark)"/>
+      <text x="523" y="95" text-anchor="middle" font-size="10" fill="#33435d">
+        <tspan x="523" dy="0">Denoised</tspan>
+        <tspan x="523" dy="12">latent Z</tspan>
+      </text>
+
+      <rect x="516" y="176" width="56" height="58" rx="8" fill="url(#frozenStripe)" stroke="#8e8880" stroke-width="1.8"/>
+      <text x="544" y="198" text-anchor="middle" font-size="11" font-weight="700" fill="#24211d">SD3.5</text>
+      <text x="544" y="214" text-anchor="middle" font-size="11" font-weight="700" fill="#24211d">VAE</text>
+      <text x="544" y="228" text-anchor="middle" font-size="9" fill="#6d675f">frozen decoder</text>
+
+      <line x1="544" y1="234" x2="544" y2="274" stroke="#59544f" stroke-width="1.8" marker-end="url(#arrowDark)"/>
+
+      <rect x="512" y="274" width="64" height="60" rx="8" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.8"/>
+      <circle cx="526" cy="292" r="2.5" fill="#93485f"/>
+      <circle cx="544" cy="287" r="2.5" fill="#93485f"/>
+      <circle cx="558" cy="298" r="2.5" fill="#93485f"/>
+      <circle cx="531" cy="312" r="2.5" fill="#93485f"/>
+      <circle cx="551" cy="318" r="2.5" fill="#93485f"/>
+      <text x="544" y="347" text-anchor="middle" font-size="11" fill="#6d675f">generated H&amp;E</text>
+
+      <text x="22" y="152" font-size="11" font-weight="700" fill="#6d675f">Stage 1 TME examples</text>
+
+      <text x="92" y="170" text-anchor="middle" font-size="10" fill="#6d675f">type</text>
+      <rect x="24" y="166" width="46" height="32" rx="6" fill="#eef7fb" stroke="#7fa2b3" stroke-width="1.2"/>
+      <circle cx="36" cy="180" r="3" fill="#2f74c0"/>
+      <circle cx="49" cy="176" r="3" fill="#be3e3e"/>
+      <circle cx="58" cy="188" r="3" fill="#2d8c4f"/>
+      <circle cx="41" cy="190" r="3" fill="#be3e3e"/>
+
+      <text x="92" y="214" text-anchor="middle" font-size="10" fill="#6d675f">state</text>
+      <rect x="24" y="210" width="46" height="32" rx="6" fill="#ebfaf4" stroke="#7ab79a" stroke-width="1.2"/>
+      <circle cx="36" cy="224" r="2.5" fill="#3f9f79"/>
+      <circle cx="49" cy="220" r="4" fill="#85d4b6"/>
+      <circle cx="60" cy="230" r="2.5" fill="#3f9f79"/>
+      <circle cx="43" cy="235" r="3.5" fill="#85d4b6"/>
+
+      <text x="92" y="258" text-anchor="middle" font-size="10" fill="#6d675f">vas</text>
+      <rect x="24" y="254" width="46" height="32" rx="6" fill="#fff1e6" stroke="#d49d71" stroke-width="1.2"/>
+      <path d="M31 279 C39 259, 54 263, 64 271" fill="none" stroke="#c56f3d" stroke-width="2.2" stroke-linecap="round"/>
+
+      <text x="92" y="302" text-anchor="middle" font-size="10" fill="#6d675f">O2 / glu</text>
+      <rect x="24" y="298" width="46" height="32" rx="6" fill="#fdf6df" stroke="#c7ad68" stroke-width="1.2"/>
+      <ellipse cx="40" cy="313" rx="10" ry="6" fill="#efc56a"/>
+      <ellipse cx="56" cy="319" rx="8" ry="5" fill="#e89c8f"/>
+
+      <line x1="70" y1="182" x2="118" y2="182" stroke="#2d8c4f" stroke-width="1.8" marker-end="url(#arrowGreen)"/>
+      <line x1="70" y1="226" x2="118" y2="226" stroke="#2d8c4f" stroke-width="1.8" marker-end="url(#arrowGreen)"/>
+      <line x1="70" y1="270" x2="118" y2="270" stroke="#2d8c4f" stroke-width="1.8" marker-end="url(#arrowGreen)"/>
+      <line x1="70" y1="314" x2="118" y2="314" stroke="#2d8c4f" stroke-width="1.8" marker-end="url(#arrowGreen)"/>
+
+      <rect x="118" y="166" width="82" height="32" rx="7" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+      <text x="159" y="186" text-anchor="middle" font-size="11" font-weight="700" fill="#205f37">CNN1</text>
+      <rect x="118" y="210" width="82" height="32" rx="7" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+      <text x="159" y="230" text-anchor="middle" font-size="11" font-weight="700" fill="#205f37">CNN2</text>
+      <rect x="118" y="254" width="82" height="32" rx="7" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+      <text x="159" y="274" text-anchor="middle" font-size="11" font-weight="700" fill="#205f37">CNN3</text>
+      <rect x="118" y="298" width="82" height="32" rx="7" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+      <text x="159" y="318" text-anchor="middle" font-size="11" font-weight="700" fill="#205f37">CNN4</text>
+
+      <line x1="200" y1="182" x2="214" y2="182" stroke="#2d8c4f" stroke-width="1.8"/>
+      <line x1="200" y1="226" x2="214" y2="226" stroke="#2d8c4f" stroke-width="1.8"/>
+      <line x1="200" y1="270" x2="214" y2="270" stroke="#2d8c4f" stroke-width="1.8"/>
+      <line x1="200" y1="314" x2="214" y2="314" stroke="#2d8c4f" stroke-width="1.8"/>
+      <line x1="214" y1="182" x2="214" y2="314" stroke="#2d8c4f" stroke-width="1.8"/>
+      <line x1="214" y1="248" x2="246" y2="248" stroke="#2d8c4f" stroke-width="1.8" marker-end="url(#arrowGreen)"/>
+
+      <rect x="246" y="220" width="90" height="56" rx="8" fill="#dff4e3" stroke="#2d8c4f" stroke-width="2"/>
+      <text x="291" y="243" text-anchor="middle" font-size="13" font-weight="700" fill="#205f37">Attention</text>
+      <text x="291" y="259" text-anchor="middle" font-size="10" fill="#5a6a60">weighted fusion</text>
+
+      <path d="M291 220 V146 H330" fill="none" stroke="#2d8c4f" stroke-width="1.8" marker-end="url(#arrowGreen)"/>
+      <text x="310" y="138" font-size="9" fill="#2d8c4f">conditioning latent</text>
+
+      <path d="M512 304 H291 V276" fill="none" stroke="#b33b34" stroke-width="1.8" stroke-dasharray="5,4" marker-end="url(#arrowRed)"/>
+      <text x="420" y="364" text-anchor="middle" font-size="10" fill="#b33b34">v-loss updates CNNs + attention only</text>
+    </svg>
+
+    <div class="legend">
+      <span class="legend-item"><span class="swatch" style="background: repeating-linear-gradient(45deg, #f7f4ef, #f7f4ef 4px, #d6d0c7 4px, #d6d0c7 7px);"></span> frozen</span>
+      <span class="legend-item"><span class="swatch" style="background:#dff4e3; border-color:#2d8c4f;"></span> trainable</span>
+      <span class="legend-item"><svg width="32" height="12" aria-hidden="true"><line x1="1" y1="6" x2="31" y2="6" stroke="#b33b34" stroke-width="1.8" stroke-dasharray="5,4"/></svg> gradient</span>
+      <span class="legend-item"><span class="swatch" style="background:#eef2f9; border-color:#8aa0c3;"></span> latent</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

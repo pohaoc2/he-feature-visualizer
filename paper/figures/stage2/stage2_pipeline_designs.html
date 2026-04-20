@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stage 2 Pipeline — Compact Design Options</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f4f4f4; color: #222; padding: 32px; }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 36px; }
+  .design-card { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 28px 32px; margin-bottom: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .design-card h2 { font-size: 17px; color: #333; margin-bottom: 4px; }
+  .design-card .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 8px; font-weight: 600; }
+  .tag-recommended { background: #d4edda; color: #155724; }
+  .tag-minimal { background: #cce5ff; color: #004085; }
+  .tag-novel { background: #fff3cd; color: #856404; }
+  .design-card .desc { font-size: 13px; color: #555; margin: 6px 0 18px; line-height: 1.5; }
+  .design-card .pros-cons { display: flex; gap: 24px; font-size: 12px; margin-top: 14px; }
+  .design-card .pros-cons div { flex: 1; }
+  .design-card .pros-cons h4 { font-size: 12px; margin-bottom: 4px; }
+  .design-card .pros-cons ul { padding-left: 16px; line-height: 1.6; color: #555; }
+  svg text { font-family: 'Helvetica Neue', Arial, sans-serif; }
+  .legend { margin-top: 12px; display: flex; gap: 20px; font-size: 11px; color: #555; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-swatch { width: 16px; height: 12px; border-radius: 2px; border: 1px solid #aaa; }
+
+  /* hatching pattern for frozen */
+  .hatch-pattern line { stroke: #999; stroke-width: 1; }
+</style>
+</head>
+<body>
+
+<h1>Stage 2 Pipeline — Compact Design Proposals</h1>
+<p class="subtitle">Goal: reduce white-space, emphasise the novel multi-CNN adapter bank. All designs maintain the same information content as <code>pipeline_v2.png</code> stage&nbsp;2.</p>
+
+<!-- ======== DESIGN A ======== -->
+<div class="design-card">
+  <h2>Design A — "Dual-Track Merge" <span class="tag tag-recommended">★ recommended</span></h2>
+  <p class="desc">Two parallel horizontal tracks (H&amp;E encoding on top, TME channel encoding on bottom) converge at the PixCell ControlNet block. The CNN adapter bank is drawn as a single highlighted module with four internal lanes — visually compact yet clearly novel. Loss gradient shown as a single dashed loop.</p>
+
+  <svg viewBox="0 0 920 310" width="920" height="310" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="hatchA" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#aaa" stroke-width="1"/>
+      </pattern>
+      <marker id="arrowA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+      </marker>
+      <marker id="arrowRedA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#c0392b"/>
+      </marker>
+    </defs>
+
+    <!-- ── H&E track (top) ── -->
+    <!-- H&E patch -->
+    <rect x="14" y="28" width="62" height="62" rx="6" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="45" y="106" text-anchor="middle" font-size="10" fill="#555">H&amp;E</text>
+    <!-- arrow -->
+    <line x1="82" y1="59" x2="112" y2="59" stroke="#555" stroke-width="1.5" marker-end="url(#arrowA)"/>
+    <!-- UNI -->
+    <rect x="118" y="38" width="64" height="42" rx="5" fill="#e2e3e5" stroke="#888" stroke-width="1.2"/>
+    <text x="150" y="63" text-anchor="middle" font-size="12" font-weight="bold" fill="#333">UNI</text>
+    <!-- arrow -->
+    <line x1="188" y1="59" x2="218" y2="59" stroke="#555" stroke-width="1.5" marker-end="url(#arrowA)"/>
+    <!-- z₀ + ε = z₁ -->
+    <text x="235" y="50" text-anchor="middle" font-size="11" fill="#333">z₀ + ε</text>
+    <text x="235" y="66" text-anchor="middle" font-size="10" fill="#777">= z₁</text>
+    <!-- arrow into PixCell -->
+    <line x1="262" y1="59" x2="340" y2="59" stroke="#555" stroke-width="1.5" marker-end="url(#arrowA)"/>
+
+    <!-- ── TME track (bottom) ── -->
+    <!-- 4 small channel thumbnails -->
+    <g transform="translate(14, 160)">
+      <rect x="0" y="0" width="36" height="36" rx="4" fill="#d1ecf1" stroke="#0c5460" stroke-width="1"/>
+      <text x="18" y="50" text-anchor="middle" font-size="9" fill="#555">type</text>
+      <rect x="44" y="0" width="36" height="36" rx="4" fill="#d1ecf1" stroke="#0c5460" stroke-width="1"/>
+      <text x="62" y="50" text-anchor="middle" font-size="9" fill="#555">state</text>
+      <rect x="88" y="0" width="36" height="36" rx="4" fill="#fde8e8" stroke="#c0392b" stroke-width="1"/>
+      <text x="106" y="50" text-anchor="middle" font-size="9" fill="#555">vas</text>
+      <rect x="132" y="0" width="36" height="36" rx="4" fill="#fff3cd" stroke="#856404" stroke-width="1"/>
+      <text x="150" y="50" text-anchor="middle" font-size="9" fill="#555">O₂/glu</text>
+    </g>
+    <text x="97" y="148" text-anchor="middle" font-size="10" fill="#777">TME channels (Stage 1)</text>
+
+    <!-- arrow to CNN bank -->
+    <line x1="184" y1="178" x2="222" y2="178" stroke="#555" stroke-width="1.5" marker-end="url(#arrowA)"/>
+
+    <!-- CNN adapter bank (highlighted) -->
+    <rect x="228" y="134" width="160" height="98" rx="8" fill="#d4edda" stroke="#28a745" stroke-width="2.5" stroke-dasharray="0"/>
+    <text x="308" y="154" text-anchor="middle" font-size="11" font-weight="bold" fill="#155724">CNN Adapter Bank</text>
+    <!-- 4 internal lanes -->
+    <rect x="240" y="162" width="32" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="256" y="178" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₁</text>
+    <rect x="278" y="162" width="32" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="294" y="178" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₂</text>
+    <rect x="316" y="162" width="32" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="332" y="178" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₃</text>
+    <rect x="354" y="162" width="32" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="370" y="178" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₄</text>
+    <!-- Σ -->
+    <text x="308" y="214" text-anchor="middle" font-size="14" font-weight="bold" fill="#155724">Σ</text>
+    <text x="308" y="244" text-anchor="middle" font-size="9" fill="#555" font-style="italic">trainable (20 ep)</text>
+
+    <!-- arrow from CNN bank up into PixCell -->
+    <line x1="392" y1="183" x2="430" y2="183" stroke="#28a745" stroke-width="2" marker-end="url(#arrowA)"/>
+    <line x1="430" y1="183" x2="430" y2="92" stroke="#28a745" stroke-width="2"/>
+    <line x1="430" y1="92" x2="440" y2="92" stroke="#28a745" stroke-width="2" marker-end="url(#arrowA)"/>
+    <text x="436" y="142" font-size="9" fill="#28a745" font-style="italic" transform="rotate(-90,436,142)">inject</text>
+
+    <!-- PixCell ControlNet (frozen, hatched) -->
+    <rect x="346" y="30" width="180" height="58" rx="8" fill="url(#hatchA)" stroke="#6c757d" stroke-width="2"/>
+    <rect x="346" y="30" width="180" height="58" rx="8" fill="rgba(255,255,255,0.7)" stroke="#6c757d" stroke-width="2"/>
+    <text x="436" y="56" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">PixCell ControlNet</text>
+    <text x="436" y="74" text-anchor="middle" font-size="10" fill="#777" font-style="italic">pretrained · frozen</text>
+
+    <!-- arrow out of PixCell → denoise → output -->
+    <line x1="530" y1="59" x2="560" y2="59" stroke="#555" stroke-width="1.5" marker-end="url(#arrowA)"/>
+    <text x="584" y="55" text-anchor="middle" font-size="10" fill="#777">denoise</text>
+    <line x1="608" y1="59" x2="638" y2="59" stroke="#555" stroke-width="1.5" marker-end="url(#arrowA)"/>
+    <!-- ẑ -->
+    <text x="652" y="57" text-anchor="middle" font-size="13" fill="#333">ẑ</text>
+    <line x1="664" y1="59" x2="694" y2="59" stroke="#555" stroke-width="1.5" marker-end="url(#arrowA)"/>
+    <!-- predicted H&E -->
+    <rect x="700" y="28" width="62" height="62" rx="6" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="731" y="63" text-anchor="middle" font-size="10" fill="#c0392b">ẑ → H&amp;E</text>
+    <text x="731" y="106" text-anchor="middle" font-size="10" fill="#555">predicted</text>
+
+    <!-- v-loss gradient (dashed red loop) -->
+    <line x1="700" y1="92" x2="700" y2="264" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <line x1="700" y1="264" x2="394" y2="264" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowRedA)"/>
+    <text x="560" y="280" text-anchor="middle" font-size="10" fill="#c0392b" font-style="italic">v-loss → updates CNN adapters only</text>
+
+    <!-- title -->
+    <text x="8" y="16" font-size="13" font-weight="bold" fill="#333">b  Stage 2 — Training</text>
+  </svg>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:repeating-linear-gradient(45deg,#eee,#eee 2px,#fff 2px,#fff 4px);"></div> frozen</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d4edda; border-color:#28a745;"></div> trainable</div>
+    <div class="legend-item"><svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3"/></svg> gradient</div>
+  </div>
+
+  <div class="pros-cons">
+    <div><h4>✓ Strengths</h4>
+      <ul>
+        <li>~40% shorter vertically than original</li>
+        <li>CNN adapter bank is a single highlighted block — immediately reads as the novel contribution</li>
+        <li>Two-track layout mirrors the dual-input nature of the model</li>
+        <li>Loss loop is clean single dashed line</li>
+      </ul>
+    </div>
+    <div><h4>✗ Trade-offs</h4>
+      <ul>
+        <li>Slightly wider than original to fit both tracks side-by-side</li>
+        <li>The "inject" arrow needs a bend</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DESIGN B ======== -->
+<div class="design-card">
+  <h2>Design B — "Inline Squeeze" <span class="tag tag-minimal">minimal</span></h2>
+  <p class="desc">Everything on a single horizontal band. TME channels are tiny icons above the CNN bank, which sits directly below the main data flow. Extremely compact — optimised for a narrow column figure.</p>
+
+  <svg viewBox="0 0 900 230" width="900" height="230" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="hatchB" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#aaa" stroke-width="1"/>
+      </pattern>
+      <marker id="arrowB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+      </marker>
+      <marker id="arrowGreenB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#28a745"/>
+      </marker>
+      <marker id="arrowRedB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#c0392b"/>
+      </marker>
+    </defs>
+
+    <text x="8" y="16" font-size="13" font-weight="bold" fill="#333">b  Stage 2 — Training</text>
+
+    <!-- Main flow line -->
+    <!-- H&E patch -->
+    <rect x="14" y="44" width="52" height="52" rx="5" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="40" y="74" text-anchor="middle" font-size="9" fill="#c0392b">H&amp;E</text>
+    <line x1="72" y1="70" x2="98" y2="70" stroke="#555" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+    <!-- UNI -->
+    <rect x="104" y="52" width="56" height="36" rx="5" fill="#e2e3e5" stroke="#888" stroke-width="1.2"/>
+    <text x="132" y="74" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">UNI</text>
+    <line x1="166" y1="70" x2="190" y2="70" stroke="#555" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+    <!-- z₁ -->
+    <text x="205" y="66" text-anchor="middle" font-size="10" fill="#333">z₀+ε</text>
+    <text x="205" y="80" text-anchor="middle" font-size="9" fill="#777">=z₁</text>
+    <line x1="222" y1="70" x2="250" y2="70" stroke="#555" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+    <!-- PixCell ControlNet (wide, hatched) -->
+    <rect x="256" y="40" width="260" height="60" rx="8" fill="url(#hatchB)" stroke="#6c757d" stroke-width="2"/>
+    <rect x="256" y="40" width="260" height="60" rx="8" fill="rgba(255,255,255,0.72)" stroke="#6c757d" stroke-width="2"/>
+    <text x="386" y="66" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">PixCell ControlNet</text>
+    <text x="386" y="84" text-anchor="middle" font-size="10" fill="#777" font-style="italic">pretrained · frozen</text>
+
+    <!-- arrow out -->
+    <line x1="520" y1="70" x2="556" y2="70" stroke="#555" stroke-width="1.5" marker-end="url(#arrowB)"/>
+    <text x="538" y="62" text-anchor="middle" font-size="9" fill="#777">denoise</text>
+
+    <!-- predicted H&E -->
+    <rect x="562" y="44" width="52" height="52" rx="5" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="588" y="74" text-anchor="middle" font-size="9" fill="#c0392b">ẑ→H&amp;E</text>
+
+    <!-- CNN adapter bank BELOW the PixCell block -->
+    <rect x="276" y="118" width="220" height="74" rx="7" fill="#d4edda" stroke="#28a745" stroke-width="2.5"/>
+    <text x="386" y="136" text-anchor="middle" font-size="11" font-weight="bold" fill="#155724">CNN Adapter Bank (trainable)</text>
+
+    <!-- TME mini icons inside adapter bank -->
+    <g transform="translate(286, 144)">
+      <rect x="0" y="0" width="42" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+      <text x="21" y="16" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₁</text>
+      <text x="21" y="36" text-anchor="middle" font-size="8" fill="#777">type</text>
+
+      <rect x="52" y="0" width="42" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+      <text x="73" y="16" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₂</text>
+      <text x="73" y="36" text-anchor="middle" font-size="8" fill="#777">state</text>
+
+      <rect x="104" y="0" width="42" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+      <text x="125" y="16" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₃</text>
+      <text x="125" y="36" text-anchor="middle" font-size="8" fill="#777">vas</text>
+
+      <rect x="156" y="0" width="42" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+      <text x="177" y="16" text-anchor="middle" font-size="9" font-weight="bold" fill="#155724">CNN₄</text>
+      <text x="177" y="36" text-anchor="middle" font-size="8" fill="#777">O₂/glu</text>
+    </g>
+
+    <!-- inject arrow from CNN bank up into PixCell -->
+    <line x1="386" y1="118" x2="386" y2="104" stroke="#28a745" stroke-width="2" marker-end="url(#arrowGreenB)"/>
+    <text x="404" y="114" font-size="9" fill="#28a745" font-style="italic">Σ inject</text>
+
+    <!-- v-loss dashed -->
+    <path d="M614,96 L614,210 L390,210" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#arrowRedB)"/>
+    <text x="510" y="222" text-anchor="middle" font-size="10" fill="#c0392b" font-style="italic">v-loss → CNN adapters only</text>
+  </svg>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:repeating-linear-gradient(45deg,#eee,#eee 2px,#fff 2px,#fff 4px);"></div> frozen</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d4edda; border-color:#28a745;"></div> trainable</div>
+    <div class="legend-item"><svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3"/></svg> gradient</div>
+  </div>
+
+  <div class="pros-cons">
+    <div><h4>✓ Strengths</h4>
+      <ul>
+        <li>Most compact — fits a single-column journal figure width</li>
+        <li>Main data flow is a clean left→right line</li>
+        <li>CNN labels include their input channel directly — no extra icons</li>
+      </ul>
+    </div>
+    <div><h4>✗ Trade-offs</h4>
+      <ul>
+        <li>TME channel thumbnails lost — replaced by text labels</li>
+        <li>Less visual distinction between the two input streams</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DESIGN C ======== -->
+<div class="design-card">
+  <h2>Design C — "Exploded Module" <span class="tag tag-novel">novelty-first</span></h2>
+  <p class="desc">The CNN adapter bank is drawn large and center, with its four lanes expanded vertically. PixCell ControlNet wraps around it as a container. This puts maximum visual emphasis on the novel contribution — the multi-channel CNN adapters — while everything else is compressed to the periphery.</p>
+
+  <svg viewBox="0 0 820 340" width="820" height="340" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="hatchC" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#aaa" stroke-width="1"/>
+      </pattern>
+      <marker id="arrowC" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+      </marker>
+      <marker id="arrowGreenC" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#28a745"/>
+      </marker>
+      <marker id="arrowRedC" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#c0392b"/>
+      </marker>
+    </defs>
+
+    <text x="8" y="16" font-size="13" font-weight="bold" fill="#333">b  Stage 2 — Training</text>
+
+    <!-- === Left inputs === -->
+    <!-- H&E -->
+    <rect x="14" y="40" width="50" height="50" rx="5" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="39" y="68" text-anchor="middle" font-size="9" fill="#c0392b">H&amp;E</text>
+    <line x1="70" y1="65" x2="96" y2="65" stroke="#555" stroke-width="1.5" marker-end="url(#arrowC)"/>
+    <!-- UNI -->
+    <rect x="102" y="48" width="54" height="34" rx="5" fill="#e2e3e5" stroke="#888" stroke-width="1.2"/>
+    <text x="129" y="69" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">UNI</text>
+    <line x1="162" y1="65" x2="180" y2="65" stroke="#555" stroke-width="1.5"/>
+    <text x="196" y="62" text-anchor="middle" font-size="10" fill="#333">z₁</text>
+    <line x1="210" y1="65" x2="270" y2="65" stroke="#555" stroke-width="1.5" marker-end="url(#arrowC)"/>
+
+    <!-- TME channel icons (left side, stacked vertically) -->
+    <text x="52" y="118" text-anchor="middle" font-size="10" fill="#777" font-style="italic">TME</text>
+    <rect x="14" y="128" width="36" height="30" rx="3" fill="#d1ecf1" stroke="#0c5460" stroke-width="1"/>
+    <text x="32" y="147" text-anchor="middle" font-size="8" fill="#0c5460">type</text>
+    <rect x="56" y="128" width="36" height="30" rx="3" fill="#d1ecf1" stroke="#0c5460" stroke-width="1"/>
+    <text x="74" y="147" text-anchor="middle" font-size="8" fill="#0c5460">state</text>
+    <rect x="14" y="168" width="36" height="30" rx="3" fill="#fde8e8" stroke="#c0392b" stroke-width="1"/>
+    <text x="32" y="187" text-anchor="middle" font-size="8" fill="#c0392b">vas</text>
+    <rect x="56" y="168" width="36" height="30" rx="3" fill="#fff3cd" stroke="#856404" stroke-width="1"/>
+    <text x="74" y="187" text-anchor="middle" font-size="8" fill="#856404">O₂/glu</text>
+
+    <!-- arrows from TME to CNN bank -->
+    <line x1="98" y1="143" x2="168" y2="168" stroke="#28a745" stroke-width="1.5" marker-end="url(#arrowGreenC)"/>
+    <line x1="98" y1="155" x2="168" y2="198" stroke="#28a745" stroke-width="1.5" marker-end="url(#arrowGreenC)"/>
+    <line x1="98" y1="177" x2="168" y2="228" stroke="#28a745" stroke-width="1.5" marker-end="url(#arrowGreenC)"/>
+    <line x1="98" y1="189" x2="168" y2="258" stroke="#28a745" stroke-width="1.5" marker-end="url(#arrowGreenC)"/>
+
+    <!-- PixCell + CNN outer box (the entire model) -->
+    <rect x="276" y="30" width="340" height="280" rx="12" fill="url(#hatchC)" stroke="#6c757d" stroke-width="2"/>
+    <rect x="276" y="30" width="340" height="280" rx="12" fill="rgba(255,255,255,0.75)" stroke="#6c757d" stroke-width="2"/>
+    <text x="446" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">PixCell ControlNet</text>
+    <text x="446" y="68" text-anchor="middle" font-size="10" fill="#777" font-style="italic">pretrained base · frozen</text>
+
+    <!-- CNN Adapter Bank (highlighted inner block) -->
+    <rect x="170" y="140" width="200" height="160" rx="8" fill="#d4edda" stroke="#28a745" stroke-width="2.5"/>
+    <text x="270" y="162" text-anchor="middle" font-size="12" font-weight="bold" fill="#155724">CNN Adapter Bank</text>
+    <text x="270" y="176" text-anchor="middle" font-size="9" fill="#155724" font-style="italic">trainable · 20 epochs</text>
+
+    <!-- 4 CNN lanes -->
+    <rect x="188" y="186" width="164" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="270" y="202" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">CNN₁  cell type</text>
+    <rect x="188" y="216" width="164" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="270" y="232" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">CNN₂  cell state</text>
+    <rect x="188" y="246" width="164" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="270" y="262" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">CNN₃  vasculature</text>
+    <rect x="188" y="276" width="164" height="24" rx="3" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="270" y="292" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">CNN₄  O₂ / glucose</text>
+
+    <!-- Σ and inject arrow from CNN bank to PixCell body -->
+    <text x="386" y="246" text-anchor="middle" font-size="18" font-weight="bold" fill="#28a745">Σ</text>
+    <line x1="374" y1="240" x2="420" y2="170" stroke="#28a745" stroke-width="2" marker-end="url(#arrowGreenC)"/>
+    <text x="414" y="216" font-size="9" fill="#28a745" font-style="italic">inject into</text>
+    <text x="414" y="228" font-size="9" fill="#28a745" font-style="italic">residuals</text>
+
+    <!-- Diffusion internals hint -->
+    <rect x="410" y="84" width="180" height="100" rx="6" fill="rgba(108,117,125,0.08)" stroke="#999" stroke-width="1" stroke-dasharray="4,3"/>
+    <text x="500" y="106" text-anchor="middle" font-size="10" fill="#888">diffusion</text>
+    <text x="500" y="120" text-anchor="middle" font-size="10" fill="#888">denoising</text>
+    <text x="500" y="140" text-anchor="middle" font-size="14" fill="#888">z₁ → ẑ</text>
+
+    <!-- output arrow -->
+    <line x1="620" y1="134" x2="660" y2="134" stroke="#555" stroke-width="1.5" marker-end="url(#arrowC)"/>
+    <rect x="666" y="108" width="56" height="52" rx="5" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="694" y="138" text-anchor="middle" font-size="9" fill="#c0392b">ẑ → H&amp;E</text>
+    <text x="694" y="174" text-anchor="middle" font-size="10" fill="#555">predicted</text>
+
+    <!-- v-loss -->
+    <path d="M694,162 L694,320 L270,320 L270,304" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#arrowRedC)"/>
+    <text x="500" y="336" text-anchor="middle" font-size="10" fill="#c0392b" font-style="italic">v-loss → updates CNN adapters only</text>
+  </svg>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:repeating-linear-gradient(45deg,#eee,#eee 2px,#fff 2px,#fff 4px);"></div> frozen</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d4edda; border-color:#28a745;"></div> trainable</div>
+    <div class="legend-item"><svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3"/></svg> gradient</div>
+  </div>
+
+  <div class="pros-cons">
+    <div><h4>✓ Strengths</h4>
+      <ul>
+        <li>CNN adapter bank is the <strong>largest visual element</strong> — maximum emphasis on novelty</li>
+        <li>Shows the adapters <em>inside</em> the PixCell model — architecturally accurate</li>
+        <li>Each CNN lane is labelled with its channel — easy to read</li>
+        <li>Compact left-side TME grid (2×2) saves horizontal space</li>
+      </ul>
+    </div>
+    <div><h4>✗ Trade-offs</h4>
+      <ul>
+        <li>Taller than Design A/B — needs more vertical space</li>
+        <li>Overlapping boxes may need careful color tuning for print</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DESIGN D ======== -->
+<div class="design-card">
+  <h2>Design D — "Symmetric Hourglass" <span class="tag tag-minimal">balanced</span></h2>
+  <p class="desc">The two inputs (H&amp;E and TME) sit on the left, fan into a central PixCell block, and the output fans out to the right. The CNN adapter bank appears as a distinct coloured sidebar fused to the PixCell block, creating an "hourglass" silhouette that naturally draws the eye to the adapters.</p>
+
+  <svg viewBox="0 0 800 280" width="800" height="280" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="hatchD" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#aaa" stroke-width="1"/>
+      </pattern>
+      <marker id="arrowD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+      </marker>
+      <marker id="arrowGreenD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#28a745"/>
+      </marker>
+      <marker id="arrowRedD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#c0392b"/>
+      </marker>
+    </defs>
+
+    <text x="8" y="16" font-size="13" font-weight="bold" fill="#333">b  Stage 2 — Training</text>
+
+    <!-- Left: H&E path -->
+    <rect x="14" y="36" width="46" height="46" rx="5" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="37" y="62" text-anchor="middle" font-size="9" fill="#c0392b">H&amp;E</text>
+    <line x1="66" y1="59" x2="88" y2="59" stroke="#555" stroke-width="1.5" marker-end="url(#arrowD)"/>
+    <rect x="94" y="44" width="50" height="30" rx="4" fill="#e2e3e5" stroke="#888" stroke-width="1.2"/>
+    <text x="119" y="63" text-anchor="middle" font-size="10" font-weight="bold" fill="#333">UNI</text>
+    <line x1="150" y1="59" x2="168" y2="59" stroke="#555" stroke-width="1.5"/>
+    <text x="182" y="56" text-anchor="middle" font-size="9" fill="#333">z₁</text>
+    <line x1="194" y1="59" x2="258" y2="85" stroke="#555" stroke-width="1.5" marker-end="url(#arrowD)"/>
+
+    <!-- Left: TME path -->
+    <g transform="translate(14, 110)">
+      <rect x="0" y="0" width="28" height="28" rx="3" fill="#d1ecf1" stroke="#0c5460" stroke-width="1"/>
+      <rect x="34" y="0" width="28" height="28" rx="3" fill="#d1ecf1" stroke="#0c5460" stroke-width="1"/>
+      <rect x="68" y="0" width="28" height="28" rx="3" fill="#fde8e8" stroke="#c0392b" stroke-width="1"/>
+      <rect x="102" y="0" width="28" height="28" rx="3" fill="#fff3cd" stroke="#856404" stroke-width="1"/>
+      <text x="67" y="48" text-anchor="middle" font-size="9" fill="#777">TME channels</text>
+    </g>
+    <line x1="148" y1="124" x2="176" y2="124" stroke="#28a745" stroke-width="1.5" marker-end="url(#arrowGreenD)"/>
+
+    <!-- CNN adapter sidebar -->
+    <rect x="182" y="98" width="80" height="140" rx="7" fill="#d4edda" stroke="#28a745" stroke-width="2.5"/>
+    <text x="222" y="118" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">CNN</text>
+    <text x="222" y="132" text-anchor="middle" font-size="10" font-weight="bold" fill="#155724">Adapters</text>
+    <!-- lanes -->
+    <rect x="192" y="142" width="60" height="18" rx="2" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="222" y="155" text-anchor="middle" font-size="8" font-weight="bold" fill="#155724">CNN₁</text>
+    <rect x="192" y="164" width="60" height="18" rx="2" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="222" y="177" text-anchor="middle" font-size="8" font-weight="bold" fill="#155724">CNN₂</text>
+    <rect x="192" y="186" width="60" height="18" rx="2" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="222" y="199" text-anchor="middle" font-size="8" font-weight="bold" fill="#155724">CNN₃</text>
+    <rect x="192" y="208" width="60" height="18" rx="2" fill="#fff" stroke="#28a745" stroke-width="1"/>
+    <text x="222" y="221" text-anchor="middle" font-size="8" font-weight="bold" fill="#155724">CNN₄</text>
+
+    <!-- Σ + inject -->
+    <text x="280" y="180" text-anchor="middle" font-size="16" font-weight="bold" fill="#28a745">Σ</text>
+    <line x1="268" y1="175" x2="310" y2="130" stroke="#28a745" stroke-width="2" marker-end="url(#arrowGreenD)"/>
+
+    <!-- PixCell ControlNet (center) -->
+    <rect x="264" y="56" width="240" height="66" rx="8" fill="url(#hatchD)" stroke="#6c757d" stroke-width="2"/>
+    <rect x="264" y="56" width="240" height="66" rx="8" fill="rgba(255,255,255,0.72)" stroke="#6c757d" stroke-width="2"/>
+    <text x="384" y="84" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">PixCell ControlNet</text>
+    <text x="384" y="102" text-anchor="middle" font-size="10" fill="#777" font-style="italic">pretrained · frozen · denoise z₁→ẑ</text>
+
+    <!-- output -->
+    <line x1="508" y1="89" x2="548" y2="89" stroke="#555" stroke-width="1.5" marker-end="url(#arrowD)"/>
+    <rect x="554" y="63" width="52" height="52" rx="5" fill="#f8d7da" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="580" y="92" text-anchor="middle" font-size="9" fill="#c0392b">ẑ→H&amp;E</text>
+    <text x="580" y="130" text-anchor="middle" font-size="10" fill="#555">predicted</text>
+
+    <!-- v-loss -->
+    <path d="M580,117 L580,260 L222,260 L222,242" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#arrowRedD)"/>
+    <text x="410" y="274" text-anchor="middle" font-size="10" fill="#c0392b" font-style="italic">v-loss → CNN adapters only</text>
+
+    <!-- trainable label -->
+    <text x="222" y="250" text-anchor="middle" font-size="8" fill="#155724" font-style="italic">trainable · 20 ep</text>
+  </svg>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:repeating-linear-gradient(45deg,#eee,#eee 2px,#fff 2px,#fff 4px);"></div> frozen</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d4edda; border-color:#28a745;"></div> trainable</div>
+    <div class="legend-item"><svg width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5,3"/></svg> gradient</div>
+  </div>
+
+  <div class="pros-cons">
+    <div><h4>✓ Strengths</h4>
+      <ul>
+        <li>Balanced L-shaped composition — CNN sidebar naturally draws the eye</li>
+        <li>Two input paths are visually distinct (top = H&amp;E, left-bottom = TME)</li>
+        <li>Compact overall bounding box — works in single or double-column layouts</li>
+        <li>CNN sidebar fused to PixCell shows architectural coupling</li>
+      </ul>
+    </div>
+    <div><h4>✗ Trade-offs</h4>
+      <ul>
+        <li>Asymmetric — the CNN sidebar hangs below the main flow</li>
+        <li>TME channel thumbnails are small (could add labels)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ======== Comparison table ======== -->
+<div class="design-card" style="background:#fafafa;">
+  <h2>Quick Comparison</h2>
+  <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:12px;">
+    <thead>
+      <tr style="border-bottom:2px solid #ccc;">
+        <th style="text-align:left; padding:6px;">Design</th>
+        <th style="text-align:center; padding:6px;">Compactness</th>
+        <th style="text-align:center; padding:6px;">CNN Emphasis</th>
+        <th style="text-align:center; padding:6px;">Readability</th>
+        <th style="text-align:center; padding:6px;">Journal-Ready</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #eee;">
+        <td style="padding:6px;">A — Dual-Track Merge</td>
+        <td style="text-align:center;">★★★★</td>
+        <td style="text-align:center;">★★★★</td>
+        <td style="text-align:center;">★★★★★</td>
+        <td style="text-align:center;">★★★★★</td>
+      </tr>
+      <tr style="border-bottom:1px solid #eee;">
+        <td style="padding:6px;">B — Inline Squeeze</td>
+        <td style="text-align:center;">★★★★★</td>
+        <td style="text-align:center;">★★★</td>
+        <td style="text-align:center;">★★★★</td>
+        <td style="text-align:center;">★★★★</td>
+      </tr>
+      <tr style="border-bottom:1px solid #eee;">
+        <td style="padding:6px;">C — Exploded Module</td>
+        <td style="text-align:center;">★★★</td>
+        <td style="text-align:center;">★★★★★</td>
+        <td style="text-align:center;">★★★★</td>
+        <td style="text-align:center;">★★★</td>
+      </tr>
+      <tr>
+        <td style="padding:6px;">D — Symmetric Hourglass</td>
+        <td style="text-align:center;">★★★★</td>
+        <td style="text-align:center;">★★★★</td>
+        <td style="text-align:center;">★★★★</td>
+        <td style="text-align:center;">★★★★</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="font-size:12px; color:#555; margin-top:14px;"><strong>Recommendation:</strong> Design <strong>A (Dual-Track Merge)</strong> gives the best balance of compactness and CNN adapter emphasis. If you need single-column width, go with <strong>B (Inline Squeeze)</strong>. If the reviewers need to see the adapters are <em>inside</em> the PixCell architecture, pick <strong>C (Exploded Module)</strong>.</p>
+</div>
+
+</body>
+</html>
