@@ -18,9 +18,10 @@ DEFAULT_PIXCELL_ROOT = Path(
     "/home/pohaoc2/UW/bagherilab/PixCell/inference_output/paired_ablation/ablation_results"
 )
 DEFAULT_OUT_DIR = Path("paper/figures/stage2")
-DEFAULT_TILE_SIZE = 56
-DEFAULT_PANEL_GAP = 10
-DEFAULT_HEADER_HEIGHT = 28
+DEFAULT_TILE_SIZE = 200
+DEFAULT_PANEL_GAP = 22
+DEFAULT_HEADER_HEIGHT = 56
+DEFAULT_SCALE_BAR_LABEL = "67 µm"
 OUTPUT_PNG_NAME = "crc33_stage2_training_pipeline.png"
 OUTPUT_JSON_NAME = "crc33_stage2_training_pipeline.json"
 
@@ -49,18 +50,22 @@ def build_stage2_training_figure(
     pixcell_root: Path = DEFAULT_PIXCELL_ROOT,
     out_dir: Path = DEFAULT_OUT_DIR,
     patch_id: str | None = None,
+    group_id: str | None = None,
+    scale_bar_label: str = DEFAULT_SCALE_BAR_LABEL,
 ) -> tuple[Path, Path]:
     assets = resolve_stage2_assets(
         Path(processed_dir),
         Path(selection_json),
         Path(pixcell_root),
         patch_id=patch_id,
+        group_id=group_id,
     )
     canvas = render_stage2_training_figure(
         assets,
         tile_size=DEFAULT_TILE_SIZE,
         panel_gap=DEFAULT_PANEL_GAP,
         header_height=DEFAULT_HEADER_HEIGHT,
+        scale_bar_label=scale_bar_label,
     )
 
     out_dir = Path(out_dir)
@@ -97,6 +102,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--pixcell-root", type=Path, default=DEFAULT_PIXCELL_ROOT)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--patch-id", default=None)
+    parser.add_argument("--group-id", default=None)
+    parser.add_argument("--scale-bar-label", default=DEFAULT_SCALE_BAR_LABEL)
     args = parser.parse_args(argv)
 
     out_png, out_json = build_stage2_training_figure(
@@ -105,6 +112,8 @@ def main(argv: list[str] | None = None) -> None:
         pixcell_root=args.pixcell_root,
         out_dir=args.out_dir,
         patch_id=args.patch_id,
+        group_id=args.group_id,
+        scale_bar_label=args.scale_bar_label,
     )
     print(f"Saved: {out_png}")
     print(f"Saved: {out_json}")

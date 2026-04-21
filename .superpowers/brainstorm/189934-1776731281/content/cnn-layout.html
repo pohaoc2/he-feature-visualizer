@@ -1,0 +1,211 @@
+<h2>How should the 9 CNNs be arranged?</h2>
+<p class="subtitle">Cell types (tumor/healthy/immune) + cell states (prolif/nonprolif/dead) + vasculature + glucose + oxygen → 9 CNNs total. Click to select your preferred layout.</p>
+
+<div class="cards">
+
+  <!-- Option A: Grouped columns -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px 8px 8px; background:#fafafa; border-radius:8px;">
+      <svg viewBox="0 0 460 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+        <defs>
+          <marker id="arr1" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#2d8c4f"/>
+          </marker>
+        </defs>
+        <!-- Group 1: Cell Types -->
+        <rect x="10" y="10" width="120" height="130" rx="7" fill="#e8f5ee" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="70" y="27" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">Cell Types</text>
+        <rect x="20" y="34" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="70" y="50" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · tumor</text>
+        <rect x="20" y="64" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="70" y="80" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · healthy</text>
+        <rect x="20" y="94" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="70" y="110" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · immune</text>
+        <line x1="70" y1="118" x2="70" y2="140" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr1)"/>
+        <rect x="30" y="140" width="80" height="16" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="70" y="152" text-anchor="middle" font-size="8" fill="#205f37">embed</text>
+
+        <!-- Group 2: Cell States -->
+        <rect x="170" y="10" width="120" height="130" rx="7" fill="#e8f5ee" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="230" y="27" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">Cell States</text>
+        <rect x="180" y="34" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="230" y="50" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · prolif</text>
+        <rect x="180" y="64" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="230" y="80" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · nonprolif</text>
+        <rect x="180" y="94" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="230" y="110" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · dead</text>
+        <line x1="230" y1="118" x2="230" y2="140" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr1)"/>
+        <rect x="190" y="140" width="80" height="16" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="230" y="152" text-anchor="middle" font-size="8" fill="#205f37">embed</text>
+
+        <!-- Group 3: Microenv -->
+        <rect x="330" y="10" width="120" height="130" rx="7" fill="#e8f5ee" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="390" y="27" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">Microenv</text>
+        <rect x="340" y="34" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="390" y="50" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · vasculature</text>
+        <rect x="340" y="64" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="390" y="80" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · glucose</text>
+        <rect x="340" y="94" width="100" height="24" rx="4" fill="#fff" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="390" y="110" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">CNN · oxygen</text>
+        <line x1="390" y1="118" x2="390" y2="140" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr1)"/>
+        <rect x="350" y="140" width="80" height="16" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1"/>
+        <text x="390" y="152" text-anchor="middle" font-size="8" fill="#205f37">embed</text>
+
+        <!-- merge arrow -->
+        <line x1="70" y1="156" x2="230" y2="180" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="230" y1="156" x2="230" y2="180" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="390" y1="156" x2="230" y2="180" stroke="#2d8c4f" stroke-width="1.2"/>
+        <rect x="186" y="180" width="88" height="16" rx="5" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="230" y="192" text-anchor="middle" font-size="9" font-weight="700" fill="#205f37">Attention Fusion</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>A — Grouped Columns</h3>
+      <p>3 vertical groups (cell types / cell states / microenv), 3 CNNs each. Groups merge to one Attention block. Horizontal layout — not tall. Makes the grouping logic explicit.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Abbreviated rows with ×n -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px 8px 8px; background:#fafafa; border-radius:8px;">
+      <svg viewBox="0 0 360 210" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+        <defs>
+          <marker id="arr2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#2d8c4f"/>
+          </marker>
+        </defs>
+
+        <!-- Row labels (input thumbnails) -->
+        <text x="8" y="44" font-size="8" fill="#6d675f">cell</text>
+        <text x="8" y="54" font-size="8" fill="#6d675f">types</text>
+        <rect x="8" y="60" width="36" height="26" rx="4" fill="#eef7fb" stroke="#7fa2b3" stroke-width="1"/>
+
+        <text x="8" y="106" font-size="8" fill="#6d675f">cell</text>
+        <text x="8" y="116" font-size="8" fill="#6d675f">states</text>
+        <rect x="8" y="122" width="36" height="26" rx="4" fill="#ebfaf4" stroke="#7ab79a" stroke-width="1"/>
+
+        <text x="8" y="168" font-size="8" fill="#6d675f">vas /</text>
+        <text x="8" y="178" font-size="8" fill="#6d675f">glu / O₂</text>
+        <rect x="8" y="184" width="36" height="26" rx="4" fill="#fff1e6" stroke="#d49d71" stroke-width="1"/>
+
+        <!-- arrows to CNN blocks -->
+        <line x1="44" y1="73" x2="68" y2="73" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <line x1="44" y1="135" x2="68" y2="135" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <line x1="44" y1="197" x2="68" y2="197" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+        <!-- CNN blocks — compact rows -->
+        <rect x="74" y="58" width="130" height="30" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+        <text x="110" y="77" text-anchor="middle" font-size="10" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="170" y="71" font-size="8" fill="#5a6a60">tumor</text>
+        <text x="170" y="82" font-size="8" fill="#5a6a60">healthy · immune</text>
+
+        <rect x="74" y="120" width="130" height="30" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+        <text x="110" y="139" text-anchor="middle" font-size="10" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="170" y="133" font-size="8" fill="#5a6a60">prolif</text>
+        <text x="170" y="144" font-size="8" fill="#5a6a60">nonprolif · dead</text>
+
+        <rect x="74" y="182" width="130" height="30" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+        <text x="110" y="201" text-anchor="middle" font-size="10" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="170" y="195" font-size="8" fill="#5a6a60">vasculature</text>
+        <text x="170" y="206" font-size="8" fill="#5a6a60">glucose · oxygen</text>
+
+        <!-- collect to attention -->
+        <line x1="204" y1="73" x2="228" y2="73" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="204" y1="135" x2="228" y2="135" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="204" y1="197" x2="228" y2="197" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="228" y1="73" x2="228" y2="197" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="228" y1="135" x2="252" y2="135" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+        <rect x="258" y="110" width="90" height="50" rx="7" fill="#dff4e3" stroke="#2d8c4f" stroke-width="2"/>
+        <text x="303" y="130" text-anchor="middle" font-size="10" font-weight="700" fill="#205f37">Attention</text>
+        <text x="303" y="145" text-anchor="middle" font-size="8" fill="#5a6a60">fusion</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>B — Abbreviated ×n rows</h3>
+      <p>3 compact rows: "CNN×3" with sub-labels. Same height as current but cleaner. Emphasizes there are 3 CNNs per group without drawing all 9 boxes. Most compact.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Expanded fan with all 9 visible -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px 8px 8px; background:#fafafa; border-radius:8px;">
+      <svg viewBox="0 0 380 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+        <defs>
+          <marker id="arr3" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#2d8c4f"/>
+          </marker>
+        </defs>
+
+        <!-- brace / group labels on left -->
+        <text x="4" y="40" font-size="8" font-weight="700" fill="#205f37">cell</text>
+        <text x="4" y="50" font-size="8" font-weight="700" fill="#205f37">types</text>
+        <line x1="28" y1="26" x2="28" y2="86" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="28" y1="26" x2="36" y2="26" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="28" y1="56" x2="36" y2="56" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="28" y1="86" x2="36" y2="86" stroke="#2d8c4f" stroke-width="1.2"/>
+
+        <text x="4" y="120" font-size="8" font-weight="700" fill="#205f37">cell</text>
+        <text x="4" y="130" font-size="8" font-weight="700" fill="#205f37">states</text>
+        <line x1="28" y1="110" x2="28" y2="170" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="28" y1="110" x2="36" y2="110" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="28" y1="140" x2="36" y2="140" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="28" y1="170" x2="36" y2="170" stroke="#2d8c4f" stroke-width="1.2"/>
+
+        <text x="4" y="200" font-size="8" font-weight="700" fill="#205f37">micro</text>
+        <text x="4" y="210" font-size="8" font-weight="700" fill="#205f37">env</text>
+        <line x1="28" y1="194" x2="28" y2="234" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="28" y1="194" x2="36" y2="194" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="28" y1="214" x2="36" y2="214" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="28" y1="234" x2="36" y2="234" stroke="#2d8c4f" stroke-width="1.2"/>
+
+        <!-- 9 CNN boxes -->
+        <!-- cell types -->
+        <rect x="38" y="16" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="30" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · tumor</text>
+        <rect x="38" y="46" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="60" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · healthy</text>
+        <rect x="38" y="76" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="90" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · immune</text>
+
+        <!-- cell states -->
+        <rect x="38" y="100" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="114" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · prolif</text>
+        <rect x="38" y="130" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="144" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · nonprolif</text>
+        <rect x="38" y="160" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="174" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · dead</text>
+
+        <!-- microenv -->
+        <rect x="38" y="184" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="198" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · vasculature</text>
+        <rect x="38" y="204" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="218" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · glucose</text>
+        <rect x="38" y="224" width="106" height="20" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.3"/>
+        <text x="91" y="238" text-anchor="middle" font-size="8.5" font-weight="700" fill="#205f37">CNN · oxygen</text>
+
+        <!-- arrows from each CNN to merge line -->
+        <line x1="144" y1="26" x2="170" y2="26" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="56" x2="170" y2="56" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="86" x2="170" y2="86" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="114" x2="170" y2="114" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="140" x2="170" y2="140" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="170" x2="170" y2="170" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="194" x2="170" y2="194" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="214" x2="170" y2="214" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="144" y1="234" x2="170" y2="234" stroke="#2d8c4f" stroke-width="1"/>
+        <line x1="170" y1="26" x2="170" y2="234" stroke="#2d8c4f" stroke-width="1.5"/>
+        <line x1="170" y1="130" x2="192" y2="130" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+        <rect x="198" y="106" width="90" height="48" rx="7" fill="#dff4e3" stroke="#2d8c4f" stroke-width="2"/>
+        <text x="243" y="126" text-anchor="middle" font-size="10" font-weight="700" fill="#205f37">Attention</text>
+        <text x="243" y="141" text-anchor="middle" font-size="8" fill="#5a6a60">fusion</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>C — Full 9-CNN fan</h3>
+      <p>All 9 CNNs shown individually with left-side brace labels grouping them. Tallest option but most explicit. Every CNN named. Left braces signal grouping without extra boxes.</p>
+    </div>
+  </div>
+
+</div>

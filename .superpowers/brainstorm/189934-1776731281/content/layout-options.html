@@ -1,0 +1,270 @@
+<h2>Overall diagram layout — 3 approaches</h2>
+<p class="subtitle">All narrow enough to sit beside a Stage 3 panel. CNN bank uses the ×3 row style you picked. Click to select.</p>
+
+<div class="cards">
+
+  <!-- Option A: Two-track merge -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px 10px 8px; background:#fafafa; border-radius:8px;">
+      <svg viewBox="0 0 420 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+        <defs>
+          <pattern id="hA" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#f7f4ef"/>
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#c6c0b7" stroke-width="2.5"/>
+          </pattern>
+          <marker id="mA" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#59544f"/></marker>
+          <marker id="mAg" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2d8c4f"/></marker>
+          <marker id="mAr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#b33b34"/></marker>
+        </defs>
+
+        <!-- TRACK 1: H&E → UNI → latent -->
+        <text x="8" y="12" font-size="8" fill="#6d675f" font-style="italic">H&amp;E track</text>
+        <rect x="8" y="18" width="36" height="36" rx="5" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.4"/>
+        <text x="26" y="40" text-anchor="middle" font-size="8" fill="#93485f">H&amp;E</text>
+        <line x1="44" y1="36" x2="60" y2="36" stroke="#59544f" stroke-width="1.4" marker-end="url(#mA)"/>
+        <rect x="62" y="22" width="48" height="28" rx="5" fill="url(#hA)" stroke="#8e8880" stroke-width="1.4"/>
+        <text x="86" y="39" text-anchor="middle" font-size="9" font-weight="700" fill="#24211d">UNI</text>
+        <line x1="110" y1="36" x2="136" y2="36" stroke="#59544f" stroke-width="1.4" marker-end="url(#mA)"/>
+        <text x="154" y="32" text-anchor="middle" font-size="7" fill="#33435d">UNI latent</text>
+        <text x="154" y="42" text-anchor="middle" font-size="7" fill="#33435d">[B,1536]</text>
+        <line x1="178" y1="36" x2="228" y2="56" stroke="#59544f" stroke-width="1.4" marker-end="url(#mA)"/>
+
+        <!-- noisy Z_t from top -->
+        <text x="262" y="12" text-anchor="middle" font-size="8" fill="#33435d">noisy Z_t</text>
+        <line x1="262" y1="16" x2="262" y2="52" stroke="#59544f" stroke-width="1.4" marker-end="url(#mA)"/>
+
+        <!-- PixCell denoiser (frozen) -->
+        <rect x="228" y="56" width="120" height="56" rx="8" fill="url(#hA)" stroke="#8e8880" stroke-width="2"/>
+        <text x="288" y="78" text-anchor="middle" font-size="10" font-weight="700" fill="#24211d">PixCell denoiser</text>
+        <text x="288" y="92" text-anchor="middle" font-size="8" fill="#6d675f">frozen backbone</text>
+        <!-- output arrow -->
+        <line x1="348" y1="84" x2="372" y2="84" stroke="#59544f" stroke-width="1.4" marker-end="url(#mA)"/>
+        <rect x="374" y="64" width="38" height="40" rx="5" fill="url(#hA)" stroke="#8e8880" stroke-width="1.4"/>
+        <text x="393" y="83" text-anchor="middle" font-size="8" font-weight="700" fill="#24211d">VAE</text>
+        <text x="393" y="93" text-anchor="middle" font-size="7" fill="#6d675f">frozen</text>
+        <line x1="393" y1="104" x2="393" y2="124" stroke="#59544f" stroke-width="1.4" marker-end="url(#mA)"/>
+        <rect x="370" y="126" width="44" height="36" rx="5" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.4"/>
+        <text x="392" y="148" text-anchor="middle" font-size="8" fill="#93485f">gen H&amp;E</text>
+
+        <!-- TRACK 2: TME → CNN bank → Attention -->
+        <text x="8" y="132" font-size="8" fill="#6d675f" font-style="italic">TME track</text>
+        <!-- TME thumbnails -->
+        <rect x="8" y="138" width="28" height="22" rx="3" fill="#eef7fb" stroke="#7fa2b3" stroke-width="1"/>
+        <text x="22" y="153" text-anchor="middle" font-size="7" fill="#6d675f">types</text>
+        <rect x="8" y="164" width="28" height="22" rx="3" fill="#ebfaf4" stroke="#7ab79a" stroke-width="1"/>
+        <text x="22" y="179" text-anchor="middle" font-size="7" fill="#6d675f">states</text>
+        <rect x="8" y="190" width="28" height="22" rx="3" fill="#fff1e6" stroke="#d49d71" stroke-width="1"/>
+        <text x="22" y="205" text-anchor="middle" font-size="7" fill="#6d675f">micro</text>
+
+        <!-- arrows to CNN bank -->
+        <line x1="36" y1="149" x2="56" y2="149" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mAg)"/>
+        <line x1="36" y1="175" x2="56" y2="175" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mAg)"/>
+        <line x1="36" y1="201" x2="56" y2="201" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mAg)"/>
+
+        <!-- CNN bank Option B style -->
+        <rect x="58" y="134" width="96" height="26" rx="5" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="92" y="145" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="130" y="142" font-size="7" fill="#5a6a60">tumor/healthy/immune</text>
+        <rect x="58" y="164" width="96" height="26" rx="5" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="92" y="175" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="130" y="172" font-size="7" fill="#5a6a60">prolif/nonprolif/dead</text>
+        <rect x="58" y="194" width="96" height="26" rx="5" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="92" y="205" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="130" y="202" font-size="7" fill="#5a6a60">vas / glu / O₂</text>
+
+        <!-- collect to attention -->
+        <line x1="154" y1="147" x2="174" y2="147" stroke="#2d8c4f" stroke-width="1.3"/>
+        <line x1="154" y1="177" x2="174" y2="177" stroke="#2d8c4f" stroke-width="1.3"/>
+        <line x1="154" y1="207" x2="174" y2="207" stroke="#2d8c4f" stroke-width="1.3"/>
+        <line x1="174" y1="147" x2="174" y2="207" stroke="#2d8c4f" stroke-width="1.3"/>
+        <line x1="174" y1="177" x2="194" y2="177" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mAg)"/>
+        <rect x="196" y="162" width="60" height="30" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="226" y="181" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">Attention</text>
+
+        <!-- conditioning latent feeds UP into PixCell -->
+        <line x1="256" y1="162" x2="270" y2="162" stroke="#2d8c4f" stroke-width="1.3"/>
+        <line x1="270" y1="162" x2="270" y2="112" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mAg)"/>
+        <text x="280" y="140" font-size="7" fill="#2d8c4f">cond.</text>
+
+        <!-- v-loss dashed -->
+        <path d="M392,162 L392,224 L226,224 L226,193" stroke="#b33b34" stroke-width="1.3" stroke-dasharray="4,3" fill="none" marker-end="url(#mAr)"/>
+        <text x="310" y="234" text-anchor="middle" font-size="8" fill="#b33b34">v-loss → CNN + Attention only</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>A — Two-track merge</h3>
+      <p>H&amp;E track (top) and TME/CNN track (bottom) merge at PixCell center-right. Matches the spirit of Design A in the original HTML. Clean horizontal reading.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Left column feeding right pipeline -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px 10px 8px; background:#fafafa; border-radius:8px;">
+      <svg viewBox="0 0 420 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+        <defs>
+          <pattern id="hB" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#f7f4ef"/>
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#c6c0b7" stroke-width="2.5"/>
+          </pattern>
+          <marker id="mB" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#59544f"/></marker>
+          <marker id="mBg" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2d8c4f"/></marker>
+          <marker id="mBr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#b33b34"/></marker>
+        </defs>
+
+        <!-- LEFT COLUMN: inputs stacked vertically -->
+        <!-- H&E at top left -->
+        <rect x="8" y="14" width="36" height="36" rx="5" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.4"/>
+        <text x="26" y="36" text-anchor="middle" font-size="8" fill="#93485f">H&amp;E</text>
+        <line x1="44" y1="32" x2="68" y2="32" stroke="#59544f" stroke-width="1.4" marker-end="url(#mB)"/>
+        <rect x="70" y="18" width="44" height="28" rx="5" fill="url(#hB)" stroke="#8e8880" stroke-width="1.4"/>
+        <text x="92" y="35" text-anchor="middle" font-size="9" font-weight="700" fill="#24211d">UNI</text>
+        <!-- UNI latent flows right -->
+        <line x1="114" y1="32" x2="200" y2="32" stroke="#59544f" stroke-width="1.4" marker-end="url(#mB)"/>
+        <text x="157" y="27" text-anchor="middle" font-size="7" fill="#33435d">UNI latent</text>
+
+        <!-- TME section below H&E -->
+        <rect x="8" y="70" width="28" height="22" rx="3" fill="#eef7fb" stroke="#7fa2b3" stroke-width="1"/>
+        <text x="22" y="85" text-anchor="middle" font-size="7" fill="#6d675f">types</text>
+        <rect x="8" y="96" width="28" height="22" rx="3" fill="#ebfaf4" stroke="#7ab79a" stroke-width="1"/>
+        <text x="22" y="111" text-anchor="middle" font-size="7" fill="#6d675f">states</text>
+        <rect x="8" y="122" width="28" height="22" rx="3" fill="#fff1e6" stroke="#d49d71" stroke-width="1"/>
+        <text x="22" y="137" text-anchor="middle" font-size="7" fill="#6d675f">micro</text>
+
+        <line x1="36" y1="81" x2="56" y2="81" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mBg)"/>
+        <line x1="36" y1="107" x2="56" y2="107" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mBg)"/>
+        <line x1="36" y1="133" x2="56" y2="133" stroke="#2d8c4f" stroke-width="1.3" marker-end="url(#mBg)"/>
+
+        <!-- CNN bank vertical rows -->
+        <rect x="58" y="66" width="88" height="22" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="86" y="80" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="120" y="77" font-size="7" fill="#5a6a60">tumor/healthy/immune</text>
+        <rect x="58" y="92" width="88" height="22" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="86" y="106" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="120" y="103" font-size="7" fill="#5a6a60">prolif/nonprolif/dead</text>
+        <rect x="58" y="118" width="88" height="22" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="86" y="132" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">CNN×3</text>
+        <text x="120" y="129" font-size="7" fill="#5a6a60">vas / glu / O₂</text>
+
+        <!-- CNN → Attention -->
+        <line x1="146" y1="77" x2="166" y2="77" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="146" y1="103" x2="166" y2="103" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="146" y1="129" x2="166" y2="129" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="166" y1="77" x2="166" y2="129" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="166" y1="103" x2="186" y2="103" stroke="#2d8c4f" stroke-width="1.2" marker-end="url(#mBg)"/>
+        <rect x="188" y="88" width="56" height="30" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="216" y="107" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">Attention</text>
+
+        <!-- Attention → right, joins UNI latent path at PixCell -->
+        <line x1="244" y1="103" x2="266" y2="103" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="266" y1="103" x2="266" y2="60" stroke="#2d8c4f" stroke-width="1.2" marker-end="url(#mBg)"/>
+
+        <!-- noisy Z_t -->
+        <text x="316" y="10" text-anchor="middle" font-size="7" fill="#33435d">noisy Z_t</text>
+        <line x1="316" y1="14" x2="316" y2="38" stroke="#59544f" stroke-width="1.4" marker-end="url(#mB)"/>
+
+        <!-- PixCell center-right -->
+        <rect x="202" y="38" width="150" height="52" rx="8" fill="url(#hB)" stroke="#8e8880" stroke-width="2"/>
+        <text x="277" y="61" text-anchor="middle" font-size="10" font-weight="700" fill="#24211d">PixCell denoiser</text>
+        <text x="277" y="75" text-anchor="middle" font-size="8" fill="#6d675f">frozen backbone</text>
+
+        <!-- PixCell → VAE → gen H&E -->
+        <line x1="352" y1="64" x2="374" y2="64" stroke="#59544f" stroke-width="1.4" marker-end="url(#mB)"/>
+        <rect x="376" y="46" width="38" height="36" rx="5" fill="url(#hB)" stroke="#8e8880" stroke-width="1.4"/>
+        <text x="395" y="63" text-anchor="middle" font-size="8" font-weight="700" fill="#24211d">VAE</text>
+        <text x="395" y="74" text-anchor="middle" font-size="7" fill="#6d675f">frozen</text>
+        <line x1="395" y1="82" x2="395" y2="102" stroke="#59544f" stroke-width="1.4" marker-end="url(#mB)"/>
+        <rect x="372" y="104" width="44" height="32" rx="5" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.4"/>
+        <text x="394" y="124" text-anchor="middle" font-size="8" fill="#93485f">gen H&amp;E</text>
+
+        <!-- v-loss -->
+        <path d="M394,136 L394,200 L216,200 L216,119" stroke="#b33b34" stroke-width="1.3" stroke-dasharray="4,3" fill="none" marker-end="url(#mBr)"/>
+        <text x="305" y="212" text-anchor="middle" font-size="8" fill="#b33b34">v-loss → CNN + Attention only</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>B — Left column + right pipeline</h3>
+      <p>H&amp;E+UNI and TME+CNN bank on the left. Both outputs converge into PixCell (center). PixCell → VAE → output on the right. Compact square-ish shape.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Stacked pipeline -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px 10px 8px; background:#fafafa; border-radius:8px;">
+      <svg viewBox="0 0 340 250" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+        <defs>
+          <pattern id="hC" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="#f7f4ef"/>
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#c6c0b7" stroke-width="2.5"/>
+          </pattern>
+          <marker id="mC" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#59544f"/></marker>
+          <marker id="mCg" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2d8c4f"/></marker>
+          <marker id="mCr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#b33b34"/></marker>
+        </defs>
+
+        <!-- TOP ROW: inputs side by side -->
+        <!-- H&E + UNI -->
+        <rect x="14" y="10" width="34" height="34" rx="5" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.4"/>
+        <text x="31" y="31" text-anchor="middle" font-size="8" fill="#93485f">H&amp;E</text>
+        <line x1="48" y1="27" x2="66" y2="27" stroke="#59544f" stroke-width="1.4" marker-end="url(#mC)"/>
+        <rect x="68" y="13" width="44" height="28" rx="5" fill="url(#hC)" stroke="#8e8880" stroke-width="1.4"/>
+        <text x="90" y="30" text-anchor="middle" font-size="9" font-weight="700" fill="#24211d">UNI</text>
+        <line x1="112" y1="27" x2="148" y2="27" stroke="#59544f" stroke-width="1.4" marker-end="url(#mC)"/>
+        <text x="130" y="22" text-anchor="middle" font-size="7" fill="#33435d">latent</text>
+
+        <!-- TME + CNN -->
+        <rect x="14" y="56" width="28" height="20" rx="3" fill="#eef7fb" stroke="#7fa2b3" stroke-width="1"/>
+        <rect x="14" y="80" width="28" height="20" rx="3" fill="#ebfaf4" stroke="#7ab79a" stroke-width="1"/>
+        <rect x="14" y="104" width="28" height="20" rx="3" fill="#fff1e6" stroke="#d49d71" stroke-width="1"/>
+        <line x1="42" y1="66" x2="58" y2="66" stroke="#2d8c4f" stroke-width="1.2" marker-end="url(#mCg)"/>
+        <line x1="42" y1="90" x2="58" y2="90" stroke="#2d8c4f" stroke-width="1.2" marker-end="url(#mCg)"/>
+        <line x1="42" y1="114" x2="58" y2="114" stroke="#2d8c4f" stroke-width="1.2" marker-end="url(#mCg)"/>
+        <rect x="60" y="52" width="76" height="22" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.4"/>
+        <text x="84" y="66" text-anchor="middle" font-size="7.5" font-weight="700" fill="#205f37">CNN×3  types</text>
+        <rect x="60" y="78" width="76" height="22" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.4"/>
+        <text x="84" y="92" text-anchor="middle" font-size="7.5" font-weight="700" fill="#205f37">CNN×3  states</text>
+        <rect x="60" y="104" width="76" height="22" rx="4" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.4"/>
+        <text x="84" y="118" text-anchor="middle" font-size="7.5" font-weight="700" fill="#205f37">CNN×3  micro</text>
+        <!-- merge to attention -->
+        <line x1="136" y1="63" x2="156" y2="63" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="136" y1="89" x2="156" y2="89" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="136" y1="115" x2="156" y2="115" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="156" y1="63" x2="156" y2="115" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="156" y1="89" x2="172" y2="89" stroke="#2d8c4f" stroke-width="1.2" marker-end="url(#mCg)"/>
+        <rect x="174" y="76" width="54" height="26" rx="5" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.5"/>
+        <text x="201" y="93" text-anchor="middle" font-size="8" font-weight="700" fill="#205f37">Attn</text>
+
+        <!-- cond. latent flows right to join PixCell -->
+        <line x1="228" y1="89" x2="244" y2="89" stroke="#2d8c4f" stroke-width="1.2"/>
+        <line x1="244" y1="89" x2="244" y2="50" stroke="#2d8c4f" stroke-width="1.2" marker-end="url(#mCg)"/>
+
+        <!-- noisy Z_t -->
+        <text x="276" y="10" text-anchor="middle" font-size="7" fill="#33435d">noisy Z_t</text>
+        <line x1="276" y1="13" x2="276" y2="32" stroke="#59544f" stroke-width="1.4" marker-end="url(#mC)"/>
+
+        <!-- PixCell -->
+        <rect x="148" y="34" width="160" height="42" rx="7" fill="url(#hC)" stroke="#8e8880" stroke-width="2"/>
+        <text x="228" y="53" text-anchor="middle" font-size="9" font-weight="700" fill="#24211d">PixCell denoiser</text>
+        <text x="228" y="66" text-anchor="middle" font-size="7.5" fill="#6d675f">frozen backbone</text>
+
+        <!-- PixCell → denoised Z → VAE (horizontal) -->
+        <line x1="228" y1="76" x2="228" y2="138" stroke="#59544f" stroke-width="1.4" marker-end="url(#mC)"/>
+        <text x="240" y="110" font-size="7" fill="#33435d">denoised Z</text>
+        <rect x="198" y="140" width="60" height="34" rx="6" fill="url(#hC)" stroke="#8e8880" stroke-width="1.8"/>
+        <text x="228" y="156" text-anchor="middle" font-size="9" font-weight="700" fill="#24211d">SD3.5 VAE</text>
+        <text x="228" y="168" text-anchor="middle" font-size="7" fill="#6d675f">frozen decoder</text>
+        <line x1="228" y1="174" x2="228" y2="194" stroke="#59544f" stroke-width="1.4" marker-end="url(#mC)"/>
+        <rect x="194" y="196" width="68" height="36" rx="6" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.4"/>
+        <text x="228" y="218" text-anchor="middle" font-size="8" fill="#93485f">generated H&amp;E</text>
+
+        <!-- v-loss -->
+        <path d="M262,214 L310,214 L310,90 L232,90" stroke="#b33b34" stroke-width="1.3" stroke-dasharray="4,3" fill="none" marker-end="url(#mCr)"/>
+        <text x="310" y="155" font-size="7" fill="#b33b34" transform="rotate(-90,310,155)">v-loss → CNN+Attn</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>C — Stacked center pipeline</h3>
+      <p>H&amp;E+UNI on top-left, TME+CNN rows stacked on left, both feed into PixCell (center). PixCell outputs straight down through VAE to generated H&amp;E. Tallest but most linear reading.</p>
+    </div>
+  </div>
+
+</div>

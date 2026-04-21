@@ -326,6 +326,12 @@ def test_render_stage2_training_figure_places_key_visual_elements(tmp_path: Path
     denoiser_box = layout["denoiser_box"]
     assert noisy_box[3] <= denoiser_box[1]
     assert noisy_box[0] > width // 2
+    tme_boxes = layout["tme_boxes"]
+    assert len({box[0] for box in tme_boxes}) == 1
+    assert all(tme_boxes[index][1] < tme_boxes[index + 1][1] for index in range(3))
+    latent_box = layout["latent_box"]
+    vae_box = layout["vae_box"]
+    assert vae_box[1] > latent_box[3]
 
     loss_points = layout["loss_points"]
     loss_y = loss_points[1][1]
@@ -383,10 +389,15 @@ def test_build_stage2_training_figure_writes_png_and_json(tmp_path: Path) -> Non
     )
     with Image.open(png_path) as image:
         canvas_size = list(image.size)
+    from tools.paper.figures.stage2.build_training_figure import (
+        DEFAULT_TILE_SIZE,
+        DEFAULT_PANEL_GAP,
+        DEFAULT_HEADER_HEIGHT,
+    )
     assert metadata["layout_parameters"] == {
-        "tile_size_px": 56,
-        "panel_gap_px": 10,
-        "header_height_px": 28,
+        "tile_size_px": DEFAULT_TILE_SIZE,
+        "panel_gap_px": DEFAULT_PANEL_GAP,
+        "header_height_px": DEFAULT_HEADER_HEIGHT,
         "canvas_size_px": canvas_size,
     }
 

@@ -70,20 +70,24 @@ def _group_for_patch_id(selection_json: Path, patch_id: str) -> str | None:
 def pick_representative_patch(
     selection_json: Path,
     pixcell_root: Path,
+    group_id: str | None = None,
 ) -> RepresentativePatch:
     checked_patch_ids: list[str] = []
-    for group_id, patch_id in _iter_selected_patch_ids(selection_json):
+    for gid, patch_id in _iter_selected_patch_ids(selection_json):
+        if group_id is not None and gid != group_id:
+            continue
         checked_patch_ids.append(patch_id)
         generated_he_path = _generated_he_path(pixcell_root, patch_id)
         if generated_he_path.exists():
             return RepresentativePatch(
-                group_id=group_id,
+                group_id=gid,
                 patch_id=patch_id,
                 generated_he_path=generated_he_path,
             )
 
+    suffix = f" in group {group_id!r}" if group_id else ""
     raise FileNotFoundError(
-        "No selected patch has PixCell generated output. Checked patch IDs: "
+        f"No selected patch{suffix} has PixCell generated output. Checked patch IDs: "
         + ", ".join(checked_patch_ids)
     )
 
@@ -98,6 +102,7 @@ def resolve_stage2_assets(
     selection_json: Path,
     pixcell_root: Path,
     patch_id: str | None = None,
+    group_id: str | None = None,
 ) -> Stage2FigureAssets:
     match = (
         RepresentativePatch(
@@ -106,7 +111,7 @@ def resolve_stage2_assets(
             generated_he_path=_generated_he_path(pixcell_root, str(patch_id)),
         )
         if patch_id is not None
-        else pick_representative_patch(selection_json, pixcell_root)
+        else pick_representative_patch(selection_json, pixcell_root, group_id=group_id)
     )
 
     assets = Stage2FigureAssets(

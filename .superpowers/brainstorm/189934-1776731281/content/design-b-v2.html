@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stage 2 — Design B v2</title>
+<style>
+  :root {
+    --bg: #f3f1eb; --card: #fffdf9; --ink: #24211d; --muted: #6d675f;
+    --frozen-stroke: #8e8880; --train-fill: #dff4e3; --train-stroke: #2d8c4f;
+    --he-fill: #f6c8d5; --he-stroke: #b45b77; --loss: #b33b34;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: "Helvetica Neue", Arial, sans-serif; padding: 28px; }
+  .page { max-width: 640px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 20px; }
+  .subtitle { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .card { background: var(--card); border: 1px solid #d7d0c7; border-radius: 14px;
+          padding: 18px 18px 14px; box-shadow: 0 8px 24px rgba(42,35,25,0.08); }
+  .caption { margin: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+  svg { display: block; width: 100%; height: auto; }
+  .legend { display: flex; gap: 18px; align-items: center; margin-top: 12px;
+            color: var(--muted); font-size: 11px; flex-wrap: wrap; }
+  .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 18px; height: 12px; border-radius: 3px; border: 1px solid #aaa39a; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Stage 2 — Compact Training Panel</h1>
+  <p class="subtitle">v2: PixCell denoiser shrunk and shifted left for tighter layout.</p>
+  <div class="card">
+    <p class="caption">Each TME sub-channel has its own trainable CNN. The 9 CNNs fuse via attention into a conditioning latent that steers the frozen PixCell denoiser.</p>
+
+<svg viewBox="0 0 510 258" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <pattern id="fs" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="8" height="8" fill="#f7f4ef"/>
+    <line x1="0" y1="0" x2="0" y2="8" stroke="#c6c0b7" stroke-width="3"/>
+  </pattern>
+  <marker id="aD" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0,0 L8,4 L0,8 Z" fill="#59544f"/>
+  </marker>
+  <marker id="aG" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0,0 L8,4 L0,8 Z" fill="#2d8c4f"/>
+  </marker>
+  <marker id="aR" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0,0 L8,4 L0,8 Z" fill="#b33b34"/>
+  </marker>
+</defs>
+
+<!-- panel label -->
+<text x="10" y="14" font-size="11" font-weight="700" fill="#24211d">b  Stage 2 — Frozen PixCell backbone + trainable 9-CNN bank</text>
+
+<!-- ══════════════════════════════════
+     TOP TRACK: H&E → UNI → PixCell
+     ══════════════════════════════════ -->
+
+<!-- Reference H&E patch -->
+<rect x="10" y="22" width="42" height="42" rx="7" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.8"/>
+<circle cx="22" cy="36" r="2.2" fill="#93485f"/>
+<circle cx="36" cy="31" r="2.2" fill="#93485f"/>
+<circle cx="44" cy="47" r="2.2" fill="#93485f"/>
+<circle cx="27" cy="52" r="2.2" fill="#93485f"/>
+<circle cx="41" cy="56" r="2.2" fill="#93485f"/>
+<text x="31" y="73" text-anchor="middle" font-size="8.5" fill="#6d675f">reference H&amp;E</text>
+
+<!-- H&E → UNI arrow -->
+<line x1="52" y1="43" x2="70" y2="43" stroke="#59544f" stroke-width="1.8" marker-end="url(#aD)"/>
+
+<!-- UNI encoder (frozen) -->
+<rect x="72" y="29" width="58" height="28" rx="7" fill="url(#fs)" stroke="#8e8880" stroke-width="1.8"/>
+<text x="101" y="44" text-anchor="middle" font-size="12" font-weight="700" fill="#24211d">UNI</text>
+<text x="101" y="54" text-anchor="middle" font-size="7.5" fill="#6d675f">frozen enc.</text>
+
+<!-- UNI latent → PixCell -->
+<line x1="130" y1="43" x2="256" y2="43" stroke="#59544f" stroke-width="1.8" marker-end="url(#aD)"/>
+<text x="193" y="36" text-anchor="middle" font-size="8.5" fill="#33435d">UNI latent [B,1536]</text>
+
+<!-- ══════════════════════════════════
+     NOISY Z_t from above PixCell
+     ══════════════════════════════════ -->
+<text x="326" y="11" text-anchor="middle" font-size="8.5" fill="#33435d">noisy Z_t</text>
+<line x1="326" y1="14" x2="326" y2="22" stroke="#59544f" stroke-width="1.8" marker-end="url(#aD)"/>
+
+<!-- ══════════════════════════════════
+     PIXCELL DENOISER — smaller, left-shifted
+     x=258, y=22, w=140, h=142
+     ══════════════════════════════════ -->
+<rect x="258" y="22" width="140" height="142" rx="10" fill="url(#fs)" stroke="#8e8880" stroke-width="2"/>
+<text x="328" y="46" text-anchor="middle" font-size="13" font-weight="700" fill="#24211d">PixCell denoiser</text>
+<text x="328" y="60" text-anchor="middle" font-size="8.5" fill="#6d675f">ControlNet + base</text>
+<text x="328" y="72" text-anchor="middle" font-size="8.5" fill="#6d675f">transformer · frozen</text>
+<!-- internal denoise sub-box -->
+<rect x="278" y="82" width="100" height="20" rx="5" fill="rgba(255,255,255,0.7)" stroke="#bfb7ad" stroke-width="1"/>
+<text x="328" y="96" text-anchor="middle" font-size="9" fill="#59544f">denoise Z_t → Z</text>
+
+<!-- ══════════════════════════════════
+     RIGHT: denoised Z → VAE → gen H&E
+     ══════════════════════════════════ -->
+
+<!-- denoised Z arrow right -->
+<line x1="398" y1="72" x2="406" y2="72" stroke="#59544f" stroke-width="1.8" marker-end="url(#aD)"/>
+<text x="402" y="64" text-anchor="middle" font-size="7.5" fill="#33435d">denoised Z</text>
+
+<!-- SD3.5 VAE (frozen) -->
+<rect x="408" y="50" width="44" height="44" rx="7" fill="url(#fs)" stroke="#8e8880" stroke-width="1.8"/>
+<text x="430" y="70" text-anchor="middle" font-size="10" font-weight="700" fill="#24211d">SD3.5</text>
+<text x="430" y="82" text-anchor="middle" font-size="10" font-weight="700" fill="#24211d">VAE</text>
+<text x="430" y="91" text-anchor="middle" font-size="7.5" fill="#6d675f">frozen</text>
+
+<!-- VAE → gen H&E arrow -->
+<line x1="430" y1="94" x2="430" y2="118" stroke="#59544f" stroke-width="1.8" marker-end="url(#aD)"/>
+
+<!-- Generated H&E -->
+<rect x="408" y="120" width="44" height="44" rx="7" fill="#f6c8d5" stroke="#b45b77" stroke-width="1.8"/>
+<circle cx="420" cy="135" r="2.2" fill="#93485f"/>
+<circle cx="434" cy="130" r="2.2" fill="#93485f"/>
+<circle cx="443" cy="144" r="2.2" fill="#93485f"/>
+<circle cx="424" cy="152" r="2.2" fill="#93485f"/>
+<circle cx="440" cy="157" r="2.2" fill="#93485f"/>
+<text x="430" y="174" text-anchor="middle" font-size="8.5" fill="#6d675f">generated H&amp;E</text>
+
+<!-- ══════════════════════════════════
+     BOTTOM-LEFT: TME thumbnails
+     ══════════════════════════════════ -->
+<text x="10" y="94" font-size="8.5" fill="#6d675f" font-style="italic">Stage 1 TME layers</text>
+
+<!-- cell types thumbnail -->
+<rect x="10" y="100" width="30" height="26" rx="4" fill="#eef7fb" stroke="#7fa2b3" stroke-width="1.2"/>
+<circle cx="19" cy="111" r="2" fill="#2f74c0"/>
+<circle cx="29" cy="107" r="2" fill="#be3e3e"/>
+<circle cx="35" cy="118" r="2" fill="#2d8c4f"/>
+<circle cx="23" cy="120" r="2" fill="#be3e3e"/>
+<text x="25" y="134" text-anchor="middle" font-size="8" fill="#6d675f">types</text>
+
+<!-- cell states thumbnail -->
+<rect x="10" y="140" width="30" height="26" rx="4" fill="#ebfaf4" stroke="#7ab79a" stroke-width="1.2"/>
+<circle cx="19" cy="151" r="2.2" fill="#3f9f79"/>
+<circle cx="29" cy="147" r="3.2" fill="#85d4b6"/>
+<circle cx="35" cy="158" r="2" fill="#3f9f79"/>
+<circle cx="23" cy="160" r="2.8" fill="#85d4b6"/>
+<text x="25" y="174" text-anchor="middle" font-size="8" fill="#6d675f">states</text>
+
+<!-- microenv thumbnail -->
+<rect x="10" y="180" width="30" height="26" rx="4" fill="#fff1e6" stroke="#d49d71" stroke-width="1.2"/>
+<path d="M14 200 C20 183, 32 187, 38 195" fill="none" stroke="#c56f3d" stroke-width="1.8" stroke-linecap="round"/>
+<ellipse cx="22" cy="197" rx="5" ry="3" fill="#efc56a" opacity="0.7"/>
+<text x="25" y="214" text-anchor="middle" font-size="8" fill="#6d675f">micro</text>
+
+<!-- thumbnails → CNN rows -->
+<line x1="40" y1="113" x2="50" y2="113" stroke="#2d8c4f" stroke-width="1.6" marker-end="url(#aG)"/>
+<line x1="40" y1="153" x2="50" y2="153" stroke="#2d8c4f" stroke-width="1.6" marker-end="url(#aG)"/>
+<line x1="40" y1="193" x2="50" y2="193" stroke="#2d8c4f" stroke-width="1.6" marker-end="url(#aG)"/>
+
+<!-- ══════════════════════════════════
+     CNN × 3 rows (trainable)
+     ══════════════════════════════════ -->
+
+<!-- row 1: cell types -->
+<rect x="52" y="100" width="118" height="26" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+<text x="79" y="116" text-anchor="middle" font-size="9.5" font-weight="700" fill="#205f37">CNN × 3</text>
+<text x="131" y="111" text-anchor="middle" font-size="7" fill="#3d6648">tumor · healthy</text>
+<text x="131" y="121" text-anchor="middle" font-size="7" fill="#3d6648">· immune</text>
+
+<!-- row 2: cell states -->
+<rect x="52" y="140" width="118" height="26" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+<text x="79" y="156" text-anchor="middle" font-size="9.5" font-weight="700" fill="#205f37">CNN × 3</text>
+<text x="131" y="151" text-anchor="middle" font-size="7" fill="#3d6648">prolif · nonprolif</text>
+<text x="131" y="161" text-anchor="middle" font-size="7" fill="#3d6648">· dead</text>
+
+<!-- row 3: microenv -->
+<rect x="52" y="180" width="118" height="26" rx="6" fill="#dff4e3" stroke="#2d8c4f" stroke-width="1.8"/>
+<text x="79" y="196" text-anchor="middle" font-size="9.5" font-weight="700" fill="#205f37">CNN × 3</text>
+<text x="131" y="191" text-anchor="middle" font-size="7" fill="#3d6648">vasculature · glu</text>
+<text x="131" y="201" text-anchor="middle" font-size="7" fill="#3d6648">· O₂</text>
+
+<!-- ══════════════════════════════════
+     CNN rows → collect → Attention
+     ══════════════════════════════════ -->
+<!-- stubs right of each row -->
+<line x1="170" y1="113" x2="182" y2="113" stroke="#2d8c4f" stroke-width="1.5"/>
+<line x1="170" y1="153" x2="182" y2="153" stroke="#2d8c4f" stroke-width="1.5"/>
+<line x1="170" y1="193" x2="182" y2="193" stroke="#2d8c4f" stroke-width="1.5"/>
+<!-- vertical collect bar -->
+<line x1="182" y1="113" x2="182" y2="193" stroke="#2d8c4f" stroke-width="1.5"/>
+<!-- horizontal to Attention at midpoint y=153 -->
+<line x1="182" y1="153" x2="196" y2="153" stroke="#2d8c4f" stroke-width="1.5" marker-end="url(#aG)"/>
+
+<!-- Attention fusion block -->
+<rect x="198" y="139" width="52" height="28" rx="7" fill="#dff4e3" stroke="#2d8c4f" stroke-width="2"/>
+<text x="224" y="154" text-anchor="middle" font-size="9.5" font-weight="700" fill="#205f37">Attention</text>
+<text x="224" y="164" text-anchor="middle" font-size="7.5" fill="#3d6648">fusion</text>
+
+<!-- Attention → PixCell left edge (conditioning latent) -->
+<line x1="250" y1="153" x2="258" y2="153" stroke="#2d8c4f" stroke-width="1.6" marker-end="url(#aG)"/>
+<text x="254" y="146" text-anchor="middle" font-size="7" fill="#2d8c4f">cond.</text>
+
+<!-- ══════════════════════════════════
+     V-LOSS dashed loop
+     ══════════════════════════════════ -->
+<path d="M430,164 L430,224 L224,224 L224,167" fill="none"
+      stroke="#b33b34" stroke-width="1.6" stroke-dasharray="5,4" marker-end="url(#aR)"/>
+<text x="327" y="237" text-anchor="middle" font-size="8.5" fill="#b33b34">v-loss → CNN × 3 + Attention only (backbone frozen)</text>
+
+</svg>
+
+    <div class="legend">
+      <span class="legend-item">
+        <span class="swatch" style="background:repeating-linear-gradient(45deg,#f7f4ef,#f7f4ef 4px,#d6d0c7 4px,#d6d0c7 7px);"></span> frozen
+      </span>
+      <span class="legend-item">
+        <span class="swatch" style="background:#dff4e3; border-color:#2d8c4f;"></span> trainable
+      </span>
+      <span class="legend-item">
+        <svg width="32" height="12"><line x1="1" y1="6" x2="31" y2="6" stroke="#b33b34" stroke-width="1.8" stroke-dasharray="5,4"/></svg> gradient
+      </span>
+    </div>
+  </div>
+</div>
+</body>
+</html>
