@@ -114,35 +114,32 @@ def test_stage2_package_and_mockups_exist() -> None:
 
 
 def test_stage2_pipeline_redesign_svg_structure() -> None:
-    """Validate the redesigned stage2_pipeline_design_A_mod.html matches spec."""
+    """Validate the Stage 2 HTML matches the documented training architecture."""
     repo = Path(__file__).resolve().parents[1]
     html = (repo / "paper/figures/stage2/stage2_pipeline_design_A_mod.html").read_text()
 
-    # Viewport: narrower 510×258 viewBox
-    assert 'viewBox="0 0 510 258"' in html, "viewBox must be 0 0 510 258"
+    assert 'viewBox="0 0 660 360"' in html, "viewBox must match the updated training layout"
 
-    # Page width: max-width 640px
-    assert "max-width: 640px" in html, "page max-width must be 640px"
+    assert "Stage 2 — Training Architecture" in html
+    assert "Multi-Group TME Module" in html
+    assert "PixCell ControlNet" in html
+    assert "Base PixArt-256" in html
+    assert "SD3.5 VAE enc" in html
+    assert "cell mask" in html
+    assert "zero_mask_latent" in html
+    assert "Q tokens" in html
+    assert "residuals ΣΔgroup" in html
+    assert "fused = tme(vae_mask) - vae_mask = Σ(Δgroup)" in html
+    assert "Diffusion loss: MSE(eps_pred, eps)" in html
 
-    # CNN×3 rows: exactly 3 occurrences (× is U+00D7)
-    assert html.count("CNN × 3") == 3, "must have exactly 3 CNN × 3 labels"
+    assert "trainable, 27 blocks" in html
+    assert "frozen, 28 blocks" in html
+    assert "UNI latent [B,1536]" in html
+    assert "Stage 1 TME example tiles" in html
 
-    # Row labels present
-    assert "tumor" in html and "healthy" in html and "immune" in html
-    assert "prolif" in html and "nonprolif" in html and "dead" in html
-    assert "vas" in html and "glu" in html
-
-    # PixCell block at new x=258
-    assert 'x="258"' in html, "PixCell rect must start at x=258"
-
-    # SD3.5 VAE block at new x=408
-    assert 'x="408"' in html, "VAE rect must start at x=408"
-
-    # No old CNN1/CNN2/CNN3/CNN4 labels (replaced by CNN×3)
-    assert "CNN1" not in html
-    assert "CNN2" not in html
-    assert "CNN3" not in html
-    assert "CNN4" not in html
+    assert "generated H&amp;E" not in html
+    assert "v-loss" not in html
+    assert "PixCell denoiser" not in html
 
 
 def test_pick_representative_patch_uses_first_matching_selection(tmp_path: Path) -> None:
