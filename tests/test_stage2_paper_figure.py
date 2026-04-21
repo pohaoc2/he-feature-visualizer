@@ -113,6 +113,38 @@ def test_stage2_package_and_mockups_exist() -> None:
     assert (repo / "paper/figures/stage2/stage2_pipeline_design_A_mod.html").exists()
 
 
+def test_stage2_pipeline_redesign_svg_structure() -> None:
+    """Validate the redesigned stage2_pipeline_design_A_mod.html matches spec."""
+    repo = Path(__file__).resolve().parents[1]
+    html = (repo / "paper/figures/stage2/stage2_pipeline_design_A_mod.html").read_text()
+
+    # Viewport: narrower 510×258 viewBox
+    assert 'viewBox="0 0 510 258"' in html, "viewBox must be 0 0 510 258"
+
+    # Page width: max-width 640px
+    assert "max-width: 640px" in html, "page max-width must be 640px"
+
+    # CNN×3 rows: exactly 3 occurrences (× is U+00D7)
+    assert html.count("CNN × 3") == 3, "must have exactly 3 CNN × 3 labels"
+
+    # Row labels present
+    assert "tumor" in html and "healthy" in html and "immune" in html
+    assert "prolif" in html and "nonprolif" in html and "dead" in html
+    assert "vas" in html and "glu" in html
+
+    # PixCell block at new x=258
+    assert 'x="258"' in html, "PixCell rect must start at x=258"
+
+    # SD3.5 VAE block at new x=408
+    assert 'x="408"' in html, "VAE rect must start at x=408"
+
+    # No old CNN1/CNN2/CNN3/CNN4 labels (replaced by CNN×3)
+    assert "CNN1" not in html
+    assert "CNN2" not in html
+    assert "CNN3" not in html
+    assert "CNN4" not in html
+
+
 def test_pick_representative_patch_uses_first_matching_selection(tmp_path: Path) -> None:
     selection_json = tmp_path / "selections.json"
     pixcell_root = tmp_path / "pixcell"
