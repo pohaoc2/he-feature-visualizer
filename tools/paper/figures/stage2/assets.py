@@ -16,6 +16,7 @@ class RepresentativePatch:
 class Stage2FigureAssets:
     patch_id: str
     group_id: str
+    cell_mask_path: Path
     reference_he_path: Path
     cell_type_path: Path
     cell_state_path: Path
@@ -56,12 +57,27 @@ def _iter_selected_patch_ids(selection_json: Path) -> list[tuple[str, str]]:
     return ordered
 
 
+def selected_patch_ids(
+    selection_json: Path,
+    group_id: str | None = None,
+    n: int | None = None,
+) -> list[tuple[str, str]]:
+    selected: list[tuple[str, str]] = []
+    for gid, patch_id in _iter_selected_patch_ids(selection_json):
+        if group_id is not None and gid != group_id:
+            continue
+        selected.append((gid, patch_id))
+        if n is not None and len(selected) >= n:
+            break
+    return selected
+
+
 def _generated_he_path(pixcell_root: Path, patch_id: str) -> Path:
     return pixcell_root / patch_id / "all" / "generated_he.png"
 
 
 def _group_for_patch_id(selection_json: Path, patch_id: str) -> str | None:
-    for group_id, selected_patch_id in _iter_selected_patch_ids(selection_json):
+    for group_id, selected_patch_id in selected_patch_ids(selection_json):
         if selected_patch_id == patch_id:
             return group_id
     return None
@@ -73,9 +89,7 @@ def pick_representative_patch(
     group_id: str | None = None,
 ) -> RepresentativePatch:
     checked_patch_ids: list[str] = []
-    for gid, patch_id in _iter_selected_patch_ids(selection_json):
-        if group_id is not None and gid != group_id:
-            continue
+    for gid, patch_id in selected_patch_ids(selection_json, group_id=group_id):
         checked_patch_ids.append(patch_id)
         generated_he_path = _generated_he_path(pixcell_root, patch_id)
         if generated_he_path.exists():
@@ -117,6 +131,7 @@ def resolve_stage2_assets(
     assets = Stage2FigureAssets(
         patch_id=match.patch_id,
         group_id=match.group_id,
+        cell_mask_path=processed_dir / "cell_masks" / f"{match.patch_id}.png",
         reference_he_path=processed_dir / "he" / f"{match.patch_id}.png",
         cell_type_path=processed_dir / "cell_types/union" / f"{match.patch_id}.png",
         cell_state_path=processed_dir / "cell_states/union" / f"{match.patch_id}.png",
@@ -126,6 +141,7 @@ def resolve_stage2_assets(
         generated_he_path=match.generated_he_path,
     )
 
+    _require_existing(assets.cell_mask_path)
     _require_existing(assets.reference_he_path)
     _require_existing(assets.cell_type_path)
     _require_existing(assets.cell_state_path)

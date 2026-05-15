@@ -19,6 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
+from matplotlib.transforms import blended_transform_factory
 import numpy as np
 import pandas as pd
 from scipy import stats as _scipy_stats
@@ -303,7 +304,7 @@ def _style_ax_dark(ax: plt.Axes, heatmap: bool = False) -> None:
             spine.set_linewidth(0.8)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-    ax.tick_params(colors=_TEXT, labelsize=10, length=3, width=1.2)
+    ax.tick_params(colors=_TEXT, labelsize=12, length=3, width=1.2)
     ax.xaxis.label.set_color(_TEXT)
     ax.yaxis.label.set_color(_TEXT)
     ax.title.set_color(_TEXT)
@@ -311,7 +312,7 @@ def _style_ax_dark(ax: plt.Axes, heatmap: bool = False) -> None:
 
 def _style_colorbar(cbar) -> None:
     """Apply publication styling to a colorbar."""
-    cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=9)
+    cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=11)
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color=_TEXT_DIM)
     cbar.outline.set_edgecolor("#000000")
     cbar.outline.set_linewidth(1.0)
@@ -319,7 +320,7 @@ def _style_colorbar(cbar) -> None:
         spine.set_visible(True)
         spine.set_edgecolor("#000000")
         spine.set_linewidth(1.0)
-    cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=12)
+    cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=13)
 
 
 def _add_stat_brackets(
@@ -339,7 +340,7 @@ def _add_stat_brackets(
         ax.plot([x_i, x_i], [y_bracket - tick, y_bracket], color="#000000", lw=0.9, zorder=5, clip_on=False)
         ax.plot([x_j, x_j], [y_bracket - tick, y_bracket], color="#000000", lw=0.9, zorder=5, clip_on=False)
         ax.text((x_i + x_j) / 2, y_bracket + step * 0.1, sig_label,
-                ha="center", va="bottom", fontsize=11, color=_TEXT, clip_on=False)
+                ha="center", va="bottom", fontsize=12, color=_TEXT, clip_on=False)
 
 
 def _bar_pub(
@@ -373,7 +374,7 @@ def _bar_pub(
                     capsize=4, capthick=1.2, zorder=4, fmt="none")
         q3_tops.append(q3)
         ax.text(pos, median * 0.5, f"{median:.{value_decimals}f}",
-                ha="center", va="center", fontsize=11, color=_TEXT, zorder=6)
+                ha="center", va="center", fontsize=12, color=_TEXT, zorder=6)
 
     # ── Statistics: Kruskal-Wallis + pairwise Mann-Whitney + Bonferroni ───
     valid = [(i, arr) for i, arr in enumerate(data) if len(arr) >= 2]
@@ -402,16 +403,17 @@ def _bar_pub(
                 y_top = max(q3_tops)
                 step = max(y_top * 0.10, 0.01)
                 _add_stat_brackets(ax, y_top, step, sig_pairs, bar_positions)
+                ax.set_ylim(bottom=0, top=y_top + step * (len(sig_pairs) + 1.5))
 
     ax.set_xlim(-0.45, bar_positions[-1] + 0.45)
     ax.set_xticks(bar_positions)
     labels: list[str]
     if counts:
-        labels = [f"{ct}\nn={counts[ct]:,}" for ct in CELL_TYPES]
+        labels = [f"{ct}\n(n={counts[ct]:,})" for ct in CELL_TYPES]
     else:
         labels = list(CELL_TYPES)
-    ax.set_xticklabels(labels, fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
+    ax.set_xticklabels(labels, fontsize=13)
+    ax.set_ylabel(ylabel, fontsize=13)
     if title:
         ax.set_title(title, fontsize=13, loc="left", pad=3)
     ax.yaxis.grid(True, color=_GRID, linewidth=0.6, linestyle="-")
@@ -438,11 +440,11 @@ def _heatmap(
                    vmin=-vmax, vmax=vmax, interpolation="nearest")
     ax.set_xticks(range(len(col_labels)))
     ax.set_xticklabels(col_labels, rotation=col_rotation,
-                       ha="right" if col_rotation > 0 else "center", fontsize=12)
+                       ha="right" if col_rotation > 0 else "center", fontsize=13)
     ax.set_yticks(range(len(row_labels)))
-    ax.set_yticklabels(row_labels, fontsize=12)
+    ax.set_yticklabels(row_labels, fontsize=13)
     if title:
-        ax.set_title(title, fontsize=13, loc="left", pad=7)
+        ax.set_title(title, fontsize=14, loc="left", pad=7)
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             val = matrix[i, j]
@@ -497,10 +499,11 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
             if col in sub.columns and len(sub) > 0:
                 combined_mat[i, j] = float(sub[col].median())
 
-    # ── Font: closest to Helvetica available ──────────────────────────────
+    # ── Font: DejaVu Sans (Helvetica fallback) ────────────────────────────
     plt.rcParams.update({
         "font.family": "sans-serif",
-        "font.sans-serif": ["DejaVu Sans", "Liberation Sans", "Arial"],
+        "font.sans-serif": ["DejaVu Sans", "Helvetica", "Liberation Sans", "Arial"],
+        "font.size": 12,
         "text.color": "#000000",
         "axes.labelcolor": "#000000",
         "xtick.color": "#000000",
@@ -512,9 +515,9 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
     fig.patch.set_facecolor(_BG)
     gs = fig.add_gridspec(
         2, 2,
-        height_ratios=[1.05, 1.30],
-        hspace=0.2, wspace=0.18,
-        left=0.08, right=0.92, top=0.91, bottom=0.12,
+        height_ratios=[0.80, 1.55],
+        hspace=0.30, wspace=0.18,
+        left=0.08, right=0.92, top=0.93, bottom=0.12,
     )
     ax_area     = fig.add_subplot(gs[0, 0])
     ax_circ     = fig.add_subplot(gs[0, 1])
@@ -522,6 +525,12 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
 
     # ── Cell-type counts for bar labels ───────────────────────────────────
     counts = {ct: int((df["cell_type"] == ct).sum()) for ct in CELL_TYPES}
+
+    # ── Panel labels ──────────────────────────────────────────────────────
+    ax_area.text(-0.14, 1.10, "A", transform=ax_area.transAxes,
+                 fontsize=16, fontweight="bold", va="top", ha="left", clip_on=False)
+    ax_combined.text(-0.05, 1.05, "B", transform=ax_combined.transAxes,
+                     fontsize=16, fontweight="bold", va="top", ha="left", clip_on=False)
 
     # ── Panel A: morphology bar charts ────────────────────────────────────
     _bar_pub(ax_area, area_data, "Area (µm²)", None,
@@ -546,38 +555,30 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
         col_rotation=0, annotation_fontsize=11.0,
     )
 
-    # Column separators within and between cell-type groups
+    # Column separators within cell-type groups
     for sep in [0.5, 1.5, 3.5, 4.5, 6.5, 7.5]:
         ax_combined.axvline(sep, color="#000000", linewidth=0.8, zorder=5)
 
-    # Vertical separators between cell type groups
+    # Thick vertical separators between cell type groups
     for sep in [2.5, 5.5]:
-        ax_combined.axvline(sep, color="#000000", linewidth=1.4, zorder=6)
+        ax_combined.axvline(sep, color="#000000", linewidth=3.5, zorder=6)
 
-    # Cell type group header labels (centered over each 3-column block)
+    # Cell type group header labels — just above the heatmap top border
     for k, ct in enumerate(CELL_TYPES):
         x_frac = (k * 3 + 1.5) / n_cols
         ax_combined.text(
-            x_frac, 1.02, ct.capitalize(),
+            x_frac, 1.01, ct.capitalize(),
             transform=ax_combined.transAxes,
             ha="center", va="bottom",
-            fontsize=12, fontweight="bold",
+            fontsize=13, fontweight="bold",
             color=COLORS[ct],
+            clip_on=False,
         )
 
     divider = make_axes_locatable(ax_combined)
     ax_cbar = divider.append_axes("right", size="2.5%", pad=0.08)
     cb_combined = fig.colorbar(im_combined, cax=ax_cbar)
     _style_colorbar(cb_combined)
-
-    # ── Title ─────────────────────────────────────────────────────────────
-    n_cells = len(df)
-    fig.text(
-        0.5, 0.965,
-        f"CRC33  ·  Cell Population Summary  ·  n = {n_cells:,} cells",
-        ha="center", va="top",
-        color=_TEXT, fontsize=13, fontweight="semibold",
-    )
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_path, dpi=150, facecolor=_BG, bbox_inches="tight")

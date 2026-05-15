@@ -27,6 +27,9 @@ from utils.ome import get_image_dims, open_zarr_store
 
 
 DEFAULT_STAGE1_FIGURE_DIR = Path("paper/figures/stage1")
+DEFAULT_PAIRED_PIXCELL_ROOT = Path(
+    "/home/pohaoc2/UW/bagherilab/PixCell/inference_output/paired_ablation/ablation_results"
+)
 TILE_SCALE_FONT_DIVISOR = 11
 TILE_SCALE_FONT_MIN_SIZE = 22
 CELLVIT_CONTOUR_OUTLINE_WIDTH = 4
@@ -313,14 +316,35 @@ def _score_patches(
     return scored
 
 
-def _select_top(
+def _paired_generated_he_path(pixcell_root: Path, patch_id: str) -> Path:
+    return pixcell_root / patch_id / "all" / "generated_he.png"
+
+
+def _annotate_paired_generated_he(
+    records: list[dict[str, Any]],
+    pixcell_root: Path,
+) -> list[dict[str, Any]]:
+    annotated: list[dict[str, Any]] = []
+    for rec in records:
+        enriched = dict(rec)
+        generated_he_path = _paired_generated_he_path(
+            pixcell_root,
+            str(rec["patch_id"]),
+        )
+        enriched["has_paired_generated_he"] = generated_he_path.exists()
+        enriched["paired_generated_he_path"] = (
+            str(generated_he_path) if generated_he_path.exists() else None
+        )
+        annotated.append(enriched)
+    return annotated
+
+
+def _group_sorted_records(
     records: list[dict[str, Any]],
     group: dict[str, Any],
-    n: int,
-    used: set[str],
 ) -> list[dict[str, Any]]:
     group_id = str(group["id"])
-    ordered = sorted(
+    return sorted(
         records,
         key=lambda rec: (
             -float(rec[f"{group_id}_score"]),
@@ -328,15 +352,122 @@ def _select_top(
             str(rec["patch_id"]),
         ),
     )
+
+
+def _selection_constraints_match(
+    manifest: dict[str, Any],
+    require_generated_he: bool,
+    pixcell_root: Path,
+) -> bool:
+    if not require_generated_he:
+        return True
+    constraints = manifest.get("selection_constraints", {})
+    return bool(constraints.get("require_paired_generated_he")) and str(
+        constraints.get("pixcell_root")
+    ) == str(pixcell_root)
+
+
+def _score_payload(
+    rec: dict[str, Any],
+    groups: list[dict[str, Any]],
+) -> dict[str, Any]:
+    markers = sorted({marker for group in groups for marker in group["markers"]})
+    return {
+        "patch_id": str(rec["patch_id"]),
+        "he_x0": int(rec["x0"]),
+        "he_y0": int(rec["y0"]),
+        "mx_x0": int(rec["mx_x0"]),
+        "mx_y0": int(rec["mx_y0"]),
+        "mx_size": int(rec["mx_size"]),
+        "has_paired_generated_he": bool(rec.get("has_paired_generated_he", False)),
+        "paired_generated_he_path": rec.get("paired_generated_he_path"),
+        "marker_top_1pct_mean": {
+            marker: float(rec[f"{marker}_top_mean"]) for marker in markers
+        },
+        "marker_percentile_rank": {
+            marker: float(rec[f"{marker}_rank"]) for marker in markers
+        },
+        "group_scores": {
+            str(group["id"]): float(rec[f"{group['id']}_score"]) for group in groups
+        },
+        "group_min_ranks": {
+            str(group["id"]): float(rec[f"{group['id']}_min_rank"]) for group in groups
+        },
+    }
+
+
+def _build_scores_manifest(
+    records: list[dict[str, Any]],
+    processed_dir: Path,
+    markers_csv: Path,
+    mx_ome: Path,
+    top_fraction: float,
+    pixcell_root: Path,
+) -> dict[str, Any]:
+    return {
+        "processed_dir": str(processed_dir),
+        "markers_csv": str(markers_csv),
+        "mx_ome": str(mx_ome),
+        "top_fraction": float(top_fraction),
+        "pixcell_root": str(pixcell_root),
+        "score_definition": (
+            "For each marker, crop the raw MX OME-TIFF at the patch coordinate, "
+            "compute the mean of the brightest top_fraction pixels, and convert "
+            "that marker statistic to a percentile rank over all paired patches. "
+            "A group score is the mean percentile rank across the group's four "
+            "markers; min_marker_rank records the weakest marker percentile."
+        ),
+        "patch_count": len(records),
+        "paired_generated_he_count": sum(
+            1 for rec in records if rec.get("has_paired_generated_he")
+        ),
+        "groups": {
+            str(group["id"]): {
+                "label": str(group["label"]),
+                "markers": list(group["markers"]),
+                "ranked_patch_ids": [
+                    str(rec["patch_id"]) for rec in _group_sorted_records(records, group)
+                ],
+                "ranked_patch_ids_with_paired_generated_he": [
+                    str(rec["patch_id"])
+                    for rec in _group_sorted_records(records, group)
+                    if rec.get("has_paired_generated_he")
+                ],
+            }
+            for group in [GROUP_CD68, GROUP_CD45]
+        },
+        "patch_scores": [
+            _score_payload(rec, [GROUP_CD68, GROUP_CD45]) for rec in records
+        ],
+    }
+
+
+def _select_top(
+    records: list[dict[str, Any]],
+    group: dict[str, Any],
+    n: int,
+    used: set[str],
+    require_generated_he: bool = False,
+) -> list[dict[str, Any]]:
+    group_id = str(group["id"])
+    ordered = _group_sorted_records(records, group)
     selected = []
+    eligible_count = 0
     for rec in ordered:
+        if require_generated_he and not rec.get("has_paired_generated_he", False):
+            continue
+        eligible_count += 1
         if str(rec["patch_id"]) in used:
             continue
         selected.append(rec)
         used.add(str(rec["patch_id"]))
         if len(selected) == n:
             return selected
-    raise RuntimeError(f"Only found {len(selected)} selectable patches for {group_id}")
+    requirement = " with paired PixCell generated_he" if require_generated_he else ""
+    raise RuntimeError(
+        f"Only found {len(selected)} selectable patches for {group_id}{requirement}; "
+        f"eligible candidates: {eligible_count}"
+    )
 
 
 def _render_group_mx(
@@ -593,6 +724,32 @@ def _load_processed_feature_tile(processed_dir: Path, patch_id: str, subdir: str
     return tile.convert("RGB")
 
 
+def export_metabolic_tiles(
+    processed_dir: Path,
+    patch_ids: list[str],
+    out_dir: Path,
+    group_id: str | None = None,
+) -> dict[str, dict[str, str]]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    exported: dict[str, dict[str, str]] = {}
+    prefix = f"{group_id}_" if group_id else ""
+
+    for patch_id in patch_ids:
+        patch_exports: dict[str, str] = {}
+        for column in METABOLIC_COLUMNS:
+            slug = str(column["label"]).lower()
+            out_path = out_dir / f"{prefix}{patch_id}_{slug}.png"
+            _load_processed_feature_tile(
+                processed_dir,
+                patch_id,
+                str(column["subdir"]),
+            ).save(out_path)
+            patch_exports[slug] = str(out_path)
+        exported[patch_id] = patch_exports
+
+    return exported
+
+
 def make_metabolic_gradient_tiles(
     processed_dir: Path,
     patch_ids: list[str],
@@ -613,7 +770,7 @@ def make_metabolic_gradient_tiles(
     width = n_cols * column_w + max(0, n_cols - 1) * gap
     height = header_h + n_rows * tile + max(0, n_rows - 1) * gap
 
-    canvas = Image.new("RGB", (width, height), (255, 255, 255))
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
     header_font = _load_font(max(14, int(tile / 14)), bold=True)
     scale_font = _scale_bar_font(tile)
@@ -693,7 +850,7 @@ def _make_figure(
     width = 3 * tile + 2 * gap
     height = header_h + len(selected_rows) * tile + max(0, len(selected_rows) - 1) * gap
 
-    canvas = Image.new("RGB", (width, height), (255, 255, 255))
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
     header_font = _load_font(max(14, int(tile / 14)), bold=True)
     scale_font = _scale_bar_font(tile)
@@ -800,6 +957,8 @@ def _selection_payload(
         "mx_x0": int(rec["mx_x0"]),
         "mx_y0": int(rec["mx_y0"]),
         "mx_size": int(rec["mx_size"]),
+        "has_paired_generated_he": bool(rec.get("has_paired_generated_he", False)),
+        "paired_generated_he_path": rec.get("paired_generated_he_path"),
         "score": float(rec[f"{group_id}_score"]),
         "min_marker_rank": float(rec[f"{group_id}_min_rank"]),
         "marker_top_1pct_mean": {
@@ -885,9 +1044,26 @@ def main() -> None:
         help="Existing selection manifest to reuse. Default: <out-dir>/<prefix>_selections.json",
     )
     parser.add_argument(
+        "--score-json",
+        type=Path,
+        default=None,
+        help="Score manifest to write. Default: <out-dir>/<prefix>_scores.json",
+    )
+    parser.add_argument(
         "--rescore",
         action="store_true",
         help="Recompute scores from raw MX crops instead of reusing --selection-json.",
+    )
+    parser.add_argument(
+        "--pixcell-root",
+        type=Path,
+        default=DEFAULT_PAIRED_PIXCELL_ROOT,
+        help="Root containing PixCell paired_ablation patch directories.",
+    )
+    parser.add_argument(
+        "--require-generated-he",
+        action="store_true",
+        help="Restrict tile selection to patches that have paired PixCell generated_he.png.",
     )
     parser.add_argument("--n", type=int, default=3)
     parser.add_argument(
@@ -964,18 +1140,34 @@ def main() -> None:
     patch_records, _, mpp = _load_patch_records(args.processed)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = args.out_dir / f"{args.prefix}_selections.json"
+    scores_path = args.score_json or (args.out_dir / f"{args.prefix}_scores.json")
     selection_json = args.selection_json or manifest_path
     loaded_manifest: dict[str, Any] | None = None
+    selection_loaded = False
 
     with tifffile.TiffFile(str(args.mx_ome)) as tif:
         img_w, img_h, axes = get_image_dims(tif)
         store = open_zarr_store(tif)
         if selection_json.exists() and not args.rescore:
-            row_records, selections_by_group, loaded_manifest = (
-                _load_rows_from_selection_json(selection_json, patch_records, int(args.n))
-            )
-            print(f"Loaded selections from: {selection_json}")
-        else:
+            with selection_json.open(encoding="utf-8") as fh:
+                maybe_manifest = json.load(fh)
+            if _selection_constraints_match(
+                maybe_manifest,
+                bool(args.require_generated_he),
+                args.pixcell_root,
+            ):
+                row_records, selections_by_group, loaded_manifest = (
+                    _load_rows_from_selection_json(selection_json, patch_records, int(args.n))
+                )
+                selection_loaded = True
+                print(f"Loaded selections from: {selection_json}")
+            else:
+                print(
+                    "Existing selection manifest does not match requested selection "
+                    "constraints; recomputing scores and selections."
+                )
+
+        if not selection_loaded:
             records = _score_patches(
                 patch_records,
                 store,
@@ -985,11 +1177,31 @@ def main() -> None:
                 all_marker_indices,
                 top_fraction=float(args.top_fraction),
             )
+            records = _annotate_paired_generated_he(records, args.pixcell_root)
+
+            scores_manifest = _build_scores_manifest(
+                records,
+                args.processed,
+                args.markers_csv,
+                args.mx_ome,
+                float(args.top_fraction),
+                args.pixcell_root,
+            )
+            scores_path.write_text(
+                json.dumps(scores_manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
 
             used: set[str] = set()
             selections_by_group = {}
             for group in SELECTION_GROUPS:
-                selected = _select_top(records, group, n=int(args.n), used=used)
+                selected = _select_top(
+                    records,
+                    group,
+                    n=int(args.n),
+                    used=used,
+                    require_generated_he=bool(args.require_generated_he),
+                )
                 selections_by_group[group["id"]] = selected
 
             row_records = []
@@ -1058,6 +1270,11 @@ def main() -> None:
         "mx_ome": str(args.mx_ome),
         "top_fraction": float(args.top_fraction),
         "score_source": score_source,
+        "score_json": str(scores_path),
+        "selection_constraints": {
+            "require_paired_generated_he": bool(args.require_generated_he),
+            "pixcell_root": str(args.pixcell_root),
+        },
         "mx_render_source": (
             "raw OME-TIFF crops, not processed multiplex/*.npy; no Hoechst/cell "
             "background gate is applied during rendering"
@@ -1109,6 +1326,12 @@ def main() -> None:
             "resolved_markers": list(resolved["resolved_markers"]),
             "channel_indices_zero_based": list(resolved["indices"]),
             "background_gate": "none",
+            "eligible_patch_count": sum(
+                1
+                for rec in records if rec.get("has_paired_generated_he", False)
+            )
+            if not selection_loaded
+            else None,
             "selections": [
                 _selection_payload(rec, group)
                 for rec in selections_by_group[group["id"]]
@@ -1123,6 +1346,8 @@ def main() -> None:
         print(f"Saved: {path}")
     for path in subgroup_metabolic_outputs.values():
         print(f"Saved: {path}")
+    if not selection_loaded:
+        print(f"Saved: {scores_path}")
     print(f"Saved: {manifest_path}")
     for group in [GROUP_CD68, GROUP_CD45]:
         patch_ids = [rec["patch_id"] for rec in selections_by_group[group["id"]]]

@@ -6,7 +6,9 @@ import argparse
 import json
 from pathlib import Path
 
-from .assets import Stage2FigureAssets, resolve_stage2_assets
+from PIL import Image
+
+from .assets import Stage2FigureAssets, resolve_stage2_assets, selected_patch_ids
 from .render import render_stage2_training_figure
 
 
@@ -34,6 +36,7 @@ def _selection_rule(patch_id: str | None) -> str:
 
 def _source_asset_paths(assets: Stage2FigureAssets) -> dict[str, str]:
     return {
+        "cell_mask_path": str(assets.cell_mask_path),
         "reference_he_path": str(assets.reference_he_path),
         "cell_type_path": str(assets.cell_type_path),
         "cell_state_path": str(assets.cell_state_path),
@@ -42,6 +45,46 @@ def _source_asset_paths(assets: Stage2FigureAssets) -> dict[str, str]:
         "glucose_path": str(assets.glucose_path),
         "generated_he_path": str(assets.generated_he_path),
     }
+
+
+def export_stage2_tiles(assets: Stage2FigureAssets, out_dir: Path) -> dict[str, str]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    export_map = {
+        "cell_mask": assets.cell_mask_path,
+        "reference_he": assets.reference_he_path,
+        "generated_he": assets.generated_he_path,
+    }
+    exported: dict[str, str] = {}
+    for label, source_path in export_map.items():
+        out_path = out_dir / f"{assets.patch_id}_{label}.png"
+        with Image.open(source_path) as image:
+            image.save(out_path)
+        exported[label] = str(out_path)
+    return exported
+
+
+def export_selected_stage2_tiles(
+    processed_dir: Path,
+    selection_json: Path,
+    pixcell_root: Path,
+    out_dir: Path,
+    group_id: str,
+) -> tuple[dict[str, dict[str, str]], dict[str, str]]:
+    exported: dict[str, dict[str, str]] = {}
+    missing: dict[str, str] = {}
+    for _, patch_id in selected_patch_ids(selection_json, group_id=group_id):
+        try:
+            assets = resolve_stage2_assets(
+                processed_dir,
+                selection_json,
+                pixcell_root,
+                patch_id=patch_id,
+            )
+        except FileNotFoundError as exc:
+            missing[patch_id] = str(exc)
+            continue
+        exported[patch_id] = export_stage2_tiles(assets, out_dir)
+    return exported, missing
 
 
 def build_stage2_training_figure(
@@ -73,14 +116,32 @@ def build_stage2_training_figure(
     out_png = out_dir / OUTPUT_PNG_NAME
     out_json = out_dir / OUTPUT_JSON_NAME
     canvas.save(out_png)
+    tiles_dir = out_dir / "tiles"
+    exported_tiles = export_stage2_tiles(assets, tiles_dir)
+    selected_group_id = str(group_id or assets.group_id)
+    selected_group_tiles, missing_selected_group_tiles = export_selected_stage2_tiles(
+        Path(processed_dir),
+        Path(selection_json),
+        Path(pixcell_root),
+        tiles_dir,
+        group_id=selected_group_id,
+    )
 
     metadata = {
         "patch_id": assets.patch_id,
         "group_id": assets.group_id,
+        "selected_group_id": selected_group_id,
+        "selected_group_patch_ids": [
+            patch_id for _, patch_id in selected_patch_ids(selection_json, group_id=selected_group_id)
+        ],
         "manifest_path": str(selection_json),
         "pixcell_root": str(pixcell_root),
         "generated_he_path": str(assets.generated_he_path),
         "source_asset_paths": _source_asset_paths(assets),
+        "exported_tiles": exported_tiles,
+        "selected_group_exported_tiles": selected_group_tiles,
+        "missing_selected_group_tiles": missing_selected_group_tiles,
+        "tiles_dir": str(tiles_dir),
         "selection_rule": _selection_rule(patch_id),
         "layout_parameters": {
             "tile_size_px": DEFAULT_TILE_SIZE,

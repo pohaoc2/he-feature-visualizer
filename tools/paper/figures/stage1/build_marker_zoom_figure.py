@@ -102,7 +102,7 @@ def _format_distance_label(scale_bar_um: float) -> str:
 
 def _stack_vertical(top: Image.Image, bottom: Image.Image, gap: int = 8) -> Image.Image:
     width = max(top.width, bottom.width)
-    canvas = Image.new("RGB", (width, top.height + gap + bottom.height), (0, 0, 0))
+    canvas = Image.new("RGBA", (width, top.height + gap + bottom.height), (0, 0, 0, 0))
     top_x = (width - top.width) // 2
     bottom_x = (width - bottom.width) // 2
     canvas.paste(top, (top_x, 0))
@@ -132,7 +132,7 @@ def _draw_transition_arrow(
     header_height: int,
     label: str = "KMeans",
 ) -> Image.Image:
-    img = Image.new("RGB", (width, height), (255, 255, 255))
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     font = zoom._load_font(max(16, width // 5), bold=True)
     body_y = header_height + max(24, (height - header_height) // 2)
@@ -382,6 +382,20 @@ def main() -> None:
         mpp=_load_processed_mpp(args.processed),
         scale_bar_um=args.scale_bar_um,
     )
+    stage1_tiles_dir = args.out_dir / "tiles"
+    exported_cell_feature_tiles = cell_features.export_rendered_tiles(
+        args.processed,
+        patch_ids,
+        stage1_tiles_dir,
+        tile_size=args.tile_size,
+        group_id=args.group_id,
+    )
+    exported_metabolic_tiles = zoom.export_metabolic_tiles(
+        args.processed,
+        patch_ids,
+        stage1_tiles_dir,
+        group_id=args.group_id,
+    )
     metabolic_panel = zoom.make_metabolic_gradient_tiles(
         args.processed,
         patch_ids,
@@ -411,7 +425,7 @@ def main() -> None:
         label="PDE",
     )
     combined = Image.new(
-        "RGB",
+        "RGBA",
         (
             left.width
             + section_gap
@@ -426,7 +440,7 @@ def main() -> None:
             + metabolic_panel.width,
             panel_h,
         ),
-        (255, 255, 255),
+        (0, 0, 0, 0),
     )
     combined.paste(left, (0, int(args.header_height)))
     x = left.width + section_gap
@@ -488,10 +502,14 @@ def main() -> None:
         "cell_feature_tiles": {
             "patch_ids": patch_ids,
             "columns": ["cell type", "cell state", "CD31"],
+            "exported_tiles": exported_cell_feature_tiles,
+            "export_dir": str(stage1_tiles_dir),
         },
         "metabolic_tiles": {
             "patch_ids": patch_ids,
             "columns": ["oxygen", "glucose"],
+            "exported_tiles": exported_metabolic_tiles,
+            "export_dir": str(stage1_tiles_dir),
         },
     }
     out_json = out_png.with_suffix(".json")

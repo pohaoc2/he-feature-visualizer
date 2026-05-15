@@ -1,0 +1,1 @@
+"""Stage-3 paper figure generation tools."""

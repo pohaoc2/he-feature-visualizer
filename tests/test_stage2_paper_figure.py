@@ -10,9 +10,12 @@ from tools.paper.figures.stage2.assets import (
     Stage2FigureAssets,
     pick_representative_patch,
     resolve_stage2_assets,
+    selected_patch_ids,
 )
 from tools.paper.figures.stage2.build_training_figure import (
     build_stage2_training_figure,
+    export_stage2_tiles,
+    export_selected_stage2_tiles,
 )
 from tools.paper.figures.stage2.render import render_stage2_training_figure
 from tools.paper.figures.stage2.render import _compute_layout
@@ -26,6 +29,7 @@ def _make_stage2_assets(tmp_path: Path) -> Stage2FigureAssets:
     assets = Stage2FigureAssets(
         patch_id="23296_21760",
         group_id="g1",
+        cell_mask_path=tmp_path / "cell_mask.png",
         reference_he_path=tmp_path / "he.png",
         cell_type_path=tmp_path / "type.png",
         cell_state_path=tmp_path / "state.png",
@@ -34,6 +38,7 @@ def _make_stage2_assets(tmp_path: Path) -> Stage2FigureAssets:
         glucose_path=tmp_path / "glucose.png",
         generated_he_path=tmp_path / "generated.png",
     )
+    save_rgb(assets.cell_mask_path, (255, 255, 255))
     save_rgb(assets.reference_he_path, (240, 200, 210))
     save_rgb(assets.cell_type_path, (210, 235, 245))
     save_rgb(assets.cell_state_path, (225, 245, 230))
@@ -56,6 +61,7 @@ def _write_stage2_input_tree(
     for patch_id in patch_ids:
         groups["g1"]["selections"].append({"patch_id": patch_id})
         for subdir, color in [
+            ("cell_masks", (255, 255, 255)),
             ("he", (240, 200, 210)),
             ("cell_types/union", (210, 235, 245)),
             ("cell_states/union", (225, 245, 230)),
@@ -174,6 +180,23 @@ def test_pick_representative_patch_uses_first_matching_selection(tmp_path: Path)
     assert result.group_id == "g1"
 
 
+def test_selected_patch_ids_can_filter_by_group_and_limit(tmp_path: Path) -> None:
+    selection_json = tmp_path / "selections.json"
+    selection_json.write_text(
+        json.dumps(
+            {
+                "groups": {
+                    "g1": {"selections": [{"patch_id": "100_100"}, {"patch_id": "200_200"}]},
+                    "g2": {"selections": [{"patch_id": "300_300"}]},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert selected_patch_ids(selection_json, group_id="g1", n=1) == [("g1", "100_100")]
+
+
 def test_pick_representative_patch_raises_with_checked_ids(tmp_path: Path) -> None:
     selection_json = tmp_path / "selections.json"
     pixcell_root = tmp_path / "pixcell"
@@ -228,6 +251,7 @@ def test_resolve_stage2_assets_returns_expected_paths(tmp_path: Path) -> None:
     )
 
     required_paths = [
+        processed_dir / "cell_masks" / f"{patch_id}.png",
         processed_dir / "he" / f"{patch_id}.png",
         processed_dir / "cell_types/union" / f"{patch_id}.png",
         processed_dir / "cell_states/union" / f"{patch_id}.png",
@@ -244,6 +268,7 @@ def test_resolve_stage2_assets_returns_expected_paths(tmp_path: Path) -> None:
 
     assert assets.patch_id == patch_id
     assert assets.group_id == "g1"
+    assert assets.cell_mask_path == processed_dir / "cell_masks" / f"{patch_id}.png"
     assert assets.reference_he_path == processed_dir / "he" / f"{patch_id}.png"
     assert assets.generated_he_path == pixcell_root / patch_id / "all" / "generated_he.png"
 
@@ -260,6 +285,7 @@ def test_resolve_stage2_assets_raises_for_missing_local_asset(tmp_path: Path) ->
     )
 
     existing_paths = [
+        processed_dir / "cell_masks" / f"{patch_id}.png",
         processed_dir / "he" / f"{patch_id}.png",
         processed_dir / "cell_types/union" / f"{patch_id}.png",
         processed_dir / "cell_states/union" / f"{patch_id}.png",
@@ -275,6 +301,44 @@ def test_resolve_stage2_assets_raises_for_missing_local_asset(tmp_path: Path) ->
         resolve_stage2_assets(processed_dir, selection_json, pixcell_root)
 
     assert "glucose" in str(exc.value)
+
+
+def test_export_stage2_tiles_writes_requested_pngs(tmp_path: Path) -> None:
+    assets = _make_stage2_assets(tmp_path)
+
+    exported = export_stage2_tiles(assets, tmp_path / "paper/figures/stage2/tiles")
+
+    assert set(exported) == {"cell_mask", "reference_he", "generated_he"}
+    for path in exported.values():
+        assert Path(path).exists()
+
+
+def test_export_selected_stage2_tiles_writes_all_group_tiles(tmp_path: Path) -> None:
+    processed_dir, pixcell_root, selection_json = _write_stage2_input_tree(
+        tmp_path,
+        ["100_100", "200_200"],
+    )
+    for patch_id in ["100_100", "200_200"]:
+        generated_dir = pixcell_root / patch_id / "all"
+        generated_dir.mkdir(parents=True)
+        Image.new("RGB", (64, 64), (235, 190, 205)).save(
+            generated_dir / "generated_he.png"
+        )
+
+    exported, missing = export_selected_stage2_tiles(
+        processed_dir,
+        selection_json,
+        pixcell_root,
+        tmp_path / "paper/figures/stage2/tiles",
+        group_id="g1",
+    )
+
+    assert missing == {}
+    assert set(exported) == {"100_100", "200_200"}
+    for patch_exports in exported.values():
+        assert set(patch_exports) == {"cell_mask", "reference_he", "generated_he"}
+        for path in patch_exports.values():
+            assert Path(path).exists()
 
 
 def test_render_stage2_training_figure_returns_nonempty_canvas(tmp_path: Path) -> None:
@@ -410,12 +474,26 @@ def test_build_stage2_training_figure_writes_png_and_json(tmp_path: Path) -> Non
     assert metadata["manifest_path"] == str(selection_json)
     assert metadata["pixcell_root"] == str(pixcell_root)
     assert metadata["generated_he_path"].endswith(f"{patch_id}/all/generated_he.png")
+    assert metadata["source_asset_paths"]["cell_mask_path"] == str(
+        processed_dir / "cell_masks" / f"{patch_id}.png"
+    )
+    assert metadata["tiles_dir"] == str(output_dir / "tiles")
     assert metadata["selection_rule"] == (
         "first stage1 selected patch with matching PixCell all/generated_he.png"
     )
     assert metadata["source_asset_paths"]["reference_he_path"] == str(
         processed_dir / "he" / f"{patch_id}.png"
     )
+    assert metadata["exported_tiles"]["cell_mask"] == str(
+        output_dir / "tiles" / f"{patch_id}_cell_mask.png"
+    )
+    assert metadata["selected_group_patch_ids"] == [patch_id]
+    assert metadata["selected_group_exported_tiles"][patch_id]["generated_he"] == str(
+        output_dir / "tiles" / f"{patch_id}_generated_he.png"
+    )
+    assert metadata["missing_selected_group_tiles"] == {}
+    assert Path(metadata["exported_tiles"]["reference_he"]).exists()
+    assert Path(metadata["exported_tiles"]["generated_he"]).exists()
     with Image.open(png_path) as image:
         canvas_size = list(image.size)
     from tools.paper.figures.stage2.build_training_figure import (

@@ -74,6 +74,10 @@ COLUMNS: list[dict[str, Any]] = [
 ]
 
 
+def _tile_label_slug(label: str) -> str:
+    return label.lower().replace(" ", "_")
+
+
 def _load_patch_ids_from_selection_json(
     selection_json: Path,
     group_id: str,
@@ -124,6 +128,29 @@ def _load_tile(processed: Path, patch_id: str, col: dict[str, Any], tile_size: i
     return img.convert("RGB")
 
 
+def export_rendered_tiles(
+    processed: Path,
+    patch_ids: list[str],
+    out_dir: Path,
+    tile_size: int,
+    group_id: str | None = None,
+) -> dict[str, dict[str, str]]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    exported: dict[str, dict[str, str]] = {}
+    prefix = f"{group_id}_" if group_id else ""
+
+    for patch_id in patch_ids:
+        patch_exports: dict[str, str] = {}
+        for col in COLUMNS:
+            slug = _tile_label_slug(str(col["label"]))
+            out_path = out_dir / f"{prefix}{patch_id}_{slug}.png"
+            _load_tile(processed, patch_id, col, tile_size).save(out_path)
+            patch_exports[slug] = str(out_path)
+        exported[patch_id] = patch_exports
+
+    return exported
+
+
 def make_cell_feature_tiles(
     processed: Path,
     patch_ids: list[str],
@@ -143,7 +170,7 @@ def make_cell_feature_tiles(
     width = 3 * tile + 2 * gap
     height = header_h + n * tile + max(0, n - 1) * gap
 
-    canvas = Image.new("RGB", (width, height), (255, 255, 255))
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
     header_font = _load_font(max(14, int(tile / 14)), bold=True)
