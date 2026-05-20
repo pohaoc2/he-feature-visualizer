@@ -312,7 +312,7 @@ def _style_ax_dark(ax: plt.Axes, heatmap: bool = False) -> None:
 
 def _style_colorbar(cbar) -> None:
     """Apply publication styling to a colorbar."""
-    cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=11)
+    cbar.ax.yaxis.set_tick_params(color=_TEXT_DIM, labelsize=12)
     plt.setp(cbar.ax.yaxis.get_ticklabels(), color=_TEXT_DIM)
     cbar.outline.set_edgecolor("#000000")
     cbar.outline.set_linewidth(1.0)
@@ -320,7 +320,7 @@ def _style_colorbar(cbar) -> None:
         spine.set_visible(True)
         spine.set_edgecolor("#000000")
         spine.set_linewidth(1.0)
-    cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=13)
+    cbar.set_label("Median Z-score", color=_TEXT_DIM, fontsize=12)
 
 
 def _add_stat_brackets(
@@ -412,10 +412,10 @@ def _bar_pub(
         labels = [f"{ct}\n(n={counts[ct]:,})" for ct in CELL_TYPES]
     else:
         labels = list(CELL_TYPES)
-    ax.set_xticklabels(labels, fontsize=13)
-    ax.set_ylabel(ylabel, fontsize=13)
+    ax.set_xticklabels(labels, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
     if title:
-        ax.set_title(title, fontsize=13, loc="left", pad=3)
+        ax.set_title(title, fontsize=12, loc="left", pad=3)
     ax.yaxis.grid(True, color=_GRID, linewidth=0.6, linestyle="-")
     ax.set_axisbelow(True)
     _style_ax_dark(ax)
@@ -432,7 +432,7 @@ def _heatmap(
     col_labels: list[str],
     title: str | None,
     col_rotation: float = 0.0,
-    annotation_fontsize: float = 7.5,
+    annotation_fontsize: float = 12,
 ) -> plt.cm.ScalarMappable:
     """Annotated imshow heatmap on dark background. Returns mappable for colorbar."""
     vmax = max(float(np.abs(matrix).max()), 0.5)
@@ -440,19 +440,18 @@ def _heatmap(
                    vmin=-vmax, vmax=vmax, interpolation="nearest")
     ax.set_xticks(range(len(col_labels)))
     ax.set_xticklabels(col_labels, rotation=col_rotation,
-                       ha="right" if col_rotation > 0 else "center", fontsize=13)
+                       ha="right" if col_rotation > 0 else "center", fontsize=12)
     ax.set_yticks(range(len(row_labels)))
-    ax.set_yticklabels(row_labels, fontsize=13)
+    ax.set_yticklabels(row_labels, fontsize=12)
     if title:
-        ax.set_title(title, fontsize=14, loc="left", pad=7)
+        ax.set_title(title, fontsize=12, loc="left", pad=7)
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             val = matrix[i, j]
             # On light bg: dark text on pale cells, white text on saturated cells
             text_color = _TEXT if abs(val) < vmax * 0.6 else "#FFFFFF"
             ax.text(j, i, f"{val:.2f}", ha="center", va="center",
-                    fontsize=annotation_fontsize, color=text_color,
-                    fontfamily="monospace")
+                    fontsize=annotation_fontsize, color=text_color)
     _style_ax_dark(ax, heatmap=True)
     return im
 
@@ -499,19 +498,28 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
             if col in sub.columns and len(sub) > 0:
                 combined_mat[i, j] = float(sub[col].median())
 
-    # ── Font: DejaVu Sans (Helvetica fallback) ────────────────────────────
+    # ── Font: Arial/Helvetica (Nature Medicine sans-serif style) ───────────
     plt.rcParams.update({
         "font.family": "sans-serif",
-        "font.sans-serif": ["DejaVu Sans", "Helvetica", "Liberation Sans", "Arial"],
+        "font.sans-serif": ["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans"],
         "font.size": 12,
+        "axes.titlesize": 12,
+        "axes.titleweight": "normal",
+        "axes.labelsize": 12,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 12,
+        "legend.fontsize": 12,
+        "axes.linewidth": 0.8,
         "text.color": "#000000",
         "axes.labelcolor": "#000000",
         "xtick.color": "#000000",
         "ytick.color": "#000000",
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
     })
 
     # ── Figure layout ──────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(12.6, 9), facecolor=_BG)
+    fig = plt.figure(figsize=(10.4, 7.6), facecolor=_BG)
     fig.patch.set_facecolor(_BG)
     gs = fig.add_gridspec(
         2, 2,
@@ -528,9 +536,9 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
 
     # ── Panel labels ──────────────────────────────────────────────────────
     ax_area.text(-0.14, 1.10, "A", transform=ax_area.transAxes,
-                 fontsize=16, fontweight="bold", va="top", ha="left", clip_on=False)
+                 fontsize=12, fontweight="bold", va="top", ha="left", clip_on=False)
     ax_combined.text(-0.05, 1.05, "B", transform=ax_combined.transAxes,
-                     fontsize=16, fontweight="bold", va="top", ha="left", clip_on=False)
+                     fontsize=12, fontweight="bold", va="top", ha="left", clip_on=False)
 
     # ── Panel A: morphology bar charts ────────────────────────────────────
     _bar_pub(ax_area, area_data, "Area (µm²)", None,
@@ -552,7 +560,7 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
         ax_combined, combined_mat,
         row_labels=available, col_labels=col_labels,
         title=None,
-        col_rotation=0, annotation_fontsize=11.0,
+        col_rotation=0, annotation_fontsize=12,
     )
 
     # Column separators within cell-type groups
@@ -570,7 +578,7 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
             x_frac, 1.01, ct.capitalize(),
             transform=ax_combined.transAxes,
             ha="center", va="bottom",
-            fontsize=13, fontweight="bold",
+            fontsize=12, fontweight="bold",
             color=COLORS[ct],
             clip_on=False,
         )
@@ -581,7 +589,7 @@ def plot_summary_figure(df: pd.DataFrame, save_path: Path) -> None:
     _style_colorbar(cb_combined)
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(save_path, dpi=150, facecolor=_BG, bbox_inches="tight")
+    fig.savefig(save_path, dpi=200, facecolor=_BG, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {save_path}")
 
