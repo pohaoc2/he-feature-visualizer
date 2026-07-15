@@ -343,6 +343,11 @@ def main():
         n_total = len(coords)
         results: list[tuple | None] = [None] * n_total
         done = 0
+        # Fixed "every 500" never fires for small/medium runs (e.g. a few
+        # hundred tissue patches), so no progress ever prints before the
+        # final summary. Scale the interval to the run size instead, aiming
+        # for roughly 20-40 ticks.
+        progress_interval = max(1, min(500, n_total // 25 or 1))
         with ProcessPoolExecutor(
             max_workers=args.workers,
             initializer=_init_py_worker,
@@ -361,7 +366,7 @@ def main():
                 orig_idx, entry = future.result()
                 results[orig_idx] = entry
                 done += 1
-                if done % 500 == 0:
+                if done % progress_interval == 0 or done == n_total:
                     print(f"  {done}/{n_total} ...")
 
         index = list(results)

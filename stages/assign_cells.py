@@ -1257,7 +1257,7 @@ def main() -> None:
             global_mismatch_count += patch_mismatch_count
             global_conflict_pairs += patch_conflict_pairs
             processed += 1
-            if processed % 50 == 0:
+            if processed % 10 == 0:
                 log.info(
                     "  Progress: %d patches processed, %d skipped …", processed, skipped
                 )
