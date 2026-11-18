@@ -1,0 +1,79 @@
+{
+ "n_tiles": 500,
+ "n_cells": 12059,
+ "exp_channels": [
+  "cell_masks",
+  "cell_state_dead",
+  "cell_state_nonprolif",
+  "cell_state_prolif",
+  "cell_type_cancer",
+  "cell_type_healthy",
+  "cell_type_immune"
+ ],
+ "type_agree": 0.9895,
+ "state_agree": 0.9895,
+ "type_confusion": {
+  "cancer": {
+   "cancer": 4914,
+   "healthy": 0,
+   "immune": 0
+  },
+  "healthy": {
+   "cancer": 0,
+   "healthy": 5328,
+   "immune": 0
+  },
+  "immune": {
+   "cancer": 0,
+   "healthy": 0,
+   "immune": 1690
+  },
+  "none": {
+   "cancer": 70,
+   "healthy": 33,
+   "immune": 24
+  }
+ },
+ "state_confusion": {
+  "dead": {
+   "dead": 42,
+   "nonprolif": 0,
+   "prolif": 0
+  },
+  "none": {
+   "dead": 0,
+   "nonprolif": 67,
+   "prolif": 60
+  },
+  "nonprolif": {
+   "dead": 0,
+   "nonprolif": 9012,
+   "prolif": 0
+  },
+  "prolif": {
+   "dead": 0,
+   "nonprolif": 0,
+   "prolif": 2878
+  }
+ },
+ "channel_area_frac": {
+  "ink_free_tiles": {
+   "mask": 0.12,
+   "t_healthy": 0.0467,
+   "t_cancer": 0.0587,
+   "t_immune": 0.0146,
+   "s_prolif": 0.0465,
+   "s_nonprolif": 0.0732,
+   "s_dead": 0.0002
+  },
+  "ink_tiles": {
+   "mask": 0.0779,
+   "t_healthy": 0.0311,
+   "t_cancer": 0.0291,
+   "t_immune": 0.0176,
+   "s_prolif": 0.0019,
+   "s_nonprolif": 0.0754,
+   "s_dead": 0.0005
+  }
+ }
+}

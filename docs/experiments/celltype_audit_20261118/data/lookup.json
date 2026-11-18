@@ -1,0 +1,1 @@
+{"px_um": {"he": 0.325, "mask": 0.325}, "he_shape": [52740, 36354, 3], "G_frame": {"n": 50, "mean_abs_diff": [0.0], "max": 0.0, "ok": true}, "mask_shape": [52740, 36354], "G_id": {"n": 200, "median_px": 0.0, "missing": 0, "ok": true}, "hfv_on_background": 0.10430980162917637, "lin_without_hfv": 0.49380402873415497}

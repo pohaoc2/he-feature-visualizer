@@ -1,0 +1,1582 @@
+{
+ "px_um": 0.325,
+ "gates": {
+  "Pan-CK": {
+   "thr": 280.1921269562126,
+   "source": "gmm",
+   "lin_frac": 0.39218,
+   "final_frac": 0.45684614441631627
+  },
+  "E-cadherin": {
+   "thr": 274.99281737147237,
+   "source": "gmm",
+   "lin_frac": 0.38376,
+   "final_frac": 0.44004771198462006
+  },
+  "CD45": {
+   "thr": 565.7839461721369,
+   "source": "quantile_fallback",
+   "lin_frac": 0.30252,
+   "final_frac": 0.3025206404925309
+  },
+  "Ki67": {
+   "thr": 331.49426945965996,
+   "source": "quantile_fallback",
+   "lin_frac": 0.07664,
+   "final_frac": 0.07664078051514155
+  },
+  "SMA": {
+   "thr": 455.6756190141792,
+   "source": "quantile_fallback",
+   "lin_frac": 0.07648,
+   "final_frac": 0.0764802487561221
+  },
+  "CD31": {
+   "thr": 410.31359122423913,
+   "source": "quantile_fallback",
+   "lin_frac": 0.0451,
+   "final_frac": 0.04510066800670147
+  }
+ },
+ "class_map_shape": [
+  154,
+  106
+ ],
+ "mask_shape": [
+  52740,
+  36354
+ ],
+ "lin_slide_all": {
+  "n": 443514,
+  "in_tiles": 417694,
+  "tissue_frac_all": {
+   "BACK": 0.0218,
+   "NORM": 0.5684,
+   "DEB": 0.1332,
+   "TUM": 0.0433,
+   "ADI": 0.0186,
+   "MUC": 0.0041,
+   "MUS": 0.0807,
+   "STR": 0.0998,
+   "LYM": 0.03
+  },
+  "old_all": {
+   "cancer": 0.3538,
+   "healthy": 0.3877,
+   "immune": 0.2585
+  },
+  "ki67p_all": 0.0381
+ },
+ "lin": {
+  "n": 417694,
+  "slide_tissue_frac": {
+   "BACK": 0.0092,
+   "NORM": 0.5938,
+   "DEB": 0.1378,
+   "TUM": 0.044,
+   "ADI": 0.0019,
+   "MUC": 0.0033,
+   "MUS": 0.0758,
+   "STR": 0.1058,
+   "LYM": 0.0284
+  },
+  "dendro4": {
+   "epithelial": 0.3625,
+   "immune": 0.2643,
+   "stroma": 0.0894,
+   "unidentified": 0.2838
+  },
+  "old": {
+   "cancer": 0.3625,
+   "healthy": 0.3732,
+   "immune": 0.2643
+  },
+  "rule_a": {
+   "cancer": 0.048,
+   "healthy": 0.6877,
+   "immune": 0.2643
+  },
+  "ki67p": 0.04015379679861334
+ },
+ "hfv": {
+  "n": 263446,
+  "type": {
+   "cancer": 0.4194,
+   "healthy": 0.4397,
+   "immune": 0.1409
+  },
+  "state": {
+   "dead": 0.0027,
+   "nonprolif": 0.7477,
+   "prolif": 0.2495
+  }
+ },
+ "hfv_fusion": {
+  "background": {
+   "n": 14911,
+   "frac": 0.0566,
+   "final": {
+    "cancer": 0.7299,
+    "healthy": 0.1532,
+    "immune": 0.1169
+   },
+   "codex_model": {
+    "cancer": 0.1239,
+    "healthy": 0.7592,
+    "immune": 0.1169
+   },
+   "prior_only": 0.606,
+   "final_when_prior_only": {
+    "cancer": 1.0
+   },
+   "final_when_codex_used": {
+    "cancer": 0.3146,
+    "healthy": 0.3888,
+    "immune": 0.2967
+   }
+  },
+  "neoplastic": {
+   "n": 63109,
+   "frac": 0.2396,
+   "final": {
+    "cancer": 1.0
+   },
+   "codex_model": {
+    "cancer": 0.4299,
+    "healthy": 0.43,
+    "immune": 0.1401
+   },
+   "prior_only": 0.3839,
+   "final_when_prior_only": {
+    "cancer": 1.0
+   },
+   "final_when_codex_used": {
+    "cancer": 1.0
+   }
+  },
+  "inflammatory": {
+   "n": 35291,
+   "frac": 0.134,
+   "final": {
+    "cancer": 0.0178,
+    "healthy": 0.0745,
+    "immune": 0.9077
+   },
+   "codex_model": {
+    "cancer": 0.0178,
+    "healthy": 0.5588,
+    "immune": 0.4234
+   },
+   "prior_only": 0.4843,
+   "final_when_prior_only": {
+    "immune": 1.0
+   },
+   "final_when_codex_used": {
+    "cancer": 0.0345,
+    "healthy": 0.1445,
+    "immune": 0.8211
+   }
+  },
+  "connective": {
+   "n": 106111,
+   "frac": 0.4028,
+   "final": {
+    "healthy": 1.0
+   },
+   "codex_model": {
+    "cancer": 0.0272,
+    "healthy": 0.8539,
+    "immune": 0.119
+   },
+   "prior_only": 0.6717,
+   "final_when_prior_only": {
+    "healthy": 1.0
+   },
+   "final_when_codex_used": {
+    "healthy": 1.0
+   }
+  },
+  "dead": {
+   "n": 719,
+   "frac": 0.0027,
+   "final": {
+    "cancer": 0.6106,
+    "healthy": 0.1683,
+    "immune": 0.2211
+   },
+   "codex_model": {
+    "cancer": 0.0348,
+    "healthy": 0.7441,
+    "immune": 0.2211
+   },
+   "prior_only": 0.5758,
+   "final_when_prior_only": {
+    "cancer": 1.0
+   },
+   "final_when_codex_used": {
+    "cancer": 0.082,
+    "healthy": 0.3967,
+    "immune": 0.5213
+   }
+  },
+  "epithelial": {
+   "n": 43305,
+   "frac": 0.1644,
+   "final": {
+    "cancer": 0.8182,
+    "healthy": 0.1082,
+    "immune": 0.0736
+   },
+   "codex_model": {
+    "cancer": 0.1689,
+    "healthy": 0.7576,
+    "immune": 0.0736
+   },
+   "prior_only": 0.6493,
+   "final_when_prior_only": {
+    "cancer": 1.0
+   },
+   "final_when_codex_used": {
+    "cancer": 0.4816,
+    "healthy": 0.3086,
+    "immune": 0.2098
+   }
+  }
+ },
+ "hfv_fusion_match_distance_max": 2.273736754432321e-13,
+ "matching": {
+  "primary": "Lin cell-mask label under the hfv centroid (no radius)",
+  "hfv_on_background": 0.1043,
+  "hfv_on_lin_cell_outside_tiles": 0.0008,
+  "hfv_on_background_by_cellvit": {
+   "background": 0.2915,
+   "neoplastic": 0.0772,
+   "inflammatory": 0.1247,
+   "connective": 0.0797,
+   "dead": 0.121,
+   "epithelial": 0.1229
+  },
+  "hfv_sharing_a_lin_cell": 0.0862,
+  "lin_without_hfv": 0.463,
+  "lin_without_hfv_by_dendro4": {
+   "epithelial": 0.6166,
+   "immune": 0.4466,
+   "stroma": 0.3981,
+   "unidentified": 0.3026
+  },
+  "lin_without_hfv_by_tissue": {
+   "LYM": 0.5577,
+   "NORM": 0.5225,
+   "STR": 0.3307,
+   "TUM": 0.5877,
+   "other": 0.3336
+  },
+  "hfv_merge_ge2": 0.1654,
+  "hfv_merge_ge2_neoplastic_or_epithelial": 0.2238,
+  "hfv_merge_ge2_by_tissue": {
+   "LYM": 0.2836,
+   "NORM": 0.2309,
+   "STR": 0.1061,
+   "TUM": 0.1627,
+   "other": 0.0774
+  },
+  "merge_unresolved": 0,
+  "cells_per_tile_hfv": 25.6,
+  "secondary": {
+   "rule": "nearest Lin centroid within r_eq = sqrt(median Lin cell-mask Area / pi)",
+   "r_eq_px": 11.74,
+   "r_eq_um": 3.82,
+   "nn_dist_px_q": [
+    1.29,
+    2.25,
+    4.09,
+    7.51,
+    12.23
+   ],
+   "matched": 0.8933,
+   "agree_with_primary": 0.9732
+  },
+  "lin_area_um2_median": 45.74,
+  "hfv_area_um2_median": 23.77
+ },
+ "a_class_fractions": {
+  "NORM": {
+   "n_lin": 248029,
+   "n_hfv": 130285,
+   "hfv": {
+    "cancer": 0.5445,
+    "healthy": 0.2908,
+    "immune": 0.1647
+   },
+   "old": {
+    "cancer": 0.5393,
+    "healthy": 0.1247,
+    "immune": 0.336
+   },
+   "old_t": {
+    "healthy": 0.664,
+    "immune": 0.336
+   },
+   "rule_a": {
+    "healthy": 0.664,
+    "immune": 0.336
+   },
+   "dendro4": {
+    "epithelial": 0.5393,
+    "immune": 0.336,
+    "stroma": 0.0419,
+    "unidentified": 0.0828
+   },
+   "prolif_hfv": 0.4333,
+   "prolif_lin": 0.0545
+  },
+  "TUM": {
+   "n_lin": 18368,
+   "n_hfv": 11140,
+   "hfv": {
+    "cancer": 0.496,
+    "healthy": 0.303,
+    "immune": 0.2011
+   },
+   "old": {
+    "cancer": 0.5638,
+    "healthy": 0.197,
+    "immune": 0.2392
+   },
+   "old_t": {
+    "cancer": 0.5638,
+    "healthy": 0.197,
+    "immune": 0.2392
+   },
+   "rule_a": {
+    "cancer": 0.694,
+    "healthy": 0.0667,
+    "immune": 0.2392
+   },
+   "dendro4": {
+    "epithelial": 0.5638,
+    "immune": 0.2392,
+    "stroma": 0.0667,
+    "unidentified": 0.1302
+   },
+   "prolif_hfv": 0.3224,
+   "prolif_lin": 0.1221
+  },
+  "STR": {
+   "n_lin": 44196,
+   "n_hfv": 34845,
+   "hfv": {
+    "cancer": 0.149,
+    "healthy": 0.7835,
+    "immune": 0.0675
+   },
+   "old": {
+    "cancer": 0.0288,
+    "healthy": 0.8808,
+    "immune": 0.0905
+   },
+   "old_t": {
+    "cancer": 0.0288,
+    "healthy": 0.8808,
+    "immune": 0.0905
+   },
+   "rule_a": {
+    "cancer": 0.0288,
+    "healthy": 0.8808,
+    "immune": 0.0905
+   },
+   "dendro4": {
+    "epithelial": 0.0288,
+    "immune": 0.0905,
+    "stroma": 0.2007,
+    "unidentified": 0.68
+   },
+   "prolif_hfv": 0.0271,
+   "prolif_lin": 0.0066
+  },
+  "LYM": {
+   "n_lin": 11871,
+   "n_hfv": 5981,
+   "hfv": {
+    "cancer": 0.1276,
+    "healthy": 0.2297,
+    "immune": 0.6427
+   },
+   "old": {
+    "cancer": 0.0743,
+    "healthy": 0.0789,
+    "immune": 0.8468
+   },
+   "old_t": {
+    "cancer": 0.0743,
+    "healthy": 0.0789,
+    "immune": 0.8468
+   },
+   "rule_a": {
+    "cancer": 0.0743,
+    "healthy": 0.0789,
+    "immune": 0.8468
+   },
+   "dendro4": {
+    "epithelial": 0.0743,
+    "immune": 0.8468,
+    "stroma": 0.0291,
+    "unidentified": 0.0499
+   },
+   "prolif_hfv": 0.1458,
+   "prolif_lin": 0.0292
+  },
+  "other": {
+   "n_lin": 95230,
+   "n_hfv": 81195,
+   "hfv": {
+    "cancer": 0.3457,
+    "healthy": 0.5652,
+    "immune": 0.0891
+   },
+   "old": {
+    "cancer": 0.0539,
+    "healthy": 0.8556,
+    "immune": 0.0905
+   },
+   "old_t": {
+    "cancer": 0.0539,
+    "healthy": 0.8556,
+    "immune": 0.0905
+   },
+   "rule_a": {
+    "cancer": 0.0539,
+    "healthy": 0.8556,
+    "immune": 0.0905
+   },
+   "dendro4": {
+    "epithelial": 0.0539,
+    "immune": 0.0905,
+    "stroma": 0.1733,
+    "unidentified": 0.6823
+   },
+   "prolif_hfv": 0.0477,
+   "prolif_lin": 0.0039
+  },
+  "all": {
+   "n_lin": 417694,
+   "n_hfv": 263446,
+   "hfv": {
+    "cancer": 0.4194,
+    "healthy": 0.4397,
+    "immune": 0.1409
+   },
+   "old": {
+    "cancer": 0.3625,
+    "healthy": 0.3732,
+    "immune": 0.2643
+   },
+   "old_t": {
+    "cancer": 0.0422,
+    "healthy": 0.6935,
+    "immune": 0.2643
+   },
+   "rule_a": {
+    "cancer": 0.048,
+    "healthy": 0.6877,
+    "immune": 0.2643
+   },
+   "dendro4": {
+    "epithelial": 0.3625,
+    "immune": 0.2643,
+    "stroma": 0.0894,
+    "unidentified": 0.2838
+   },
+   "prolif_hfv": 0.2495,
+   "prolif_lin": 0.0402
+  }
+ },
+ "a_confusion_matched": {
+  "LYM": {
+   "dendro4": {
+    "epithelial": {
+     "cancer": 0.7205,
+     "healthy": 0.1499,
+     "immune": 0.1297
+    },
+    "immune": {
+     "cancer": 0.0714,
+     "healthy": 0.183,
+     "immune": 0.7456
+    },
+    "stroma": {
+     "cancer": 0.0464,
+     "healthy": 0.9278,
+     "immune": 0.0258
+    },
+    "unidentified": {
+     "cancer": 0.1916,
+     "healthy": 0.5649,
+     "immune": 0.2435
+    }
+   },
+   "old_t": {
+    "cancer": {
+     "cancer": 0.7214,
+     "healthy": 0.1466,
+     "immune": 0.132
+    },
+    "healthy": {
+     "cancer": 0.1417,
+     "healthy": 0.7008,
+     "immune": 0.1575
+    },
+    "immune": {
+     "cancer": 0.0714,
+     "healthy": 0.183,
+     "immune": 0.7456
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "cancer": 0.7214,
+     "healthy": 0.1466,
+     "immune": 0.132
+    },
+    "healthy": {
+     "cancer": 0.1417,
+     "healthy": 0.7008,
+     "immune": 0.1575
+    },
+    "immune": {
+     "cancer": 0.0714,
+     "healthy": 0.183,
+     "immune": 0.7456
+    }
+   }
+  },
+  "NORM": {
+   "dendro4": {
+    "epithelial": {
+     "cancer": 0.8404,
+     "healthy": 0.1455,
+     "immune": 0.0141
+    },
+    "immune": {
+     "cancer": 0.3316,
+     "healthy": 0.3214,
+     "immune": 0.347
+    },
+    "stroma": {
+     "cancer": 0.1605,
+     "healthy": 0.8208,
+     "immune": 0.0187
+    },
+    "unidentified": {
+     "cancer": 0.2889,
+     "healthy": 0.5233,
+     "immune": 0.1878
+    }
+   },
+   "old_t": {
+    "cancer": {
+     "cancer": 0.8953,
+     "healthy": 0.093,
+     "immune": 0.0116
+    },
+    "healthy": {
+     "cancer": 0.6793,
+     "healthy": 0.2742,
+     "immune": 0.0466
+    },
+    "immune": {
+     "cancer": 0.3316,
+     "healthy": 0.3214,
+     "immune": 0.347
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "cancer": 0.8652,
+     "healthy": 0.1236,
+     "immune": 0.0112
+    },
+    "healthy": {
+     "cancer": 0.6793,
+     "healthy": 0.2741,
+     "immune": 0.0466
+    },
+    "immune": {
+     "cancer": 0.3316,
+     "healthy": 0.3214,
+     "immune": 0.347
+    }
+   }
+  },
+  "STR": {
+   "dendro4": {
+    "epithelial": {
+     "cancer": 0.5477,
+     "healthy": 0.337,
+     "immune": 0.1153
+    },
+    "immune": {
+     "cancer": 0.1372,
+     "healthy": 0.5346,
+     "immune": 0.3281
+    },
+    "stroma": {
+     "cancer": 0.0392,
+     "healthy": 0.9571,
+     "immune": 0.0038
+    },
+    "unidentified": {
+     "cancer": 0.1544,
+     "healthy": 0.8065,
+     "immune": 0.0391
+    }
+   },
+   "old_t": {
+    "cancer": {
+     "cancer": 0.544,
+     "healthy": 0.3386,
+     "immune": 0.1174
+    },
+    "healthy": {
+     "cancer": 0.1319,
+     "healthy": 0.836,
+     "immune": 0.0321
+    },
+    "immune": {
+     "cancer": 0.1372,
+     "healthy": 0.5346,
+     "immune": 0.3281
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "cancer": 0.5414,
+     "healthy": 0.3423,
+     "immune": 0.1163
+    },
+    "healthy": {
+     "cancer": 0.1319,
+     "healthy": 0.8361,
+     "immune": 0.0321
+    },
+    "immune": {
+     "cancer": 0.1372,
+     "healthy": 0.5346,
+     "immune": 0.3281
+    }
+   }
+  },
+  "TUM": {
+   "dendro4": {
+    "epithelial": {
+     "cancer": 0.8046,
+     "healthy": 0.116,
+     "immune": 0.0794
+    },
+    "immune": {
+     "cancer": 0.2823,
+     "healthy": 0.4062,
+     "immune": 0.3115
+    },
+    "stroma": {
+     "cancer": 0.0954,
+     "healthy": 0.896,
+     "immune": 0.0085
+    },
+    "unidentified": {
+     "cancer": 0.2472,
+     "healthy": 0.6551,
+     "immune": 0.0977
+    }
+   },
+   "old_t": {
+    "cancer": {
+     "cancer": 0.8036,
+     "healthy": 0.1166,
+     "immune": 0.0798
+    },
+    "healthy": {
+     "cancer": 0.2105,
+     "healthy": 0.7218,
+     "immune": 0.0677
+    },
+    "immune": {
+     "cancer": 0.2823,
+     "healthy": 0.4062,
+     "immune": 0.3115
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "cancer": 0.6459,
+     "healthy": 0.2693,
+     "immune": 0.0847
+    },
+    "healthy": {
+     "cancer": 0.1484,
+     "healthy": 0.8372,
+     "immune": 0.0143
+    },
+    "immune": {
+     "cancer": 0.2823,
+     "healthy": 0.4062,
+     "immune": 0.3115
+    }
+   }
+  },
+  "other": {
+   "dendro4": {
+    "epithelial": {
+     "cancer": 0.7659,
+     "healthy": 0.1171,
+     "immune": 0.1171
+    },
+    "immune": {
+     "cancer": 0.2142,
+     "healthy": 0.4224,
+     "immune": 0.3634
+    },
+    "stroma": {
+     "cancer": 0.0796,
+     "healthy": 0.9138,
+     "immune": 0.0065
+    },
+    "unidentified": {
+     "cancer": 0.3627,
+     "healthy": 0.5771,
+     "immune": 0.0602
+    }
+   },
+   "old_t": {
+    "cancer": {
+     "cancer": 0.7653,
+     "healthy": 0.1164,
+     "immune": 0.1183
+    },
+    "healthy": {
+     "cancer": 0.3122,
+     "healthy": 0.6373,
+     "immune": 0.0506
+    },
+    "immune": {
+     "cancer": 0.2142,
+     "healthy": 0.4224,
+     "immune": 0.3634
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "cancer": 0.7639,
+     "healthy": 0.1181,
+     "immune": 0.1181
+    },
+    "healthy": {
+     "cancer": 0.3122,
+     "healthy": 0.6372,
+     "immune": 0.0506
+    },
+    "immune": {
+     "cancer": 0.2142,
+     "healthy": 0.4224,
+     "immune": 0.3634
+    }
+   }
+  },
+  "all": {
+   "dendro4": {
+    "epithelial": {
+     "cancer": 0.8329,
+     "healthy": 0.1442,
+     "immune": 0.0229
+    },
+    "immune": {
+     "cancer": 0.2943,
+     "healthy": 0.3307,
+     "immune": 0.375
+    },
+    "stroma": {
+     "cancer": 0.0926,
+     "healthy": 0.898,
+     "immune": 0.0095
+    },
+    "unidentified": {
+     "cancer": 0.2938,
+     "healthy": 0.6299,
+     "immune": 0.0762
+    }
+   },
+   "old_t": {
+    "cancer": {
+     "cancer": 0.7705,
+     "healthy": 0.1329,
+     "immune": 0.0966
+    },
+    "healthy": {
+     "cancer": 0.4457,
+     "healthy": 0.5081,
+     "immune": 0.0461
+    },
+    "immune": {
+     "cancer": 0.2943,
+     "healthy": 0.3307,
+     "immune": 0.375
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "cancer": 0.677,
+     "healthy": 0.2264,
+     "immune": 0.0966
+    },
+    "healthy": {
+     "cancer": 0.4475,
+     "healthy": 0.5068,
+     "immune": 0.0457
+    },
+    "immune": {
+     "cancer": 0.2943,
+     "healthy": 0.3307,
+     "immune": 0.375
+    }
+   }
+  }
+ },
+ "a_agreement_matched": {
+  "LYM": {
+   "old": 0.7404,
+   "old_t": 0.74,
+   "rule_a": 0.74
+  },
+  "NORM": {
+   "old": 0.6068,
+   "old_t": 0.3038,
+   "rule_a": 0.3037
+  },
+  "STR": {
+   "old": 0.7923,
+   "old_t": 0.7922,
+   "rule_a": 0.7921
+  },
+  "TUM": {
+   "old": 0.6416,
+   "old_t": 0.6372,
+   "rule_a": 0.566
+  },
+  "other": {
+   "old": 0.6201,
+   "old_t": 0.6199,
+   "rule_a": 0.6198
+  },
+  "all": {
+   "old": 0.6394,
+   "old_t": 0.4789,
+   "rule_a": 0.4764
+  }
+ },
+ "state_agreement_matched": {
+  "hfv_prolif": 0.2621,
+  "lin_ki67p": 0.0252,
+  "both": 0.0251,
+  "agree": 0.763
+ },
+ "b_keratin_weak_TUM": {
+  "definition": "Lin cell in Lin TUM tissue, CD45-, Pan-CK-, E-cad-, SMA-, CD31- (dendro4 'unidentified')",
+  "n": 2392,
+  "frac_of_TUM_non_immune": 0.1712,
+  "typed_healthy": {
+   "old": 1.0,
+   "old_t": 1.0,
+   "rule_a": 0.0,
+   "hfv_matched": 0.66
+  },
+  "hfv_matched_n": 1400,
+  "hfv_matched_labels": {
+   "cancer": 0.2436,
+   "healthy": 0.66,
+   "immune": 0.0964
+  },
+  "hfv_matched_by_cellvit": {
+   "background": {
+    "n": 116,
+    "healthy": 0.0776
+   },
+   "neoplastic": {
+    "n": 121,
+    "healthy": 0.0
+   },
+   "inflammatory": {
+    "n": 118,
+    "healthy": 0.0339
+   },
+   "connective": {
+    "n": 903,
+    "healthy": 1.0
+   },
+   "dead": {
+    "n": 15,
+    "healthy": 0.1333
+   },
+   "epithelial": {
+    "n": 127,
+    "healthy": 0.0472
+   }
+  },
+  "hfv_objects_in_TUM": {
+   "cancer": 0.496,
+   "healthy": 0.303,
+   "immune": 0.2011
+  }
+ },
+ "c_normal_epithelium_NORM": {
+  "definition": "Lin cell in Lin NORM tissue, CD45-, Pan-CK+ or E-cad+",
+  "n": 133770,
+  "typed_cancer": {
+   "old": 1.0,
+   "old_t": 0.0,
+   "rule_a": 0.0,
+   "hfv_matched": 0.8403
+  },
+  "hfv_matched_n": 54468,
+  "hfv_matched_labels": {
+   "cancer": 0.8403,
+   "healthy": 0.1456,
+   "immune": 0.0141
+  },
+  "hfv_objects_in_NORM": {
+   "cancer": 0.5445,
+   "healthy": 0.2908,
+   "immune": 0.1647
+  }
+ },
+ "d_ink": {
+  "rule": "H&E grayscale < 60 (style_pool.PIGMENT_LEVEL) at the 3x3 px around the centroid; tiles from ink.json (fraction > 0)",
+  "n_tiles": 10379,
+  "n_ink_tiles": 961,
+  "n_ink_tiles_gt_0p005": 405,
+  "hfv": {
+   "inked_cells": {
+    "n": 5482,
+    "type": {
+     "cancer": 0.3592,
+     "healthy": 0.1233,
+     "immune": 0.5175
+    },
+    "state": {
+     "dead": 0.0013,
+     "nonprolif": 0.9985,
+     "prolif": 0.0002
+    },
+    "tissue": {
+     "ADI": 0.0011,
+     "BACK": 0.1622,
+     "DEB": 0.1726,
+     "LYM": 0.0376,
+     "MUC": 0.0031,
+     "MUS": 0.0137,
+     "NORM": 0.0108,
+     "STR": 0.1096,
+     "TUM": 0.4894
+    }
+   },
+   "ink_tiles_not_inked_cells": {
+    "n": 11210,
+    "type": {
+     "cancer": 0.2246,
+     "healthy": 0.6555,
+     "immune": 0.1199
+    },
+    "state": {
+     "dead": 0.0132,
+     "nonprolif": 0.9406,
+     "prolif": 0.0462
+    },
+    "tissue": {
+     "ADI": 0.0049,
+     "BACK": 0.0228,
+     "DEB": 0.3432,
+     "LYM": 0.005,
+     "MUC": 0.0038,
+     "MUS": 0.1145,
+     "NORM": 0.0561,
+     "STR": 0.3676,
+     "TUM": 0.0821
+    }
+   },
+   "clean_tiles": {
+    "n": 246754,
+    "type": {
+     "cancer": 0.4296,
+     "healthy": 0.4369,
+     "immune": 0.1335
+    },
+    "state": {
+     "dead": 0.0023,
+     "nonprolif": 0.7334,
+     "prolif": 0.2643
+    },
+    "tissue": {
+     "ADI": 0.0014,
+     "BACK": 0.006,
+     "DEB": 0.1927,
+     "LYM": 0.0232,
+     "MUC": 0.0035,
+     "MUS": 0.0955,
+     "NORM": 0.5252,
+     "STR": 0.1221,
+     "TUM": 0.0305
+    }
+   }
+  },
+  "lin": {
+   "inked_cells": {
+    "n": 704,
+    "old": {
+     "cancer": 0.9077,
+     "healthy": 0.0256,
+     "immune": 0.0668
+    },
+    "rule_a": {
+     "cancer": 0.902,
+     "healthy": 0.0312,
+     "immune": 0.0668
+    },
+    "dendro4": {
+     "epithelial": 0.9077,
+     "immune": 0.0668,
+     "stroma": 0.0028,
+     "unidentified": 0.0227
+    },
+    "ki67p": 0.0,
+    "tissue": {
+     "ADI": 0.0014,
+     "BACK": 0.1506,
+     "DEB": 0.1349,
+     "LYM": 0.0526,
+     "MUC": 0.0014,
+     "MUS": 0.0114,
+     "NORM": 0.017,
+     "STR": 0.0724,
+     "TUM": 0.5582
+    },
+    "median": {
+     "Hoechst": 2544.2,
+     "AF1": 290.5,
+     "Ki67": 119.7,
+     "CD45": 287.7,
+     "Pan-CK": 387.4,
+     "SMA": 0.0
+    }
+   },
+   "not_inked": {
+    "n": 416990,
+    "old": {
+     "cancer": 0.3616,
+     "healthy": 0.3738,
+     "immune": 0.2646
+    },
+    "rule_a": {
+     "cancer": 0.0465,
+     "healthy": 0.6888,
+     "immune": 0.2646
+    },
+    "dendro4": {
+     "epithelial": 0.3616,
+     "immune": 0.2646,
+     "stroma": 0.0895,
+     "unidentified": 0.2843
+    },
+    "ki67p": 0.0402,
+    "tissue": {
+     "ADI": 0.0019,
+     "BACK": 0.009,
+     "DEB": 0.1378,
+     "LYM": 0.0284,
+     "MUC": 0.0033,
+     "MUS": 0.0759,
+     "NORM": 0.5948,
+     "STR": 0.1059,
+     "TUM": 0.0431
+    },
+    "median": {
+     "Hoechst": 4122.5,
+     "AF1": 344.9,
+     "Ki67": 217.4,
+     "CD45": 309.3,
+     "Pan-CK": 252.5,
+     "SMA": 208.3
+    }
+   }
+  },
+  "hfv_inked_matched_lin_ki67p": 0.0
+ },
+ "e_descriptors": {
+  "all": {
+   "old": {
+    "cancer": {
+     "n": 151409,
+     "frac": 0.3625,
+     "area_um2": 41.9,
+     "panck": 575.7,
+     "ki67p": 0.0946,
+     "sma_or_cd31p": 0.0228
+    },
+    "healthy": {
+     "n": 155883,
+     "frac": 0.3732,
+     "area_um2": 50.4,
+     "panck": 230.2,
+     "ki67p": 0.0011,
+     "sma_or_cd31p": 0.2395
+    },
+    "immune": {
+     "n": 110402,
+     "frac": 0.2643,
+     "area_um2": 43.5,
+     "panck": 248.7,
+     "ki67p": 0.0206,
+     "sma_or_cd31p": 0.0749
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "n": 20031,
+     "frac": 0.048,
+     "area_um2": 45.6,
+     "panck": 552.9,
+     "ki67p": 0.1308,
+     "sma_or_cd31p": 0.0123
+    },
+    "healthy": {
+     "n": 287261,
+     "frac": 0.6877,
+     "area_um2": 46.7,
+     "panck": 251.0,
+     "ki67p": 0.0413,
+     "sma_or_cd31p": 0.1411
+    },
+    "immune": {
+     "n": 110402,
+     "frac": 0.2643,
+     "area_um2": 43.5,
+     "panck": 248.7,
+     "ki67p": 0.0206,
+     "sma_or_cd31p": 0.0749
+    }
+   },
+   "dendro4": {
+    "epithelial": {
+     "n": 151409,
+     "frac": 0.3625,
+     "area_um2": 41.9,
+     "panck": 575.7,
+     "ki67p": 0.0946,
+     "sma_or_cd31p": 0.0228
+    },
+    "immune": {
+     "n": 110402,
+     "frac": 0.2643,
+     "area_um2": 43.5,
+     "panck": 248.7,
+     "ki67p": 0.0206,
+     "sma_or_cd31p": 0.0749
+    },
+    "stroma": {
+     "n": 37334,
+     "frac": 0.0894,
+     "area_um2": 50.4,
+     "panck": 231.9,
+     "ki67p": 0.0011,
+     "sma_or_cd31p": 1.0
+    },
+    "unidentified": {
+     "n": 118549,
+     "frac": 0.2838,
+     "area_um2": 50.3,
+     "panck": 229.7,
+     "ki67p": 0.0011,
+     "sma_or_cd31p": 0.0
+    }
+   },
+   "hfv_on_matched_lin": {
+    "cancer": {
+     "n": 97420,
+     "frac": 0.4132,
+     "area_um2": 49.9,
+     "panck": 355.4,
+     "ki67p": 0.0488,
+     "sma_or_cd31p": 0.0387
+    },
+    "healthy": {
+     "n": 105906,
+     "frac": 0.4492,
+     "area_um2": 56.2,
+     "panck": 233.3,
+     "ki67p": 0.0067,
+     "sma_or_cd31p": 0.2382
+    },
+    "immune": {
+     "n": 32434,
+     "frac": 0.1376,
+     "area_um2": 49.1,
+     "panck": 242.4,
+     "ki67p": 0.0146,
+     "sma_or_cd31p": 0.0254
+    }
+   },
+   "hfv_cellvit_area_um2": {
+    "cancer": 25.4,
+    "healthy": 23.2,
+    "immune": 24.2
+   }
+  },
+  "TUM": {
+   "old": {
+    "cancer": {
+     "n": 10356,
+     "frac": 0.5638,
+     "area_um2": 42.6,
+     "panck": 763.5,
+     "ki67p": 0.1968,
+     "sma_or_cd31p": 0.012
+    },
+    "healthy": {
+     "n": 3618,
+     "frac": 0.197,
+     "area_um2": 58.3,
+     "panck": 234.1,
+     "ki67p": 0.0008,
+     "sma_or_cd31p": 0.3389
+    },
+    "immune": {
+     "n": 4394,
+     "frac": 0.2392,
+     "area_um2": 44.5,
+     "panck": 267.4,
+     "ki67p": 0.046,
+     "sma_or_cd31p": 0.1022
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "n": 12748,
+     "frac": 0.694,
+     "area_um2": 46.1,
+     "panck": 600.7,
+     "ki67p": 0.1601,
+     "sma_or_cd31p": 0.0097
+    },
+    "healthy": {
+     "n": 1226,
+     "frac": 0.0667,
+     "area_um2": 51.8,
+     "panck": 234.1,
+     "ki67p": 0.0,
+     "sma_or_cd31p": 1.0
+    },
+    "immune": {
+     "n": 4394,
+     "frac": 0.2392,
+     "area_um2": 44.5,
+     "panck": 267.4,
+     "ki67p": 0.046,
+     "sma_or_cd31p": 0.1022
+    }
+   },
+   "dendro4": {
+    "epithelial": {
+     "n": 10356,
+     "frac": 0.5638,
+     "area_um2": 42.6,
+     "panck": 763.5,
+     "ki67p": 0.1968,
+     "sma_or_cd31p": 0.012
+    },
+    "immune": {
+     "n": 4394,
+     "frac": 0.2392,
+     "area_um2": 44.5,
+     "panck": 267.4,
+     "ki67p": 0.046,
+     "sma_or_cd31p": 0.1022
+    },
+    "stroma": {
+     "n": 1226,
+     "frac": 0.0667,
+     "area_um2": 51.8,
+     "panck": 234.1,
+     "ki67p": 0.0,
+     "sma_or_cd31p": 1.0
+    },
+    "unidentified": {
+     "n": 2392,
+     "frac": 0.1302,
+     "area_um2": 61.9,
+     "panck": 234.1,
+     "ki67p": 0.0013,
+     "sma_or_cd31p": 0.0
+    }
+   },
+   "hfv_on_matched_lin": {
+    "cancer": {
+     "n": 3955,
+     "frac": 0.4919,
+     "area_um2": 54.2,
+     "panck": 691.0,
+     "ki67p": 0.1755,
+     "sma_or_cd31p": 0.0326
+    },
+    "healthy": {
+     "n": 2920,
+     "frac": 0.3632,
+     "area_um2": 58.9,
+     "panck": 242.0,
+     "ki67p": 0.0209,
+     "sma_or_cd31p": 0.2863
+    },
+    "immune": {
+     "n": 1165,
+     "frac": 0.1449,
+     "area_um2": 56.4,
+     "panck": 264.8,
+     "ki67p": 0.0223,
+     "sma_or_cd31p": 0.0292
+    }
+   },
+   "hfv_cellvit_area_um2": {
+    "cancer": 32.1,
+    "healthy": 25.1,
+    "immune": 24.9
+   }
+  },
+  "NORM": {
+   "old": {
+    "cancer": {
+     "n": 133770,
+     "frac": 0.5393,
+     "area_um2": 41.8,
+     "panck": 569.1,
+     "ki67p": 0.0875,
+     "sma_or_cd31p": 0.0239
+    },
+    "healthy": {
+     "n": 30919,
+     "frac": 0.1247,
+     "area_um2": 47.7,
+     "panck": 242.0,
+     "ki67p": 0.0036,
+     "sma_or_cd31p": 0.336
+    },
+    "immune": {
+     "n": 83340,
+     "frac": 0.336,
+     "area_um2": 43.5,
+     "panck": 254.3,
+     "ki67p": 0.0204,
+     "sma_or_cd31p": 0.0715
+    }
+   },
+   "rule_a": {
+    "healthy": {
+     "n": 164689,
+     "frac": 0.664,
+     "area_um2": 43.0,
+     "panck": 480.9,
+     "ki67p": 0.0717,
+     "sma_or_cd31p": 0.0825
+    },
+    "immune": {
+     "n": 83340,
+     "frac": 0.336,
+     "area_um2": 43.5,
+     "panck": 254.3,
+     "ki67p": 0.0204,
+     "sma_or_cd31p": 0.0715
+    }
+   },
+   "dendro4": {
+    "epithelial": {
+     "n": 133770,
+     "frac": 0.5393,
+     "area_um2": 41.8,
+     "panck": 569.1,
+     "ki67p": 0.0875,
+     "sma_or_cd31p": 0.0239
+    },
+    "immune": {
+     "n": 83340,
+     "frac": 0.336,
+     "area_um2": 43.5,
+     "panck": 254.3,
+     "ki67p": 0.0204,
+     "sma_or_cd31p": 0.0715
+    },
+    "stroma": {
+     "n": 10388,
+     "frac": 0.0419,
+     "area_um2": 46.1,
+     "panck": 241.7,
+     "ki67p": 0.0024,
+     "sma_or_cd31p": 1.0
+    },
+    "unidentified": {
+     "n": 20531,
+     "frac": 0.0828,
+     "area_um2": 48.6,
+     "panck": 242.2,
+     "ki67p": 0.0041,
+     "sma_or_cd31p": 0.0
+    }
+   },
+   "hfv_on_matched_lin": {
+    "cancer": {
+     "n": 67336,
+     "frac": 0.5402,
+     "area_um2": 50.8,
+     "panck": 476.1,
+     "ki67p": 0.057,
+     "sma_or_cd31p": 0.0365
+    },
+    "healthy": {
+     "n": 36521,
+     "frac": 0.293,
+     "area_um2": 53.8,
+     "panck": 251.3,
+     "ki67p": 0.0148,
+     "sma_or_cd31p": 0.2342
+    },
+    "immune": {
+     "n": 20801,
+     "frac": 0.1669,
+     "area_um2": 49.2,
+     "panck": 248.8,
+     "ki67p": 0.016,
+     "sma_or_cd31p": 0.0275
+    }
+   },
+   "hfv_cellvit_area_um2": {
+    "cancer": 28.8,
+    "healthy": 23.9,
+    "immune": 24.6
+   }
+  },
+  "STR": {
+   "old": {
+    "cancer": {
+     "n": 1272,
+     "frac": 0.0288,
+     "area_um2": 39.6,
+     "panck": 352.8,
+     "ki67p": 0.1549,
+     "sma_or_cd31p": 0.0204
+    },
+    "healthy": {
+     "n": 38926,
+     "frac": 0.8808,
+     "area_um2": 54.1,
+     "panck": 230.2,
+     "ki67p": 0.0006,
+     "sma_or_cd31p": 0.2279
+    },
+    "immune": {
+     "n": 3998,
+     "frac": 0.0905,
+     "area_um2": 50.1,
+     "panck": 230.1,
+     "ki67p": 0.018,
+     "sma_or_cd31p": 0.0873
+    }
+   },
+   "rule_a": {
+    "cancer": {
+     "n": 1272,
+     "frac": 0.0288,
+     "area_um2": 39.6,
+     "panck": 352.8,
+     "ki67p": 0.1549,
+     "sma_or_cd31p": 0.0204
+    },
+    "healthy": {
+     "n": 38926,
+     "frac": 0.8808,
+     "area_um2": 54.1,
+     "panck": 230.2,
+     "ki67p": 0.0006,
+     "sma_or_cd31p": 0.2279
+    },
+    "immune": {
+     "n": 3998,
+     "frac": 0.0905,
+     "area_um2": 50.1,
+     "panck": 230.1,
+     "ki67p": 0.018,
+     "sma_or_cd31p": 0.0873
+    }
+   },
+   "dendro4": {
+    "epithelial": {
+     "n": 1272,
+     "frac": 0.0288,
+     "area_um2": 39.6,
+     "panck": 352.8,
+     "ki67p": 0.1549,
+     "sma_or_cd31p": 0.0204
+    },
+    "immune": {
+     "n": 3998,
+     "frac": 0.0905,
+     "area_um2": 50.1,
+     "panck": 230.1,
+     "ki67p": 0.018,
+     "sma_or_cd31p": 0.0873
+    },
+    "stroma": {
+     "n": 8871,
+     "frac": 0.2007,
+     "area_um2": 54.3,
+     "panck": 230.0,
+     "ki67p": 0.0011,
+     "sma_or_cd31p": 1.0
+    },
+    "unidentified": {
+     "n": 30055,
+     "frac": 0.68,
+     "area_um2": 54.0,
+     "panck": 230.2,
+     "ki67p": 0.0004,
+     "sma_or_cd31p": 0.0
+    }
+   },
+   "hfv_on_matched_lin": {
+    "cancer": {
+     "n": 4314,
+     "frac": 0.1382,
+     "area_um2": 53.2,
+     "panck": 229.9,
+     "ki67p": 0.0139,
+     "sma_or_cd31p": 0.0542
+    },
+    "healthy": {
+     "n": 25147,
+     "frac": 0.8053,
+     "area_um2": 60.1,
+     "panck": 230.1,
+     "ki67p": 0.0014,
+     "sma_or_cd31p": 0.2184
+    },
+    "immune": {
+     "n": 1764,
+     "frac": 0.0565,
+     "area_um2": 52.7,
+     "panck": 229.0,
+     "ki67p": 0.0119,
+     "sma_or_cd31p": 0.0232
+    }
+   },
+   "hfv_cellvit_area_um2": {
+    "cancer": 20.7,
+    "healthy": 24.0,
+    "immune": 21.5
+   }
+  }
+ }
+}

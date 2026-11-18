@@ -1,0 +1,121 @@
+{
+ "cellvit_type_by_tissue": {
+  "LYM": {
+   "background": 0.038,
+   "connective": 0.1873,
+   "dead": 0.0005,
+   "epithelial": 0.0398,
+   "inflammatory": 0.639,
+   "neoplastic": 0.0955
+  },
+  "NORM": {
+   "background": 0.0445,
+   "connective": 0.2648,
+   "dead": 0.0017,
+   "epithelial": 0.1217,
+   "inflammatory": 0.1585,
+   "neoplastic": 0.4088
+  },
+  "STR": {
+   "background": 0.0446,
+   "connective": 0.7505,
+   "dead": 0.0011,
+   "epithelial": 0.1194,
+   "inflammatory": 0.0616,
+   "neoplastic": 0.0229
+  },
+  "TUM": {
+   "background": 0.0961,
+   "connective": 0.27,
+   "dead": 0.0023,
+   "epithelial": 0.0982,
+   "inflammatory": 0.1829,
+   "neoplastic": 0.3504
+  },
+  "other": {
+   "background": 0.0771,
+   "connective": 0.5091,
+   "dead": 0.0053,
+   "epithelial": 0.2704,
+   "inflammatory": 0.0818,
+   "neoplastic": 0.0563
+  }
+ },
+ "hfv_cancer_by_tissue_and_cellvit": {
+  "LYM": {
+   "background": 103,
+   "dead": 2,
+   "epithelial": 68,
+   "inflammatory": 19,
+   "neoplastic": 571
+  },
+  "NORM": {
+   "background": 4131,
+   "dead": 115,
+   "epithelial": 12879,
+   "inflammatory": 551,
+   "neoplastic": 53267
+  },
+  "STR": {
+   "background": 1141,
+   "dead": 26,
+   "epithelial": 3226,
+   "inflammatory": 1,
+   "neoplastic": 797
+  },
+  "TUM": {
+   "background": 827,
+   "dead": 19,
+   "epithelial": 746,
+   "inflammatory": 29,
+   "neoplastic": 3904
+  },
+  "other": {
+   "background": 4682,
+   "dead": 277,
+   "epithelial": 18513,
+   "inflammatory": 27,
+   "neoplastic": 4570
+  }
+ },
+ "hfv_cancer_share_by_tissue": {
+  "NORM": 0.6421,
+  "other": 0.254,
+  "TUM": 0.05,
+  "STR": 0.047,
+  "LYM": 0.0069
+ },
+ "hfv_inked": {
+  "n": 5482,
+  "on_lin_background": 0.7902,
+  "cellvit": {
+   "inflammatory": 0.4889,
+   "neoplastic": 0.1569,
+   "background": 0.1501,
+   "connective": 0.1226,
+   "epithelial": 0.0803,
+   "dead": 0.0013
+  }
+ },
+ "hfv_not_inked_on_lin_background": 0.0897,
+ "tum_grid_cells_total": 300,
+ "norm_grid_cells_total": 2076,
+ "crc33_01_frac_at_pooled_gate": {
+  "Pan-CK": 0.4055,
+  "E-cadherin": 0.4025,
+  "CD45": 0.2585,
+  "Ki67": 0.0381,
+  "CD31": 0.0382,
+  "SMA": 0.0796,
+  "CD3e": 0.0925,
+  "CD20": 0.029,
+  "CD68": 0.0602,
+  "CD163": 0.0723,
+  "CD4": 0.0744,
+  "CD8a": 0.0341,
+  "CD45RO": 0.0469,
+  "FOXP3": 0.0143,
+  "PD-1": 0.0043,
+  "PD-L1": 0.0158
+ }
+}
