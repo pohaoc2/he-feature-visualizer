@@ -229,7 +229,7 @@ hfv 的 cancer 物件有 64 % 在 NORM，只有 5 % 在 TUM（`data/extra.json`�
   - 輸入是 CRC33_01 的 Lin CSV（443,514 個細胞）；
   - 輸出在本稽核的目錄；
   - CELESTA 的 k-d 切塊深度用 2，切成 4 塊，每塊約 11 萬個細胞（CRC16 用 5，32 塊，每塊約 8.6 萬）。
-- 另外也跑整張切片不切塊的 CELESTA 當參考（`celesta33_whole`）。
+- 另外也跑整張切片不切塊的 CELESTA 當參考（工作 43360815，`celesta33_whole`）。寫到這裡時它已經跑了 28 分鐘，還在第一次「最近已判定細胞距離」的步驟，所以本節只用切塊結果。跑完後重跑 `compare33.py` 和 `fig_pub33.py`，就會自動加入（指令見 `scripts/pub33.slurm` 和 `compare33.py` 開頭）。
 - `scripts/pub33.slurm`。耗時：CELESTA 準備 2.3 分鐘，每塊 7–11 分鐘；Astir 5 個起始各 6–8 分鐘，最後一段 3.8 分鐘（11 epochs 後收斂）。
 
 **比較方法：**`scripts/compare33.py`，類別對應和 celltype_pub_compare.py 相同：
