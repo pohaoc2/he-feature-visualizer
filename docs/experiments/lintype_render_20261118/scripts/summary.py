@@ -1,0 +1,193 @@
+"""lintype_render_20261118 step 3 (cellvit env; on Hyak, reads per-cell data and H&E tiles, writes small json + figure).
+
+  summary.py A N HFV
+Inputs : N/out/{labels.json, nuclei_render.json, cells_labels.npz, cells_nuclei.npz, render_tiles.npz, compare_tiles.npz,
+         tiles_keep.txt}, N/data/{old_channels.tar, new_exp_channels.tar, nucleus_shapes_orion_crc33.npz (sim-exp-validation
+         artifact, CellViT outlines)}, A/raw/processed_crc33/cell_assignments.csv (CellViT object areas).
+Outputs: N/out/summary.json, N/out/fig_lintype_render.{png,pdf}.
+Figure (180 mm):
+  a  three sample tiles (Lin TUM / NORM / STR at the tile centre): H&E | current channels (CellViT objects, hfv typing) |
+     eroded Lin nuclei on the H&E | new channels (Lin cells, CELESTA + Fig. 3d typing, rendered with borrowed outlines)
+  b  mean area fraction per cell channel over the kept tiles, current vs new
+  c  nucleus area (um^2): CellViT objects, Lin cell mask, Lin eroded strict / loose, the two outline libraries
+  d  hematoxylin AUC (inside vs outside the mask) over the sample tiles, per mask
+  e  population of each matched CellViT object, current (rows) vs new (columns), row-normalised
+"""
+import csv
+import io
+import json
+import sys
+import tarfile
+
+import cv2
+import numpy as np
+
+A, N, HFV = sys.argv[1:4]
+sys.path.insert(0, f"{N}/scripts")
+sys.path.insert(0, HFV)
+from figstyle import FS_K, GREY, INK, W2, axes, letter, plt, save  # noqa: E402
+from stages.lin_typing import labels as LB  # noqa: E402
+
+HE = "/gscratch/cheme/chiu/crc16-20261024/darkdiag_20261031/s3/he"
+NAMES = ["cell_masks", "cell_type_healthy", "cell_type_cancer", "cell_type_immune", "cell_state_prolif",
+         "cell_state_nonprolif", "cell_state_dead"]
+SHORT = ["mask", "healthy", "cancer", "immune", "prolif", "nonprolif", "dead"]
+PC = {"healthy": (169, 193, 211), "cancer": (192, 57, 43), "immune": (46, 125, 50)}
+OLD_C, NEW_C = "#0b76a0", "#4ea72e"
+um2 = LB.MPP ** 2
+L = json.load(open(f"{N}/out/labels.json"))
+NR = json.load(open(f"{N}/out/nuclei_render.json"))
+keep = open(f"{N}/out/tiles_keep.txt").read().split()
+S = dict(labels=L, nuclei_render=NR)
+
+
+def png(b):
+    return cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_UNCHANGED)
+
+
+# ---- whole-slide channel fractions, current vs new (kept tiles) ---------------------------------------------------
+rt = np.load(f"{N}/out/render_tiles.npz")
+new_frac = dict(zip(rt["tile"].tolist(), rt["frac"]))
+old = {}
+with tarfile.open(f"{N}/data/old_channels.tar") as tf:
+    for m in tf:
+        p = m.name.split("/")
+        if len(p) == 4 and p[1] == "exp_channels" and p[3].endswith(".png"):
+            t = p[3][:-4]
+            if t in new_frac:
+                old.setdefault(t, {})[p[2]] = float((png(tf.extractfile(m).read()) > 0).mean())
+tiles = [t for t in keep if t in old and len(old[t]) == 7]
+assert len(tiles) == len(keep), (len(tiles), len(keep))
+O = np.array([[old[t][n] for n in NAMES] for t in tiles])
+Nw = np.array([new_frac[t] for t in tiles])
+S["channels_keep"] = {n: dict(old_mean=round(float(O[:, i].mean()), 4), new_mean=round(float(Nw[:, i].mean()), 4),
+                              pearson_r_tiles=round(float(np.corrcoef(O[:, i], Nw[:, i])[0, 1]), 3)
+                              if O[:, i].std() > 0 and Nw[:, i].std() > 0 else None)
+                      for i, n in enumerate(NAMES)}
+
+# ---- nucleus areas -----------------------------------------------------------------------------------------------
+cn = np.load(f"{N}/out/cells_nuclei.npz")
+cl = np.load(f"{N}/out/cells_labels.npz")
+k = cl["in_keep"]
+ps = 256
+keep_set = set(keep)
+cv_area = []
+with open(f"{A}/raw/processed_crc33/cell_assignments.csv") as f:
+    for r in csv.DictReader(f):
+        x, y = float(r["centroid_x_global"]), float(r["centroid_y_global"])
+        if f"{int(x // ps) * ps}_{int(y // ps) * ps}" in keep_set:
+            cv_area.append(float(r["Area_cellvit_px"]))
+cv_area = np.array(cv_area)
+libn = np.load(NR["library"]["path"])
+libo = np.load(f"{N}/data/nucleus_shapes_orion_crc33.npz")
+AREAS = {"CellViT objects": cv_area, "Lin cell mask": cn["cell_px"][k], "Lin eroded (strict)": cn["strict_px"][k],
+         "Lin eroded (loose)": cn["loose_px"][k], "library: CellViT outlines": libo["area"],
+         "library: Lin nuclei": libn["area"]}
+q = lambda v: [round(float(t), 1) for t in np.percentile(v * um2, [10, 25, 50, 75, 90])]
+S["area_um2_quantiles_10_25_50_75_90"] = {kk: q(v) for kk, v in AREAS.items()}
+S["area_n"] = {kk: int(len(v)) for kk, v in AREAS.items()}
+
+# ---- hematoxylin AUC and Dice (sample tiles) ---------------------------------------------------------------------
+ct = np.load(f"{N}/out/compare_tiles.npz")
+json.dump(S, open(f"{N}/out/summary.json", "w"), indent=1)
+
+# ---- figure ------------------------------------------------------------------------------------------------------
+fig = plt.figure(figsize=(W2, 6.25))
+
+
+def clean(ax):
+    for s_ in ("top", "right"):
+        ax.spines[s_].set_visible(False)
+
+
+def overlay(ch, alpha=1.0):
+    img = np.full((256, 256, 3), 255, np.uint8)
+    for n in ("healthy", "cancer", "immune"):
+        img[ch[f"cell_type_{n}"]] = PC[n]
+    return img
+
+
+# a: example tiles
+cmap = np.array(__import__("PIL.Image", fromlist=["Image"]).open(f"{A}/lin/CRC33_01_lin_he_class.tiff"))
+cmp_tiles = ct["tile"].tolist()
+cov = dict(zip(cmp_tiles, ct["cov_new"]))
+med = float(np.median(ct["cov_new"]))
+pick = []
+for want in (3, 1, 7):   # TUM, NORM, STR
+    for t in cmp_tiles:
+        x0, y0 = map(int, t.split("_"))
+        if LB.lin_class_at(x0 + 128, y0 + 128, cmap) == want and cov[t] >= med and t not in pick:
+            pick.append(t)
+            break
+S["example_tiles"] = pick
+newtar = tarfile.open(f"{N}/data/new_exp_channels.tar")
+oldtar = tarfile.open(f"{N}/data/old_channels.tar")
+ero = np.unpackbits(ct["ero_strict"])[:len(cmp_tiles) * 65536].reshape(len(cmp_tiles), 256, 256).astype(bool)
+if True:
+    size, gap, x_in, y_in = 1.62, 0.07, 0.25, 0.22
+    cols = ["H&E", "current channels\n(CellViT objects, hfv typing)", "Lin nuclei (cell mask eroded 5 px)",
+            "new channels (Lin cells, CELESTA +\nFig. 3d typing, borrowed outlines)"]
+    letter(fig, 0.02, 0.02, "a")
+    for r, t in enumerate(pick):
+        x0, y0 = map(int, t.split("_"))
+        rgb = cv2.cvtColor(cv2.imread(f"{HE}/{t}.png", cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+        oc = {n: png(oldtar.extractfile(f"orion-crc33/exp_channels/{n}/{t}.png").read()) > 0 for n in NAMES}
+        nc = {n: png(newtar.extractfile(f"orion-crc33/exp_channels/{n}/{t}.png").read()) > 0 for n in NAMES}
+        s_ = ero[cmp_tiles.index(t)]
+        edge = (cv2.dilate(s_.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0) & ~s_
+        he_e = rgb.copy(); he_e[edge] = (0, 0, 0)
+        for j, img in enumerate([rgb, overlay(oc), he_e, overlay(nc)]):
+            ax = axes(fig, x_in + j * (size + gap), y_in + 0.17 + r * (size + gap), size, size)
+            ax.imshow(img, interpolation="nearest"); ax.set_xticks([]); ax.set_yticks([])
+            for s2 in ax.spines.values():
+                s2.set_linewidth(.4); s2.set_color(GREY)
+            if r == 0:
+                ax.set_title(cols[j], fontsize=FS_K, pad=2)
+            if j == 0:
+                ax.set_ylabel(["Lin TUM", "Lin NORM", "Lin STR"][r], fontsize=FS_K)
+    # legend for population colours
+    lx = x_in + 4 * (size + gap) + 0.02
+    for i, n in enumerate(("cancer", "healthy", "immune")):
+        ax = axes(fig, lx, y_in + 0.3 + i * 0.16, 0.1, 0.1)
+        ax.add_patch(plt.Rectangle((0, 0), 1, 1, color=np.array(PC[n]) / 255)); ax.axis("off")
+        fig.text((lx + 0.14) / W2, 1 - (y_in + 0.35 + i * 0.16) / 6.25, n, fontsize=FS_K, va="center")
+
+top2 = y_in + 0.17 + 3 * (size + gap) + 0.3
+# b: channel fractions
+letter(fig, 0.02, top2 - 0.12, "b")
+ax = axes(fig, 0.42, top2, 1.75, 1.2)
+xx = np.arange(len(NAMES))
+ax.bar(xx - 0.2, O.mean(0), 0.4, color=OLD_C, label="current")
+ax.bar(xx + 0.2, Nw.mean(0), 0.4, color=NEW_C, label="new")
+ax.set_xticks(xx, SHORT, rotation=45, ha="right"); ax.set_ylabel("mean area fraction of tile")
+ax.legend(loc="upper right"); clean(ax)
+# c: areas
+letter(fig, 2.42, top2 - 0.12, "c")
+ax = axes(fig, 3.55, top2, 1.25, 1.2)
+labs = list(AREAS)
+ax.boxplot([AREAS[kk] * um2 for kk in labs], vert=False, showfliers=False, widths=.6,
+           medianprops=dict(color=INK, lw=.8), boxprops=dict(lw=.5), whiskerprops=dict(lw=.5), capprops=dict(lw=.5))
+ax.set_yticks(range(1, len(labs) + 1), labs); ax.invert_yaxis(); ax.set_xlabel("area (µm²)"); clean(ax)
+# d: hematoxylin AUC
+letter(fig, 5.0, top2 - 0.12, "d")
+ax = axes(fig, 5.62, top2, 0.85, 1.2)
+dk = [("auc_old", "CellViT"), ("auc_linmask", "Lin cell\nmask"), ("auc_strict", "Lin eroded"), ("auc_new", "rendered")]
+ax.boxplot([ct[kk][~np.isnan(ct[kk])] for kk, _ in dk], showfliers=False, widths=.6,
+           medianprops=dict(color=INK, lw=.8), boxprops=dict(lw=.5), whiskerprops=dict(lw=.5), capprops=dict(lw=.5))
+ax.axhline(.5, color=GREY, lw=.5, ls=":")
+ax.set_xticks(range(1, len(dk) + 1), [d[1] for d in dk], rotation=45, ha="right")
+ax.set_ylabel("hematoxylin AUC, inside vs outside"); clean(ax)
+# e: confusion
+letter(fig, 6.55, top2 - 0.12, "e")
+ax = axes(fig, 6.75, top2, 0.95, 0.95)
+cm = np.array(L["old_vs_new"]["pop_confusion_rows_old_cols_new"], float)
+cmn = cm / np.maximum(cm.sum(1, keepdims=True), 1)
+ax.imshow(cmn, cmap="Greys", vmin=0, vmax=1)
+for i in range(3):
+    for j in range(3):
+        ax.text(j, i, f"{cmn[i, j]:.0%}", ha="center", va="center", fontsize=FS_K, color="white" if cmn[i, j] > .5 else INK)
+ax.set_xticks(range(3), LB.POP_NAMES, rotation=45, ha="right"); ax.set_yticks(range(3), LB.POP_NAMES)
+ax.set_xlabel("new"); ax.set_ylabel("current")
+json.dump(S, open(f"{N}/out/summary.json", "w"), indent=1)
+save(fig, f"{N}/out/fig_lintype_render.png")
+print(json.dumps({kk: S[kk] for kk in ("channels_keep", "area_um2_quantiles_10_25_50_75_90", "example_tiles")}, indent=1))
