@@ -170,7 +170,7 @@ hfv 的 cancer 物件有 64 % 在 NORM，只有 5 % 在 TUM（`data/extra.json`�
 **判讀：**
 - (c) 是 hfv 最大的問題：正常黏膜的上皮 84 % 被當成 cancer。
 - (b) 在 hfv 裡由 CellViT 決定：CellViT 說 connective 的（903／1,400），100 % 變 healthy；其他的大多變 cancer。
-- **(b) 在這張切片上不一定是錯的：**這些 TUM「判不出」細胞的 Pan-CK 中位數 234，和間質一樣（234）；Ki67+ 只有 0.13 %；面積 61.9 µm²，比 TUM 上皮（42.6）大。這和 CRC16 不同（CRC16 的這群細胞核和上皮一樣大，見 sim-exp-validation `celltype_check.md`）。在這裡它們比較像間質，rule (a) 把它們叫 cancer 可能是錯的。這要靠 CELESTA／Astir（§4）判斷。
+- **(b) 在這張切片上不一定是錯的：**這些 TUM「判不出」細胞的 Pan-CK 中位數 234，和間質一樣（234）；Ki67+ 只有 0.13 %；面積 61.9 µm²，比 TUM 上皮（42.6）大。這和 CRC16 不同（CRC16 的這群細胞核和上皮一樣大，見 sim-exp-validation `celltype_check.md`）。在這裡它們比較像間質，rule (a) 把它們叫 cancer 可能是錯的。CELESTA／Astir 的結果支持這一點（§4.2）。
 
 ### 3.4 hfv 的融合實際上怎麼決定類型
 
@@ -223,7 +223,79 @@ hfv 的 cancer 物件有 64 % 在 NORM，只有 5 % 在 TUM（`data/extra.json`�
 
 ## 4. CELESTA／Astir（CRC33_01）
 
-（待補：工作 43360813–43360817 執行中。）
+**設定：**
+- 和 sim-exp-validation celltype_pub（CRC16）完全相同：同樣的腳本、先驗（`celesta_prior.csv`、`astir_markers.yml`）、套件預設值、環境（唯讀使用 `celltype_pub_20261118/env_r`、`env_astir`）。腳本是 byte 複製（md5 相同），放在 Hyak `$W/pub/`。
+- 不同的只有三點：
+  - 輸入是 CRC33_01 的 Lin CSV（443,514 個細胞）；
+  - 輸出在本稽核的目錄；
+  - CELESTA 的 k-d 切塊深度用 2，切成 4 塊，每塊約 11 萬個細胞（CRC16 用 5，32 塊，每塊約 8.6 萬）。
+- 另外也跑整張切片不切塊的 CELESTA 當參考（`celesta33_whole`）。
+- `scripts/pub33.slurm`。耗時：CELESTA 準備 2.3 分鐘，每塊 7–11 分鐘；Astir 5 個起始各 6–8 分鐘，最後一段 3.8 分鐘（11 epochs 後收斂）。
+
+**比較方法：**`scripts/compare33.py`，類別對應和 celltype_pub_compare.py 相同：
+- Epithelial → 上皮；Endothelial、SMA+ stromal → 間質；任何免疫類 → 免疫；CELESTA 的 Unknown、Astir 的 Unknown 和 Other → 未知。
+- 上皮再經過組織步驟（NORM → healthy，其他 → cancer）；間質 → healthy；未知另外列出。
+- 本節的「Lin 閘門 + 組織步驟」就是 §3 的「舊規則 + 組織步驟」。
+- 只看訓練 tile 內的細胞。整張切片的數字也在 `data/compare33.json`，結論相同。
+
+**兩個方法的輸出（整張切片）：**
+
+| 方法 | 類別數 |
+|---|---|
+| CELESTA（切塊） | SMA+ stromal 114,033；Unknown 86,565；Epithelial 85,674；Endothelial 75,494；各種免疫 81,748 |
+| Astir | Unknown 161,191；Epithelial 144,078；Immune other 70,173；SMA+ stromal 43,949；CD8 T 15,173；Other 8,950。沒有分出 Endothelial、B、巨噬細胞、CD4 T、Treg |
+
+### 4.1 各組織的類型比例（cancer／immune／healthy／unknown，%）
+
+| 分型 | TUM（18,368） | NORM（248,029） | 全部（417,694） |
+|---|---|---|---|
+| Lin 閘門 + 組織步驟 | 56／24／20／0 | 0／34／66／0 | 4／26／69／0 |
+| rule (a) | 69／24／7／0 | 0／34／66／0 | 5／26／69／0 |
+| CELESTA | 39／16／20／26 | 0／24／57／19 | 3／19／60／18 |
+| Astir | 47／17／6／29 | 0／25／56／20 | 3／20／40／36 |
+
+### 4.2 rule (a) 改成 cancer 的那群細胞，CELESTA／Astir 怎麼判
+
+這群細胞是 TUM 裡 CD45−、Pan-CK−、E-cad−、SMA−、CD31− 的細胞，共 2,392 個（整張切片 2,683）。
+
+| 方法 | 上皮 | 間質 | 免疫 | 未知 |
+|---|---|---|---|---|
+| rule (a) | 100 %（全部改成 cancer） | 0 | 0 | 0 |
+| CELESTA | **0** | 40 %（Endothelial 25 %、SMA+ 16 %） | 0 | 60 % |
+| Astir | **0** | 6 %（SMA+） | 0.04 % | 94 %（Unknown 69 %、Other 25 %） |
+
+**這群細胞的描述量：**面積中位數 61.9 µm²，Pan-CK 中位數 234，Ki-67+ 0.13 %。對照 TUM 裡閘門判為上皮的細胞：42.6 µm²、764、19.7 %。
+
+### 4.3 其他對照
+
+**閘門判為上皮的細胞，CELESTA／Astir 也叫上皮的比例：**
+
+| 細胞群 | CELESTA | Astir |
+|---|---|---|
+| TUM（n = 10,356） | 64 %（未知 27 %，間質 9 %） | 79 %（未知 20 %） |
+| NORM（n = 133,770） | 50 %（間質 26 %，未知 24 %） | 90 % |
+
+**TUM 裡的一致程度（Cohen's kappa，括號為 95 % 區間，200 次 1024 px 方塊 bootstrap）：**
+
+| 比較 | 未知併入 healthy | 未知併入 cancer |
+|---|---|---|
+| 閘門 + 組織 vs CELESTA | 0.57（0.49–0.62） | 0.63（0.58–0.66） |
+| 閘門 + 組織 vs Astir | 0.70（0.63–0.75） | 0.59（0.53–0.62） |
+| rule (a) vs CELESTA | 0.38（0.30–0.43） | 0.64（0.58–0.67） |
+| rule (a) vs Astir | 0.48（0.40–0.54） | 0.77（0.75–0.79） |
+
+**和 hfv 一致的比例（有對到的細胞，未知算不一致）：**閘門 + 組織 0.48，rule (a) 0.48，CELESTA 0.42，Astir 0.23。
+
+圖：`figures/fig3_celesta_astir.png`。
+
+### 4.4 判讀
+
+- **CELESTA 和 Astir 都沒有把 rule (a) 改動的任何一個細胞叫成上皮。**它們把這些細胞判為間質或未知。
+- 這群細胞的描述量也比較像間質：Pan-CK 和間質一樣低，幾乎不增生，比腫瘤上皮大。
+- 所以**在 CRC33_01 上，發表的方法不支持 rule (a)**。rule (a) 是為 CRC16 設計的，那裡這群細胞的核和上皮一樣大（sim-exp-validation `celltype_check.md`）。這是切片之間的差異，不是同一規則在兩張切片上都對。
+- kappa 表看起來「rule (a) vs Astir，未知併入 cancer」最高（0.77）。但這是因為 Astir 把這群細胞叫未知，未知併入 cancer 時就自動和 rule (a) 一致。這只反映怎麼處理未知，不是支持 rule (a) 的證據。直接的證據是 §4.2：沒有任何一個被叫成上皮。
+- 兩個方法都比閘門保守：TUM 裡閘門判為上皮的細胞，有 20–27 % 被判為未知。所以直接用 CELESTA／Astir 取代閘門，會在每張切片留下 18–36 % 的未知細胞，還要再決定怎麼處理。
+- CRC16 的 CELESTA／Astir 結果（celltype_pub）還沒有拿到，兩張切片的比較留給 main。
 
 ## 5. 偏差與限制
 
@@ -250,14 +322,15 @@ hfv 的 cancer 物件有 64 % 在 NORM，只有 5 % 在 TUM（`data/extra.json`�
 | 1. 閘門 | Lin GMM 閘門，對不上發表比例時用分位數，讓陽性比例等於發表的 C33 比例；在 CRC33_01 + CRC33_02 合併上求 | Lin Methods「IFM computation」；sumAllsample | 已求好（§1.5） |
 | 2. 樹狀圖 | CD45+ → 免疫；否則 Pan-CK+ 或 E-cad+ → 上皮；否則 SMA+ 或 CD31+ → 間質；其他 → 判不出 | Lin Ext Data Fig. 1d | 上皮 36 %，免疫 26 %，間質 9 %，判不出 28 % |
 | 3. 組織步驟 | 上皮在 NORM → healthy；上皮在其他組織 → cancer | Lin Fig. 3d 用 H&E CNN 補判；`tcfix_rule.py` | cancer 從 42 %（hfv）降到約 4–5 % |
-| 4. 判不出的細胞 | 預設 healthy（Lin Fig. 3d：超過一半是間質、平滑肌、脂肪）。**TUM 裡的判不出細胞**是否改成 cancer（rule (a)），等 CELESTA／Astir 在這張切片的結果決定（§4） | Lin Fig. 3d、3f | 影響 2,392 個 TUM 細胞（cancer 4.2 % ↔ 4.8 %） |
+| 4. 判不出的細胞 | healthy，**包括 TUM 裡的**。CRC33_01 上不用 rule (a)，因為 CELESTA／Astir 沒有把其中任何一個叫成上皮（§4.2）。每張新切片都先用 CELESTA／Astir 檢查這群細胞，再決定要不要用 rule (a) | Lin Fig. 3d（超過一半是間質、平滑肌、脂肪）；§4 | 2,392 個 TUM 細胞維持 healthy（cancer 4.2 %，不是 4.8 %） |
 | 5. 增生 | Ki67 用 Lin 閘門（步驟 1）；不再用第 75 百分位 | 同步驟 1 | prolif 從 25 % 降到約 4 % |
 | 6. 死亡 | 維持 CellViT dead 類別（Lin 的面板沒有死亡標記，Lin 也用 H&E 補判螢光判不出的東西） | Lin Fig. 3b、3d | 不變（0.3 %） |
 | 7. 物件和標籤轉移 | **選項 A（建議）**：保留 CellViT 物件和 cell_masks 通道；每個物件取中心所在 Lin 細胞的標籤；中心在 Lin 背景的物件（10.4 %）不填類型。**選項 B**：改用 Lin 的分割 mask（細胞 mask，不是核），cell_masks 也一起換 | §2 | A：cell_masks 不變；B：要重建 cell_masks，而且模擬端輸出的遮罩要改成細胞輪廓 |
 
 **需要使用者決定：**
 - 選項 A 或 B。B 改變了模擬端要提供的遮罩定義，影響比較大。
-- TUM 判不出的細胞歸哪一類（等 §4）。
+- TUM 判不出的細胞：本提案在 CRC33_01 上歸 healthy（§4）。如果 main 的 CRC16 結果支持 rule (a)，就要決定「每張切片分開判斷」或「統一一條規則」。
+- 用 CELESTA／Astir 只當檢查（本提案），還是直接拿來分型（會留下 18–36 % 未知，要另外處理）。
 - 中心在 Lin 背景的物件，是不填類型，還是保留 CellViT 判斷。
 
 ### 6.3 成本（粗估）
@@ -302,6 +375,7 @@ hfv 的 cancer 物件有 64 % 在 NORM，只有 5 % 在 TUM（`data/extra.json`�
 | `scripts/audit.py`、`audit.slurm` | §2–§3 的所有數字 → `data/audit.json` |
 | `scripts/chancheck.py` | 訓練通道 vs 分型輸出 → `data/chancheck.json` |
 | `scripts/extra.py` | CellViT 類別 × 組織 → `data/extra.json` |
-| `scripts/pub33.slurm` | CELESTA／Astir（§4） |
+| `scripts/pub33.slurm` | CELESTA／Astir（§4）；腳本和先驗是 sim-exp-validation celltype_pub 的 byte 複製 |
+| `scripts/compare33.py`、`fig_pub33.py` | §4 的比較 → `data/compare33.json`；圖 3 |
 | `scripts/fig_audit.py`、`fig_overview.py`、`figstyle.py` | 圖 |
 | `data/*.json` | 小摘要；逐細胞資料只在 Hyak |
