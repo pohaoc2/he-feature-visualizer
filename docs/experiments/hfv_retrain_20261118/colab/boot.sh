@@ -96,12 +96,14 @@ for t in $TASKS; do
       # CellViT-256 (he-feature-visualizer stages/run_cellvit_local.py e88f450, unmodified) in the same environment
       # (the Hyak CellViT env freeze equals req.txt + torch / torchvision / xformers). cvgate = the 50-tile CRC34 gate of
       # crc16-20261024/cellvit (cellvit_gate.py compare: counts equal, centroids within 2 px); cv36 = all CRC36 H&E tiles.
-      # CellViT also imports scikit-image (watershed) and numba (tools.py), which req.txt lacks; versions compatible with
-      # the pinned numpy 2.0.2 (the Hyak CellViT env's own versions were not readable at build time); cvgate checks the result
-      $PY -c "import skimage, numba" 2>/dev/null || uv pip install -q --python $PY scikit-image==0.25.2 numba==0.61.2 numpy==2.0.2
+      # CellViT also imports scikit-image (watershed) and numba (tools.py), which req.txt lacks: the Hyak CellViT env's versions
+      # (scikit-image 0.26.0, numba 0.68.0, llvmlite 0.50.0; numpy stays 2.0.2). TF32 off for CellViT, the CRC16 rule
+      # (prereg_crc16.md revision 1: with TF32 the CRC34 gate had one extra background contour, without it 50/50 matched)
+      $PY -c "import skimage, numba, sys; sys.exit(not (skimage.__version__ == '0.26.0' and numba.__version__ == '0.68.0'))" 2>/dev/null || \
+        uv pip install -q --python $PY scikit-image==0.26.0 numba==0.68.0 llvmlite==0.50.0 numpy==2.0.2
       $PY -c "import skimage, numba, numpy; print('cellvit deps', skimage.__version__, numba.__version__, numpy.__version__)"
       K=$W/cellvit; if [ ! -d $K/CellViT ]; then mkdir -p $K; python3 $W/kit/s3io.py get $W/links.json cellvit_kit $W/dl/cv.tar && tar -xf $W/dl/cv.tar -C $K && rm $W/dl/cv.tar; fi
-      CV="$PY -u $K/hfv/stages/run_cellvit_local.py --checkpoint $K/ckpt/CellViT-256.pth --cellvit-repo $K/CellViT --no-skip-existing"
+      CV="env NVIDIA_TF32_OVERRIDE=0 $PY -u $K/hfv/stages/run_cellvit_local.py --checkpoint $K/ckpt/CellViT-256.pth --cellvit-repo $K/CellViT --no-skip-existing"
       if [ $t = cvgate ]; then
         PYTHONPATH=$K/CellViT $CV --zip $K/tiles/he_tiles.zip --out $R/cvgate; rc=$?
         $PY $K/cellvit_gate.py compare --ref $K/ref/ref --new $R/cvgate --out $R/cvgate.json; cat $R/cvgate.json; st "cvgate rc $rc"
