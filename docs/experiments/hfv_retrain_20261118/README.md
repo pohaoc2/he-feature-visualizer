@@ -145,6 +145,11 @@
     - 2026-11-19 第一版的速度數字（L4：30 步 25.38 張/分鐘，只有 8 張；20 步 113.24 張/分鐘，64 個檔案裡含 4 個 `cell_mask.png`）樣本太少，而且計法不同，不用來規劃。
   - 上傳失敗也算這個任務失敗。Colab 的 task 行會寫出 `upload ok/FAILED`，最後一行寫失敗的任務數。Hyak 上傳失敗時不寫 `sent_` 記號，重排時會重做。
   - multipart 的上傳槽只能用一次：第一次完成上傳後，upload id 就失效，再傳同一個槽會得到 404。所以每個 `gen_` 槽另外附一個可以重複使用的單一 PUT 連結，5 GB 以下的檔案走這條。每次重跑都產生新的 boot 和新的 TAG。
+  - Colab 下載（2026-11-19 起）：c36fig2 session 的準備花了 2,102 s、輸入下載又花了 2,578 s，原因是每個檔案依序用單一連線下載。改成：
+    - boot 一開始就同時下載所有檔案，pip 安裝和下載同時進行。
+    - 大於 200 MB 的檔案分成多段（每個檔案 8 段），用 Range 同時下載，每段可以接續，下載完依序接起來。
+    - 每個檔案下載完都要和 S3 物件比對大小和 ETag。ETag 是 presign 時用 head_object 讀的；分段上傳的物件，用可能的分段大小重算 ETag 來比對。
+    - 仍然只用 presigned 連結，不放任何帳號憑證或 HF token。
 - **Vanilla ControlNet 的 seed（偏離）**：`pixcell_offshelf_inference.py` 的起始雜訊用 `torch.randn_like` 產生，沒有設 seed，所以論文的 Vanilla 圖會受前面生成過的 tile 影響（上面寫的「seed 42」只對四個變體成立）。這次用 `eval/pxrun.py` 在每張 Vanilla tile 生成前設 `torch.manual_seed(42)`，讓結果可以重現；腳本的其他部分不動。
 - **論文 ΔLPIPS 的 tile 數不一致（只記錄）**：論文 `si_a1_a2/cache.json` 裡，Grouped 和 Concat 的敏感度各用了 500 張 tile，Per-channel 和 Grouped+bypass 只用 100 張。這次四個變體都用同一批 tile。
 
