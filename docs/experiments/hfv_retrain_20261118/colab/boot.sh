@@ -154,7 +154,13 @@ for t in $TASKS; do
         [ $rc = 0 ] && tar -cf $W/uni_crc36_$V.tar -C $W u36 && put uni_crc36_$V $W/uni_crc36_$V.tar
       fi ;;
     unicheck) (cd $P && $PY -u $W/kit/unicheck.py $P $D $R/unicheck.json); st "unicheck rc $?" ;;
-    cvgate34|cv34|uni34hub|feat34|masklat34)
+    cvgate34|cv34|cv34auto|uni34hub|feat34|masklat34)
+      # cv34auto = the README rule without a second session: cv34 runs only when cvgate34.json says PASS false (or is missing)
+      if [ $t = cv34auto ]; then
+        if $PY -c "import json,sys; sys.exit(0 if json.load(open('$R/cvgate34.json'))['PASS'] else 1)" 2>/dev/null; then
+          st "cvgate34 PASS: cv34 not needed"; continue; fi
+        st "cvgate34 not passed: running cv34"; t=cv34
+      fi
       # CRC34 (held out, patient 2) evaluation inputs rebuilt with the CRC36 pipeline (crc34_render_20261118).
       # cvgate34 = README criterion fixed before the run (cvgate34.py: 50 seed-42 eval tiles, TF32 off; count, centroid,
       # class, contour identical; byte-identical reported); cv34 only if cvgate34 fails; uni34hub = UNI-2h config.json

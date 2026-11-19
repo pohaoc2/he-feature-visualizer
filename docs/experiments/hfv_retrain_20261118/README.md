@@ -45,6 +45,17 @@
 - GPU 用 Colab 的 A100：probe 顯示 A100 比 L4 快 3.6–3.9 倍。
 - 每個 epoch 結束時存 checkpoint，每 2 個 epoch 上傳到 S3；中斷時從最近上傳的 checkpoint 接續。接續後各 epoch 的資料順序會和不中斷的情況不同。
 
+### 第五個比較對象：沒有 TME 的 Vanilla ControlNet（不需要訓練）
+
+- **論文怎麼定義**：論文的比較基準叫做「TME-free *Vanilla* ControlNet」（`_si.tex` 的 Table `si:archmetrics` 和 Fig. `si:variants`；`TERMINOLOGY.md` 規定只用這個名稱）。PixCell 程式裡是 `tools/ablation_a1_a2/build_cache.py` 的 `a2_off_shelf`：
+  - 模型：公開的 PixCell-256 主幹，加上公開的 PixCell-256 Cell-ControlNet（`pretrained_models/pixcell-256-controlnet`）。兩者都是現成權重，沒有用我們的資料微調過，也沒有 TME 編碼器。
+  - 條件：只有 cell_masks 通道（二值化後經 SD3.5 VAE 編碼成 latent）和該 tile 的 UNI-2h 向量。其他 9 個 TME 通道都不輸入。
+  - 生成設定：30 步、guidance 1.5、seed 42（`tools/baselines/pixcell_offshelf_inference.py`）。
+- **所以這次不訓練它，也沒有第五個訓練 cell。** 它沒有可訓練的部分，新資料只會改變它的輸入。評估時要用新的輸入重新生成一次：新的 cell_masks（Lin 分割 + loose nuclei 繪製）和新算的 UNI（ea5d5bd9 前處理）。它和四個變體用同一批 tile，指標也用同一套程式算。
+- **ΔLPIPS 的說法和程式不一致（只在這裡記錄，論文不改）**：論文正文說 ΔLPIPS 是「相對於沒有條件的基準」的改善（`_results.tex` 第 91 行、`_methods.tex` Architecture selection）。但 PixCell 的 `sensitivity_eval.py` 實際算的是：完整條件生成的圖，和把某一組 TME 通道歸零後生成的圖，兩張之間的 LPIPS。也就是各通道群組被拿掉時圖會改變多少，不是相對於 Vanilla ControlNet 的差距。這次重跑 Fig 2 時兩種都會算，分開報告：
+  1. 照程式的定義（群組歸零），和論文的數字可以直接比；
+  2. 照正文的說法：每張 tile 先算 LPIPS(Vanilla 生成圖, 真實 H&E)，再減去 LPIPS(該變體生成圖, 真實 H&E)。
+
 ### 15 條件通道群組消融（Concat）
 
 1. 開跑前先用 50 張 tile × 1 個條件實測速度，再把估計表換成實測數字。
