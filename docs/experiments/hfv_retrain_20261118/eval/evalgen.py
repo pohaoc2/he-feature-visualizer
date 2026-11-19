@@ -238,7 +238,8 @@ for task in A.tasks:
         for mode, extra in (("paired", []), ("unpaired", ["--style-mapping-json", R / args[2]])):
             rc |= run([PY, "-u", "tools/stage3/generate_ablation_subset_cache.py", "--config", CONCAT, "--checkpoint-dir",
                        step_dir("tr_concat"), "--data-root", R / root, "--tile-list", R / args[1], "--output-dir",
-                       G / f"{mode}_ablation" / "ablation_results", "--skip-existing"] + extra, S, log)
+                       G / f"{mode}_ablation" / "ablation_results"] + extra, S, log)
+            # no --skip-existing: the script accepts it only with --n-tiles (43393938/40 failed rc 2 on it)
     elif kind == "loo":
         ids = ids_of(args[1])
         V = view(root, args[1])
