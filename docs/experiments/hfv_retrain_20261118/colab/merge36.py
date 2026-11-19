@@ -3,7 +3,7 @@ C36 = .../c36) to the CRC33_01 data root D and write the combined index.
 
   python merge36.py D C36
 Files of C36/exp_channels/<ch>/, C36/features/, C36/vae_features/ move into the same folders of D (names are prefixed
-c36_, so nothing is overwritten; an existing name is a STOP). D/metadata/exp_index.hdf5 (the CRC33_01 index, 9,419 ids)
+c36_, so nothing is overwritten; an existing name is a STOP). D/metadata/exp_index.hdf5 (the CRC33_01 index, 9,418 ids: the A100 setup log prints exp_256 = 9418)
 is kept as exp_index_crc33.hdf5 and replaced by one key exp_256 = CRC33_01 ids + C36/c36_train_ids.txt, written as
 PixCell's _write_h5_index does (vlen str). Rerunning after a finished merge only checks the index.
 """
@@ -15,7 +15,11 @@ import h5py
 
 D, C = sys.argv[1:3]
 H, H33 = f"{D}/metadata/exp_index.hdf5", f"{D}/metadata/exp_index_crc33.hdf5"
-N33 = 9419
+N33 = 9418
+# the 10 active_channels of configs/config_controlnet_exp.py (exp_channels/ also holds two legacy folders, cell_types and
+# cell_states, with one entry each, which the loader does not read)
+CH = ["cell_masks", "cell_type_healthy", "cell_type_cancer", "cell_type_immune", "cell_state_prolif",
+      "cell_state_nonprolif", "cell_state_dead", "vasculature", "oxygen", "glucose"]
 
 
 def ids_of(path):
@@ -39,7 +43,7 @@ for sub in ("exp_channels", "features", "vae_features"):
                 sys.exit(f"STOP {dst}/{f} exists")
             os.rename(f"{root}/{f}", f"{dst}/{f}")
             moved += 1
-for ch in os.listdir(f"{D}/exp_channels"):
+for ch in CH:
     have = {os.path.splitext(f)[0] for f in os.listdir(f"{D}/exp_channels/{ch}")}
     miss = [t for t in i33 + i36 if t not in have]
     assert not miss, f"STOP channel {ch}: {len(miss)} ids without a file, e.g. {miss[:3]}"

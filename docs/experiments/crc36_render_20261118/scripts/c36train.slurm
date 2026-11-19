@@ -16,6 +16,8 @@ L=/gscratch/cheme/chiu/hfv_lintype_20261118
 PYG=/gscratch/cheme/chiu/cell-model-fit-20261021/envsmc/bin/python
 LINKS=$N/links_c36train.json
 S=$N/scripts
+# envsmc python has no CA bundle (first run 43370613: CERTIFICATE_VERIFY_FAILED on the S3 GET); use the system one
+export SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt
 echo "== start $(date -Is) $(hostname)"
 $PYG $S/combine.py $N $L
 mkdir -p $N/src
