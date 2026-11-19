@@ -98,7 +98,15 @@ def shadow(data_root, runs):
     for rel, run in HARD.items():
         if run in runs:
             link(S / rel, step_dir(run))
-    link(S / "checkpoints/debug/per_channel_95470_3/config.py", P / "configs/config_controlnet_exp_a1_per_channel.py")
+    # Per-channel: build_cache / sensitivity_eval read checkpoints/debug/per_channel_95470_3/config.py; tr_perch was
+    # trained with configs/config_controlnet_exp_a1_per_channel.py, so config.py links to it. mmcv Config.fromfile
+    # resolves _base_ ("./config_controlnet_exp.py" -> "./PixArt_xl2_internal.py") against the folder of the path it is
+    # given (abspath, symlinks not resolved), so every configs/*.py is linked next to config.py as well (2026-11-19:
+    # c36fig2 a1_per_channel failed with config_controlnet_exp.py missing in that folder).
+    pc = S / "checkpoints/debug/per_channel_95470_3"
+    for f in sorted((P / "configs").glob("*.py")):
+        link(pc / f.name, f)
+    link(pc / "config.py", P / "configs/config_controlnet_exp_a1_per_channel.py")
     return S
 
 
