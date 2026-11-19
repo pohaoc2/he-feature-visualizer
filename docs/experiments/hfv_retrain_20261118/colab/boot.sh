@@ -154,6 +154,27 @@ for t in $TASKS; do
         [ $rc = 0 ] && tar -cf $W/uni_crc36_$V.tar -C $W u36 && put uni_crc36_$V $W/uni_crc36_$V.tar
       fi ;;
     unicheck) (cd $P && $PY -u $W/kit/unicheck.py $P $D $R/unicheck.json); st "unicheck rc $?" ;;
+    train:*)
+      # train:RUN:CONFIG:MICRO_BS - one paper variant on CRC33_01 + CRC36 (train_wrap.py: effective batch 80, 20 epochs,
+      # epoch-end checkpoints, every 2nd epoch and the last uploaded in the background, resume from S3 on a new runtime)
+      IFS=: read -r _ RUN CFG MBS <<< "$t"
+      getf kit $W/kit.tar.gz && tar -xzf $W/kit.tar.gz -C $W/kit
+      if [ ! -f $W/MASKLAT_OK ]; then   # new CRC33_01 mask latents (masklat task of an earlier runtime, S3)
+        python3 $W/kit/s3io.py get $W/links.json masklat_crc33_01 $W/dl/ml33.tar && tar -xf $W/dl/ml33.tar -C $W && rm $W/dl/ml33.tar
+        n=$(ls $W/masklat | grep -c _mask_sd3_vae.npy); echo "mask latents $n"
+        [ $n = $(ls $D/exp_channels/cell_masks | wc -l) ] || { echo "STOP masklat_crc33_01 incomplete"; st STOP; break; }
+        mkdir -p $W/data/old33/vae_mask; mv $D/vae_features/*_mask_sd3_vae.npy $W/data/old33/vae_mask/
+        cp $W/masklat/*_mask_sd3_vae.npy $D/vae_features/ && touch $W/MASKLAT_OK; st "masklat installed"
+      fi
+      if [ ! -f $W/C36_OK ]; then   # CRC36 training tiles (crc36_render_20261118 assemble36.py) + combined index
+        python3 $W/kit/s3io.py get $W/links.json c36train $W/dl/c36train.tar && tar -xf $W/dl/c36train.tar -C $W/data && rm $W/dl/c36train.tar
+        $PY -u $W/kit/merge36.py $D $W/data/c36 && touch $W/C36_OK || { echo "STOP merge36"; st STOP; break; }
+        st "c36 merged"
+      fi
+      $PY -c "import h5py; h=h5py.File('$D/metadata/exp_index.hdf5'); print('index', {k: len(h[k]) for k in h})"
+      $PY -u $W/kit/train_wrap.py --pixcell $P --config configs/$CFG.py --data-root $D --work-dir $W/runs/$RUN \
+        --micro-bs $MBS --save-every-epoch --upload-every 2 --links $W/links.json --run-name $RUN --resume auto --fetch-resume
+      st "train $RUN rc $?" ;;
     *) echo "unknown task $t" ;;
   esac
 done

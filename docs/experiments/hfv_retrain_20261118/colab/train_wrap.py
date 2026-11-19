@@ -16,7 +16,17 @@
 3. Resume: --save-every-epoch saves a checkpoint at every epoch end (repo save_model_epochs = 1), so a dropped Colab
    session resumes at an epoch boundary with skip_step 0. --resume auto picks the newest
    <work_dir>/checkpoints/step_*/controlnet_epoch_*_step_*.pth and its tme_module.pth (optimizer + LR schedule kept,
-   reset_tme_optimizer = False on resume only).
+   reset_tme_optimizer = False on resume only). The repo reads the epoch from the file name minus one
+   (initialize_models._resume_from_checkpoint: start_epoch = E - 1), which is right for a mid-epoch save but would
+   repeat a whole epoch from an epoch-end save; so the resume path is an alias named epoch E + 1 (same step) in
+   <work_dir>/resume/, and training continues with epoch E + 1. (The data order of the epochs after a resume differs
+   from an uninterrupted run.)
+4. --upload-every K (with --links, --run-name): after each epoch-end save only the newest checkpoint stays on the Colab
+   disk; every K epochs and at the last epoch it is uploaded in a background thread (training goes on) to the presigned
+   slots ckpt_<run>_e<NN>_cn (multipart), _tme, then _meta (a small JSON with the file names, sent last, so a meta
+   object means a complete checkpoint). The next save waits for that upload before deleting the old directory.
+   --fetch-resume: with no local checkpoint, the newest uploaded one (GET links of the same names) is downloaded first,
+   so a new Colab runtime resumes where the last one stopped.
 The total step count is the repo's: len(dataloader) x num_epochs optimizer steps (len counts micro-batches, so it is
 divided by the accumulation count here to keep the same number of optimizer steps as bs 80).
 """
@@ -47,6 +57,7 @@ ap.add_argument("--num-workers", type=int, default=0)
 ap.add_argument("--upload-every", type=int, default=0)
 ap.add_argument("--links", default="")
 ap.add_argument("--run-name", default="")
+ap.add_argument("--fetch-resume", action="store_true")
 a = ap.parse_args()
 assert EFFECTIVE_BS % a.micro_bs == 0, "micro-batch must divide 80"
 accum = EFFECTIVE_BS // a.micro_bs
@@ -56,12 +67,46 @@ sys.path.insert(0, a.pixcell)
 os.makedirs(a.work_dir, exist_ok=True)
 
 resume_ckpt = None
+HERE = os.path.dirname(os.path.abspath(__file__))
+if a.fetch_resume and not glob.glob(f"{a.work_dir}/checkpoints/step_*/controlnet_epoch_*_step_*.pth"):
+    sys.path.insert(0, HERE)
+    import s3io  # noqa: E402
+    L = json.load(open(a.links))
+    for e in range(40, 0, -1):
+        k = f"ckpt_{a.run_name}_e{e:02d}"
+        if f"{k}_meta" not in L["get"]:
+            continue
+        try:
+            s3io._req(L["get"][f"{k}_meta"], headers={"Range": "bytes=0-0"}, tries=1)
+        except Exception:
+            continue
+        mp = f"{a.work_dir}/fetch_meta.json"
+        s3io.get(L, f"{k}_meta", mp)
+        meta = json.load(open(mp))
+        d = f"{a.work_dir}/checkpoints/{meta['step_dir']}"
+        os.makedirs(d, exist_ok=True)
+        s3io.get(L, f"{k}_cn", f"{d}/{meta['cn']}.part")
+        s3io.get(L, f"{k}_tme", f"{d}/tme_module.pth")
+        os.rename(f"{d}/{meta['cn']}.part", f"{d}/{meta['cn']}")
+        print(f"[train_wrap] fetched {k} -> {d}/{meta['cn']}", flush=True)
+        break
 if a.resume == "auto":
     c = sorted(glob.glob(f"{a.work_dir}/checkpoints/step_*/controlnet_epoch_*_step_*.pth"),
                key=lambda p: int(re.search(r"_step_(\d+)\.pth$", p).group(1)))
     resume_ckpt = c[-1] if c else None
 elif a.resume:
     resume_ckpt = a.resume
+resume_tme_dir = os.path.dirname(resume_ckpt) if resume_ckpt else None
+if resume_ckpt and a.save_every_epoch:
+    # epoch-end checkpoint: alias named epoch E + 1 so the repo starts at epoch E + 1 (see 3. above)
+    E, S = map(int, re.search(r"controlnet_epoch_(\d+)_step_(\d+)\.pth$", resume_ckpt).groups())
+    os.makedirs(f"{a.work_dir}/resume", exist_ok=True)
+    alias = f"{a.work_dir}/resume/controlnet_epoch_{E + 1}_step_{S}.pth"
+    if os.path.lexists(alias):
+        os.remove(alias)
+    os.symlink(os.path.abspath(resume_ckpt), alias)
+    print(f"[train_wrap] resume from epoch {E} end (step {S}) via {alias}", flush=True)
+    resume_ckpt = alias
 
 # child config: the variant config + data root / batch / accumulation / checkpoint cadence (written next to the run)
 child = os.path.join(a.work_dir, "config_wrap.py")
@@ -84,7 +129,7 @@ if a.save_every_epoch:
 if a.max_steps:
     lines += ["save_final_checkpoint = False", "save_model_steps = 10**9", "log_interval = 10"]
 if resume_ckpt:
-    lines += [f"resume_tme_checkpoint = {os.path.dirname(resume_ckpt)!r}", "reset_tme_optimizer = False"]
+    lines += [f"resume_tme_checkpoint = {resume_tme_dir!r}", "reset_tme_optimizer = False"]
 open(child, "w").write("\n".join(lines) + "\n")
 
 import torch  # noqa: E402
@@ -118,28 +163,48 @@ def setup_wrapped(config, accelerator, logger, args, train_dataloader, *rest):
 
 T.setup_training_state = setup_wrapped
 
+_up = {"thread": None, "failed": []}
 if a.upload_every:
-    # after every checkpoint save: keep only the newest checkpoint on the Colab disk; every --upload-every epochs and at
-    # the last epoch, send it to S3 (s3io.py; presigned slots ckpt_<run>_e<NN>_cn multipart + ckpt_<run>_e<NN>_tme)
+    # see 4. above
     import shutil
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import threading
+    sys.path.insert(0, HERE)
     import s3io  # noqa: E402
     _save = T.save_checkpoint_with_tme
     _links = json.load(open(a.links))
+
+    def _upload(k, d, cn):
+        try:
+            s3io.put(_links, f"{k}_cn", cn)
+            s3io.put(_links, f"{k}_tme", f"{d}/tme_module.pth")
+            mp = f"{d}/meta.json"
+            json.dump(dict(cn=os.path.basename(cn), step_dir=os.path.basename(d)), open(mp, "w"))
+            s3io.put(_links, f"{k}_meta", mp)
+            print(f"[train_wrap] uploaded {cn} as {k}", flush=True)
+        except Exception as e:
+            _up["failed"].append(k)
+            print(f"[train_wrap] UPLOAD_FAILED {k}: {e}", flush=True)
+
+    def _join():
+        if _up["thread"] is not None:
+            _up["thread"].join()
+            _up["thread"] = None
 
     def save_and_sync(accelerator, controlnet, tme_module, model_ema, optimizer, optimizer_tme, lr_scheduler,
                       lr_scheduler_tme, step, epoch, config, logger):
         _save(accelerator, controlnet, tme_module, model_ema, optimizer, optimizer_tme, lr_scheduler,
               lr_scheduler_tme, step, epoch, config, logger)
         d = os.path.join(config.work_dir, "checkpoints", f"step_{step:07d}")
+        _join()   # the previous upload reads the previous directory
         for old in glob.glob(os.path.join(config.work_dir, "checkpoints", "step_*")):
             if os.path.abspath(old) != os.path.abspath(d):
                 shutil.rmtree(old)
         if epoch % a.upload_every == 0 or epoch == config.num_epochs:
             cn = glob.glob(f"{d}/controlnet_epoch_*_step_*.pth")[0]
-            s3io.put(_links, f"ckpt_{a.run_name}_e{epoch:02d}_cn", cn)
-            s3io.put(_links, f"ckpt_{a.run_name}_e{epoch:02d}_tme", f"{d}/tme_module.pth")
-            logger.info(f"[train_wrap] uploaded {cn} as ckpt_{a.run_name}_e{epoch:02d}")
+            k = f"ckpt_{a.run_name}_e{epoch:02d}"
+            _up["thread"] = threading.Thread(target=_upload, args=(k, d, cn), daemon=False)
+            _up["thread"].start()
+            logger.info(f"[train_wrap] uploading {cn} as {k} in the background")
 
     T.save_checkpoint_with_tme = save_and_sync
 argv = ["stage2_train.py", child, "--work-dir", a.work_dir, "--seed", str(a.seed)]
@@ -148,6 +213,11 @@ if resume_ckpt:
 sys.argv = argv
 t0 = time.time()
 T.main()
+if _up["thread"] is not None:
+    _up["thread"].join()
+if _up["failed"]:
+    print(f"STOP uploads failed: {_up['failed']}", flush=True)
+    sys.exit(1)
 if a.probe_json:
     w = 10
     st = _t[w:]

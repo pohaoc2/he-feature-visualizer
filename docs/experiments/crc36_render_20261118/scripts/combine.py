@@ -79,7 +79,9 @@ R = dict(
                  rect=int(hold), rect_tum_share=round(share[hold], 4), slide_tum_share=round(slide_share, 4),
                  tum_share_by_rect={k: round(v, 4) for k, v in share.items()},
                  holdout_tiles=int(H.sum()), guard_tiles=int(guard.sum()), train_tiles=int(train01.sum()),
-                 holdout_tile_ids=[t for t, h in zip(keep, H) if h]),
+                 holdout_tile_ids=[t for t, h in zip(keep, H) if h],
+                 guard_tile_ids=[t for t, g in zip(keep, guard) if g],
+                 train_tile_ids=[t for t, k in zip(keep, train01) if k]),
     mean_frac=dict(
         current_crc33_01_old=old,
         crc33_01_new=dict(zip(NAMES, np.round(m33, 4).tolist())),
@@ -95,4 +97,4 @@ R = dict(
                                     f"{round(2360 * 80 / (n33 + n01_tr), 1)} epochs"))
 json.dump(R, open(f"{N}/out/combine.json", "w"), indent=1)
 print(json.dumps({k: v for k, v in R.items() if k != "holdout"}, indent=1))
-print(json.dumps({k: v for k, v in R["holdout"].items() if k != "holdout_tile_ids"}))
+print(json.dumps({k: v for k, v in R["holdout"].items() if not k.endswith("_tile_ids")}))

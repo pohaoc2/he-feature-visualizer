@@ -5,6 +5,9 @@ Writes OUT/boot_<TAG>.sh = LINKS (JSON) + TASKS + TAG + boot.sh, uploads it to t
 notebook runs. OUT stays outside git (mode 600); links expire after one day and are never committed.
 GET names: code, kit, req, the four pretrained tars, orion-crc33, newch33, cellvit_kit, he36, crc36ch.
 PUT slots: log_<TAG>, result_<TAG>, masklat_crc33_01, cellvit_crc36, feat_crc36, masklat_crc36 by default; --put adds more (multipart slots for files > 5 GB).
+An extra argument train:RUN adds, for every 2nd epoch and epoch 20, the checkpoint slots ckpt_RUN_eNN_cn (multipart,
+24 x 512 MB), _tme and _meta, and GET links of the same keys (train_wrap.py --fetch-resume); GET names c36train
+(inputs/c36train.tar) and masklat_crc33_01 are always included.
 """
 import json
 import os
@@ -53,6 +56,16 @@ def main():
          "crc36ch": get(P + "inputs/crc36_exp_channels_pass1.tar")}
     for d in ("pixcell-256", "pixcell-256-controlnet", "sd-3.5-vae", "uni-2h"):
         g[d] = get(UG + d + ".tar")
+    g["c36train"] = get(P + "inputs/c36train.tar")
+    g["masklat_crc33_01"] = get(P + "outputs/masklat_crc33_01")
+    runs = [a.split(":", 1)[1] for a in extra_put if a.startswith("train:")]
+    extra_put = [a for a in extra_put if not a.startswith("train:")]
+    for run in runs:
+        for e in sorted(set(range(2, 21, 2)) | {20}):
+            k = f"ckpt_{run}_e{e:02d}"
+            extra_put += [f"{k}_cn:multipart:24:512", f"{k}_tme", f"{k}_meta"]
+            for x in ("cn", "tme", "meta"):
+                g[f"{k}_{x}"] = get(P + f"outputs/{k}_{x}")
     pu = dict(put_slot(s) for s in [f"log_{tag}", f"result_{tag}", "masklat_crc33_01", "cellvit_crc36", "feat_crc36", "masklat_crc36"] + extra_put)
     import datetime
     links = {"expires": (datetime.datetime.utcnow() + datetime.timedelta(seconds=DAY)).isoformat() + "Z", "get": g, "put": pu}
