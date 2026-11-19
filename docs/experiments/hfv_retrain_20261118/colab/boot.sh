@@ -129,6 +129,28 @@ for t in $TASKS; do
          --vae-prefix mask_sd3_vae --skip-uni); rc=$?; st "masklat36 rc $rc"
       echo "mask latents $(ls $W/masklat36 | wc -l) of $(ls $W/c36/orion-crc36/exp_channels/cell_masks | wc -l)"
       [ $rc = 0 ] && tar -cf $W/masklat_crc36.tar -C $W masklat36 && put masklat_crc36 $W/masklat_crc36.tar ;;
+    uni36hub|uni36hubbic)
+      # CRC36 UNI-2h with the uni-2h config.json transform (feat_uni.py), when unicheck shows it reproduces the stored CRC33
+      V=hub; [ $t = uni36hubbic ] && V=hub_bicubic
+      if [ ! -f $W/he36/zip.ok ]; then mkdir -p $W/he36; python3 $W/kit/s3io.py get $W/links.json he36 $W/dl/he36.tar
+        tar -xf $W/dl/he36.tar -C $W/he36 && rm $W/dl/he36.tar && touch $W/he36/zip.ok; fi
+      $PY -u $W/kit/feat_uni.py $P $V --image-dir $W/he36/he --output-dir $W/u36/features --skip-vae; rc=$?; st "$t rc $rc"
+      echo "uni $(ls $W/u36/features | wc -l)"
+      [ $rc = 0 ] && tar -cf $W/uni_crc36_$V.tar -C $W u36 && put uni_crc36_$V $W/uni_crc36_$V.tar ;;
+    unifix)
+      # unicheck, then the CRC36 UNI features again with the variant closest to the stored CRC33 features (highest median
+      # cosine) when that variant is not the shipped one (feat36 already used the shipped one)
+      (cd $P && $PY -u $W/kit/unicheck.py $P $D $R/unicheck.json); st "unicheck rc $?"
+      B=$($PY -c "import json; r=json.load(open('$R/unicheck.json')); print(max(('A_shipped','B_hub_cfg','C_hub_bicubic'), key=lambda k: r[k]['median_cosine']))")
+      echo "unicheck best $B"
+      V=""; [ "$B" = B_hub_cfg ] && V=hub; [ "$B" = C_hub_bicubic ] && V=hub_bicubic
+      if [ -n "$V" ]; then
+        if [ ! -f $W/he36/zip.ok ]; then mkdir -p $W/he36; python3 $W/kit/s3io.py get $W/links.json he36 $W/dl/he36.tar
+          tar -xf $W/dl/he36.tar -C $W/he36 && rm $W/dl/he36.tar && touch $W/he36/zip.ok; fi
+        $PY -u $W/kit/feat_uni.py $P $V --image-dir $W/he36/he --output-dir $W/u36/features --skip-vae; rc=$?; st "uni36 $V rc $rc"
+        echo "uni $(ls $W/u36/features | wc -l)"
+        [ $rc = 0 ] && tar -cf $W/uni_crc36_$V.tar -C $W u36 && put uni_crc36_$V $W/uni_crc36_$V.tar
+      fi ;;
     unicheck) (cd $P && $PY -u $W/kit/unicheck.py $P $D $R/unicheck.json); st "unicheck rc $?" ;;
     *) echo "unknown task $t" ;;
   esac
