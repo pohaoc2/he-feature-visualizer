@@ -44,6 +44,13 @@
 - micro-batch 依 GPU 而定，不足的部分用梯度累積補到 80。EMA 只在每個 optimizer step 更新一次。
 - GPU 用 Colab 的 A100：probe 顯示 A100 比 L4 快 3.6–3.9 倍。
 - 每個 epoch 結束時存 checkpoint，每 2 個 epoch 上傳到 S3；中斷時從最近上傳的 checkpoint 接續。接續後各 epoch 的資料順序會和不中斷的情況不同。
+- **Concat 改在 Tillicum 的一張 H200 上訓練（協調者 2026-11-18 決定）**：sim2real 下游用的是 Concat，所以先跑它；兩次申請 Colab A100 都退回 L4，L4 那次在開始訓練前就關掉，沒有寫出任何 checkpoint（S3 上只有一個 503 bytes 的 `log_tr_concat`，沒有 `ckpt_tr_concat_*`）。其他三個變體仍在 Colab A100。
+  - 和 Colab 相同的部分：PixCell cb62fa7、同一份設定、同一個 `train_wrap.py`（有效批次 80 = micro 80 × 累積 1、20 epoch、seed 42）、checkpoint 上傳到同一組 S3 位置 `ckpt_tr_concat_eNN_*`（Colab 可以用 `--fetch-resume` 接續）、不設定 TF32（Colab 和 PixCell 都沒有設定，維持 torch 預設值）。GPU 型號寫在 log 裡。
+  - 預訓練權重：用 Tillicum 上原有的 `/gpfs/projects/bagherilab/pohaoc2/models/pretrained_models`，不複製。Colab 下載的四個權重 tar 中每個檔案（pixcell-256 3 個、pixcell-256-controlnet 1 個、sd-3.5-vae 2 個、uni-2h 2 個）在 Tillicum 上都有，而且 md5 相同。Tillicum 那邊另外多了 HF 快取、README 等檔案。PixCell 讀的模型資料夾只用逐檔 symlink 放進 Colab 那幾個檔案，多出來的檔案不會被讀到。
+  - Python 環境：用 Tillicum 上原有的 `envs/pixcell`，不重建。torch 2.10.0+cu128、torchvision 0.25.0、xformers 0.0.35、diffusers 0.36.0、transformers 5.0.0、timm 1.0.26、accelerate 1.13.0、mmcv 1.7.0、numpy 2.0.2 都和 Colab 的版本表相同。不同的只有工具類套件的小版本（tqdm、requests 等 31 個），另外少了 scikit-learn、joblib、threadpoolctl、cloudpickle、narwhals；PixCell 訓練程式沒有用到這幾個（`train_scripts.train_controlnet_exp` 在這個環境可以正常 import）。
+  - 資料：和 Colab 同一批 S3 輸入，用一天有效的 presigned 連結下載，Tillicum 上不放 AWS 長期金鑰。舊的 `datasets/orion-crc33`（舊的細胞分類）不使用。壓縮檔一邊下載一邊解開，不在硬碟上同時留壓縮檔和解開的檔案。舊的七個細胞通道、舊 index 和舊的 mask latent 在解壓時直接略過，和 Colab 先解開再移走的結果相同（`tillicum/setup.sh`、`tillicum/streamunzip.py`；每個檔案都檢查 CRC-32 和大小）。
+  - 存放位置：所有新檔案（資料、checkpoint、log、快取）都放在 `/gpfs/scrubbed/pohaoc2/hfv_retrain_20261118`，不佔 projects（實驗室共用，剩約 36 GB）或 home。scrubbed 的檔案一段時間沒被存取就會被自動清掉；checkpoint 另外會上傳到 S3，所以不會遺失。
+  - 下載和環境檢查都在登入節點做，GPU 作業時間內不下載、不安裝。時間上限 4 小時（每小時 $0.90，最多 $3.60；預算從 2026-10-09 起算，上限 $40，作業送出前已用 $17.95）。
 
 ### 第五個比較對象：沒有 TME 的 Vanilla ControlNet（不需要訓練）
 
