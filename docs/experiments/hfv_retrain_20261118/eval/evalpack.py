@@ -2,11 +2,14 @@
 stage-3 scripts read (exp_channels/<ch>/<id>.<ext>, features/<id>_uni.npy, vae_features/<id>_sd3_vae.npy and
 <id>_mask_sd3_vae.npy, he/<id>.png, metadata/exp_index.hdf5 with key exp_256), tile ids unchanged (one root per slide).
 
-  python evalpack.py ROOT TILES OUT_TAR CH_TAR MX_TAR UNI_TAR VAE_TAR MASK_TAR HE_TAR [STYLE_TILES]
+  python evalpack.py ROOT TILES OUT_TAR CH_TAR MX_TAR UNI_TAR VAE_TAR MASK_TAR HE_TAR [STYLE_TILES|-] [MASKONLY_TILES]
 ROOT   top folder name in the tar (orion-crc36ho, orion-crc34eval)
 TILES  text file, one tile id per line (the evaluation tiles of that slide)
 STYLE_TILES  optional text file: tiles used only as unpaired style sources (UNI + H&E required, the rest copied when
        present; not listed in the index). CRC33 paper mapping: 5 style tiles are ink tiles without new channels.
+MASKONLY_TILES optional text file: tiles that get only their cell_masks PNG (CRC34: run_evaluation.py lists the tiles of
+       the root from exp_channels/cell_masks and draws its 1,000 with random.sample, so the list must be the whole slide
+       while only the drawn tiles are read).
 CH_TAR the final cell-channel render (7 channels; dead labels from CellViT); MX_TAR vasculature / oxygen / glucose;
 UNI_TAR UNI-2h features with the uni-2h config.json transform (feat_uni.py hub); VAE_TAR SD3.5 VAE H&E latents (its
 vae_features/ only); MASK_TAR mask latents of the final cell_masks; HE_TAR the H&E tile PNGs (he/<id>.png).
@@ -29,9 +32,10 @@ CELL = ["cell_masks", "cell_type_healthy", "cell_type_cancer", "cell_type_immune
 MXCH = ["vasculature", "oxygen", "glucose"]
 ids = [t.strip() for t in open(TILES) if t.strip()]
 assert len(set(ids)) == len(ids), "duplicate tile ids"
-STY = {t.strip() for t in open(sys.argv[10]) if t.strip()} - set(ids) if len(sys.argv) > 10 else set()
-T = set(ids) | STY
-have, R = {}, dict(root=ROOT, tiles=len(ids), style_only_tiles=len(STY), sources={})
+STY = {t.strip() for t in open(sys.argv[10]) if t.strip()} - set(ids) if len(sys.argv) > 10 and sys.argv[10] != "-" else set()
+MO = {t.strip() for t in open(sys.argv[11]) if t.strip()} - set(ids) - STY if len(sys.argv) > 11 else set()
+T = set(ids) | STY | MO
+have, R = {}, dict(root=ROOT, tiles=len(ids), style_only_tiles=len(STY), mask_only_tiles=len(MO), sources={})
 out = tarfile.open(OUT + ".part", "w")
 
 
@@ -50,6 +54,8 @@ def copy(src, pick):
             if r is None or r[1] not in T:
                 continue
             kind, tile, name = r
+            if tile in MO and kind != "cell_masks":
+                continue
             if (kind, tile) in have:
                 stop(f"duplicate {kind} {tile} in {src}")
             m2 = tarfile.TarInfo(f"{ROOT}/{name}")
@@ -57,7 +63,7 @@ def copy(src, pick):
             out.addfile(m2, tf.extractfile(m))
             have[(kind, tile)] = name
             n += 1
-    R["sources"][os.path.basename(src)] = n
+    R["sources"][os.path.basename(src)] = R["sources"].get(os.path.basename(src), 0) + n
 
 
 def ch_pick(chs):
@@ -95,6 +101,7 @@ copy(HE, he_pick)
 kinds = CELL + MXCH + ["uni", "vae", "vae_mask", "he"]
 miss = {k: sum((k, t) not in have for t in ids) for k in kinds}
 miss.update({f"style_{k}": sum((k, t) not in have for t in STY) for k in ("uni", "he")})
+miss["maskonly_cell_masks"] = sum(("cell_masks", t) not in have for t in MO)
 if any(miss.values()):
     stop(f"tiles without a member: {miss}")
 b = io.BytesIO()
