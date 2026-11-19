@@ -7,6 +7,8 @@
 LINKS.json is written on Hyak by presign.py and fetched once from a presigned GET link pasted into the notebook; it is
 never committed. A "put" slot is {"single": url} (file < 5 GB) or {"multipart": {"part_bytes": n, "parts": [url, ...],
 "complete": url}}; multipart parts are sent in order and completed with the returned ETags.
+PUTs send an empty Content-Type: urllib otherwise adds application/x-www-form-urlencoded, which breaks a link whose
+signature covers Content-Type (SigV2 links of the first L4 boot; presign.py now signs SigV4).
 """
 import json
 import os
@@ -58,7 +60,7 @@ def put(links, slot, path):
     if "single" in s:
         assert n < 5 * 10**9, "single PUT limited to 5 GB"
         with open(path, "rb") as f:
-            _req(s["single"], "PUT", data=f.read(), headers={"Content-Length": str(n)})
+            _req(s["single"], "PUT", data=f.read(), headers={"Content-Length": str(n), "Content-Type": ""})
     else:
         m = s["multipart"]
         ps = int(m["part_bytes"])
@@ -68,7 +70,7 @@ def put(links, slot, path):
         with open(path, "rb") as f:
             for i in range(need):
                 b = f.read(ps)
-                r = _req(m["parts"][i], "PUT", data=b, headers={"Content-Length": str(len(b))})
+                r = _req(m["parts"][i], "PUT", data=b, headers={"Content-Length": str(len(b)), "Content-Type": ""})
                 etags.append(r.headers["ETag"])
                 print(f"part {i + 1}/{need}", flush=True)
         body = "<CompleteMultipartUpload>" + "".join(

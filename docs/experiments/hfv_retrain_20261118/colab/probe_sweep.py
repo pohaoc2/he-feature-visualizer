@@ -5,6 +5,8 @@ For each config, the micro-batch is the largest divisor of 80 that fits (tried 8
 CUDA out-of-memory run moves to the next one), with gradient accumulation making up 80 (train_wrap.py). Writes
 OUT_DIR/probe_<TAG>.json: per config the GPU, micro-batch, accumulation, samples/s over steps 11-50, peak memory, and the
 micro-batches that ran out of memory.
+First, outputs of earlier tasks in this runtime that did not reach S3 (no <file>.sent marker; the first L4 boot's PUTs
+failed on a link-signature mismatch, fixed in s3io.py, which this task re-fetches) are sent again.
 """
 import json
 import os
@@ -15,6 +17,19 @@ PIX, DATA, OUT, TAG = sys.argv[1:5]
 CONFIGS = sys.argv[5:]
 HERE = os.path.dirname(os.path.abspath(__file__))
 STEPS = 50
+sys.path.insert(0, HERE)
+import s3io  # noqa: E402
+W = "/content/hfv"
+if os.path.exists(f"{W}/links.json"):
+    L = json.load(open(f"{W}/links.json"))
+    for slot in ("masklat_crc33_01", "cellvit_crc36", "feat_crc36"):
+        f = f"{W}/{slot}.tar"
+        if os.path.exists(f) and not os.path.exists(f + ".sent") and slot in L["put"]:
+            try:
+                s3io.put(L, slot, f)
+                open(f + ".sent", "w").close()
+            except Exception as e:
+                print(f"resend {slot} failed: {e}", flush=True)
 res = {}
 for cfg in CONFIGS:
     name = os.path.basename(cfg).replace(".py", "")

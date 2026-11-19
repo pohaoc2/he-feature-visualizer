@@ -11,6 +11,8 @@
 #   masklat : SD3.5 VAE mask latents of the new cell_masks (stage1_extract_features.py --vae-prefix mask_sd3_vae
 #             --skip-uni, unmodified), returned as masklat_crc33_01.tar, then installed into vae_features/
 #   probe   : probe_sweep.py on the four paper variant configs (Concat, Grouped, Grouped + bypass, Per-channel)
+#   cvgate  : CellViT-256 card gate (50 CRC34 tiles vs the reference JSONs)   cv36 : CellViT on the CRC36 H&E tiles
+#   feat36  : UNI-2h + SD3.5 VAE features of the CRC36 H&E tiles
 # Results (logs, json) return as result_<TAG>.tar.gz; the log is pushed every 2 min to log_<TAG>.
 set -u
 W=/content/hfv; mkdir -p $W; LOG=$W/colab_$TAG.log
@@ -18,7 +20,7 @@ exec > >(tee -a $LOG) 2>&1
 T0=$(date +%s)
 printf '%s' "$LINKS" > $W/links.json; chmod 600 $W/links.json
 PY=$W/env/bin/python
-put() { python3 $W/kit/s3io.py put $W/links.json "$1" "$2"; }
+put() { python3 $W/kit/s3io.py put $W/links.json "$1" "$2" && touch "$2.sent"; }
 st() { echo "### $(( $(date +%s) - T0 )) s  $*"; python3 $W/kit/s3io.py put $W/links.json log_$TAG $LOG >/dev/null 2>&1 || true; }
 ( while sleep 120; do echo "gpu $(nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader 2>&1)" >> $LOG
     python3 $W/kit/s3io.py put $W/links.json log_$TAG $LOG >/dev/null 2>&1; done ) & LOGPID=$!
@@ -84,9 +86,35 @@ for t in $TASKS; do
         else echo "STOP: masklat incomplete"; fi
       fi ;;
     probe)
+      getf kit $W/kit.tar.gz && tar -xzf $W/kit.tar.gz -C $W/kit   # re-fetch: picks up wrapper fixes made after boot
       (cd $P && $PY -u $W/kit/probe_sweep.py $P $D $R $TAG configs/config_controlnet_exp_a1_concat.py \
          configs/config_controlnet_exp.py configs/config_controlnet_exp_a2_bypass.py configs/config_controlnet_exp_a1_per_channel.py)
       st "probe rc $?" ;;
+    cvgate|cv36)
+      # CellViT-256 (he-feature-visualizer stages/run_cellvit_local.py e88f450, unmodified) in the same environment
+      # (the Hyak CellViT env freeze equals req.txt + torch / torchvision / xformers). cvgate = the 50-tile CRC34 gate of
+      # crc16-20261024/cellvit (cellvit_gate.py compare: counts equal, centroids within 2 px); cv36 = all CRC36 H&E tiles.
+      K=$W/cellvit; if [ ! -d $K/CellViT ]; then mkdir -p $K; python3 $W/kit/s3io.py get $W/links.json cellvit_kit $W/dl/cv.tar && tar -xf $W/dl/cv.tar -C $K && rm $W/dl/cv.tar; fi
+      CV="$PY -u $K/hfv/stages/run_cellvit_local.py --checkpoint $K/ckpt/CellViT-256.pth --cellvit-repo $K/CellViT --no-skip-existing"
+      if [ $t = cvgate ]; then
+        PYTHONPATH=$K/CellViT $CV --zip $K/tiles/he_tiles.zip --out $R/cvgate; rc=$?
+        $PY $K/cellvit_gate.py compare --ref $K/ref/ref --new $R/cvgate --out $R/cvgate.json; cat $R/cvgate.json; st "cvgate rc $rc"
+      else
+        if [ ! -f $W/he36/zip.ok ]; then mkdir -p $W/he36; python3 $W/kit/s3io.py get $W/links.json he36 $W/dl/he36.tar
+          tar -xf $W/dl/he36.tar -C $W/he36 && rm $W/dl/he36.tar && (cd $W/he36 && zip -q -0 -r he36.zip he) && touch $W/he36/zip.ok; fi
+        PYTHONPATH=$K/CellViT $CV --zip $W/he36/he36.zip --out $W/cv36 --batch-size 32; rc=$?; st "cv36 rc $rc"
+        echo "cellvit json $(find $W/cv36 -name '*.json' | wc -l) of $(ls $W/he36/he | wc -l) tiles"
+        [ $rc = 0 ] && tar -cf $W/cellvit_crc36.tar -C $W cv36 && put cellvit_crc36 $W/cellvit_crc36.tar
+      fi ;;
+    feat36)
+      # UNI-2h (pooled 1536) and SD3.5 VAE latents of the CRC36 H&E tiles, PixCell stage1_extract_features.py unmodified,
+      # two passes into features/ and vae_features/ as the training loader expects
+      if [ ! -f $W/he36/zip.ok ]; then mkdir -p $W/he36; python3 $W/kit/s3io.py get $W/links.json he36 $W/dl/he36.tar
+        tar -xf $W/dl/he36.tar -C $W/he36 && rm $W/dl/he36.tar && (cd $W/he36 && zip -q -0 -r he36.zip he) && touch $W/he36/zip.ok; fi
+      (cd $P && $PY -u stage1_extract_features.py --image-dir $W/he36/he --output-dir $W/f36/features --skip-vae) ; r1=$?
+      (cd $P && $PY -u stage1_extract_features.py --image-dir $W/he36/he --output-dir $W/f36/vae_features --skip-uni) ; r2=$?
+      st "feat36 rc $r1 $r2"; echo "uni $(ls $W/f36/features | wc -l) vae $(ls $W/f36/vae_features | wc -l)"
+      [ $r1 = 0 ] && [ $r2 = 0 ] && tar -cf $W/feat_crc36.tar -C $W f36 && put feat_crc36 $W/feat_crc36.tar ;;
     *) echo "unknown task $t" ;;
   esac
 done

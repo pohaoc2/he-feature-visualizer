@@ -43,6 +43,9 @@ ap.add_argument("--save-every-epoch", action="store_true")
 ap.add_argument("--seed", type=int, default=42)
 ap.add_argument("--num-epochs", type=int, default=0)
 ap.add_argument("--num-workers", type=int, default=0)
+ap.add_argument("--upload-every", type=int, default=0)
+ap.add_argument("--links", default="")
+ap.add_argument("--run-name", default="")
 a = ap.parse_args()
 assert EFFECTIVE_BS % a.micro_bs == 0, "micro-batch must divide 80"
 accum = EFFECTIVE_BS // a.micro_bs
@@ -76,7 +79,7 @@ if a.num_epochs:
 if a.num_workers:
     lines.append(f"num_workers = {a.num_workers}")
 if a.save_every_epoch:
-    lines.append("save_model_epochs = 1")
+    lines += ["save_model_epochs = 1", "save_model_steps = 10**9"]   # epoch boundaries only (resume with skip_step 0)
 if a.max_steps:
     lines += ["save_final_checkpoint = False", "save_model_steps = 10**9", "log_interval = 10"]
 if resume_ckpt:
@@ -113,6 +116,31 @@ def setup_wrapped(config, accelerator, logger, args, train_dataloader, *rest):
 
 
 T.setup_training_state = setup_wrapped
+
+if a.upload_every:
+    # after every checkpoint save: keep only the newest checkpoint on the Colab disk; every --upload-every epochs and at
+    # the last epoch, send it to S3 (s3io.py; presigned slots ckpt_<run>_e<NN>_cn multipart + ckpt_<run>_e<NN>_tme)
+    import shutil
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import s3io  # noqa: E402
+    _save = T.save_checkpoint_with_tme
+    _links = json.load(open(a.links))
+
+    def save_and_sync(accelerator, controlnet, tme_module, model_ema, optimizer, optimizer_tme, lr_scheduler,
+                      lr_scheduler_tme, step, epoch, config, logger):
+        _save(accelerator, controlnet, tme_module, model_ema, optimizer, optimizer_tme, lr_scheduler,
+              lr_scheduler_tme, step, epoch, config, logger)
+        d = os.path.join(config.work_dir, "checkpoints", f"step_{step:07d}")
+        for old in glob.glob(os.path.join(config.work_dir, "checkpoints", "step_*")):
+            if os.path.abspath(old) != os.path.abspath(d):
+                shutil.rmtree(old)
+        if epoch % a.upload_every == 0 or epoch == config.num_epochs:
+            cn = glob.glob(f"{d}/controlnet_epoch_*_step_*.pth")[0]
+            s3io.put(_links, f"ckpt_{a.run_name}_e{epoch:02d}_cn", cn)
+            s3io.put(_links, f"ckpt_{a.run_name}_e{epoch:02d}_tme", f"{d}/tme_module.pth")
+            logger.info(f"[train_wrap] uploaded {cn} as ckpt_{a.run_name}_e{epoch:02d}")
+
+    T.save_checkpoint_with_tme = save_and_sync
 argv = ["stage2_train.py", child, "--work-dir", a.work_dir, "--seed", str(a.seed)]
 if resume_ckpt:
     argv += ["--resume-from", resume_ckpt]
