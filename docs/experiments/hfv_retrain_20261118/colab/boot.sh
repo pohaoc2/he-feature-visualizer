@@ -157,7 +157,23 @@ for t in $TASKS; do
     train:*)
       # train:RUN:CONFIG:MICRO_BS - one paper variant on CRC33_01 + CRC36 (train_wrap.py: effective batch 80, 20 epochs,
       # epoch-end checkpoints, every 2nd epoch and the last uploaded in the background, resume from S3 on a new runtime)
-      IFS=: read -r _ RUN CFG MBS <<< "$t"
+      IFS=: read -r _ RUN CFG MBS ALLOW <<< "$t"
+      # the card first: Colab can fall back to a 40 GB A100 or an L4 without notice. MICRO_BS auto = from the probes
+      # (effective batch stays 80): >= 70 GB measured micro 80 for all four (A100-SXM4-80GB, peak 39-80 GB);
+      # 35-70 GB not measured, from the measured peaks (peak grows about linearly with micro): Concat 40, others 20;
+      # an L4 / T4 stops here unless the fifth field is allowl4 (L4 measured: Concat 16, others 5)
+      G=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits | head -1); GM=${G##*, }
+      echo "train GPU: $G MiB"
+      case "$G" in *L4*|*T4*|*V100*|*P100*)
+        echo "WARNING: $RUN is on ${G%%,*}, not an A100. Training does not start (about 3.6-3.9x slower than A100;"
+        echo "WARNING: rerun with the fifth TASKS field allowl4 only after the coordinator checked)"
+        [ "${ALLOW:-}" = allowl4 ] || { st "STOP $RUN not on A100: ${G%%,*}"; continue; } ;; esac
+      if [ "$MBS" = auto ]; then
+        if [ "$GM" -ge 70000 ]; then MBS=80
+        elif [ "$GM" -ge 35000 ]; then MBS=20; [ "$CFG" = config_controlnet_exp_a1_concat ] && MBS=40
+        else MBS=5; [ "$CFG" = config_controlnet_exp_a1_concat ] && MBS=16; fi
+      fi
+      echo "train $RUN: config $CFG micro-batch $MBS x accumulation $((80 / MBS)) = 80"; st "train $RUN start mbs $MBS"
       getf kit $W/kit.tar.gz && tar -xzf $W/kit.tar.gz -C $W/kit
       if [ ! -f $W/MASKLAT_OK ]; then   # new CRC33_01 mask latents (masklat task of an earlier runtime, S3)
         python3 $W/kit/s3io.py get $W/links.json masklat_crc33_01 $W/dl/ml33.tar && tar -xf $W/dl/ml33.tar -C $W && rm $W/dl/ml33.tar
