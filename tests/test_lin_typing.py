@@ -86,6 +86,20 @@ def test_touching_cells_bracket_the_nucleus():
     assert set(nuclei.touching_labels(lab).tolist()) == {1, 2}
 
 
+def test_gap_separated_cells_as_in_lin_mask():
+    seg = pytest.importorskip("skimage.segmentation")
+    n1, n2 = _disk_at((64, 80), 32, 30, 7), _disk_at((64, 80), 32, 47, 7)
+    lab = seg.expand_labels(n1.astype(np.int32) + 2 * n2.astype(np.int32), distance=5)
+    gap = (lab == 1) & np.roll(lab == 2, -1, axis=1)          # cut a one-pixel background line at the contact
+    lab[gap] = 0
+    assert nuclei.gap_lines(lab).sum() >= gap.sum()
+    strict, loose = nuclei.erode_labels(lab)
+    for k, n in ((1, n1), (2, n2)):
+        assert not ((strict == k) & ~n).any() and (strict == k).sum() < n.sum()
+        assert not (n & ~(loose == k)).any()
+    assert set(nuclei.touching_labels(lab).tolist()) == {1, 2}
+
+
 def test_stamp_keeps_largest_part_and_rejects_big_objects():
     m = np.zeros((60, 60), bool)
     m[10:20, 10:30] = True

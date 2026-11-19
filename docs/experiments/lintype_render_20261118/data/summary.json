@@ -1,0 +1,961 @@
+{
+ "labels": {
+  "n_cells": 443514,
+  "n_tiles": 10379,
+  "n_ink_tiles": 961,
+  "n_keep_tiles": 9418,
+  "cells_in_keep_tiles": 398137,
+  "cells_in_ink_tiles": 19557,
+  "ki67_gate": 331.49426945965996,
+  "celesta_nocall": 0,
+  "dead": {
+   "cellvit_dead": 719,
+   "cellvit_dead_on_background": 87,
+   "lin_cells_dead": 627
+  },
+  "pop": {
+   "all": {
+    "healthy": 343115,
+    "cancer": 16903,
+    "immune": 83496
+   },
+   "keep": {
+    "healthy": 307278,
+    "cancer": 12841,
+    "immune": 78018
+   }
+  },
+  "pop_frac": {
+   "all": {
+    "healthy": 0.7736,
+    "cancer": 0.0381,
+    "immune": 0.1883
+   },
+   "keep": {
+    "healthy": 0.7718,
+    "cancer": 0.0323,
+    "immune": 0.196
+   }
+  },
+  "state_frac": {
+   "all": {
+    "prolif": 0.0381,
+    "nonprolif": 0.9605,
+    "dead": 0.0014
+   },
+   "keep": {
+    "prolif": 0.042,
+    "nonprolif": 0.9567,
+    "dead": 0.0013
+   }
+  },
+  "source": {
+   "keep": {
+    "immune": {
+     "healthy": 0,
+     "cancer": 0,
+     "immune": 77418
+    },
+    "stromal": {
+     "healthy": 171492,
+     "cancer": 0,
+     "immune": 0
+    },
+    "epithelial": {
+     "healthy": 71063,
+     "cancer": 10582,
+     "immune": 0
+    },
+    "unknown_fill": {
+     "healthy": 64723,
+     "cancer": 2259,
+     "immune": 600
+    },
+    "nocall_fill": {
+     "healthy": 0,
+     "cancer": 0,
+     "immune": 0
+    }
+   }
+  },
+  "fill_by_lin_class": {
+   "keep": {
+    "BACK": 377,
+    "NORM": 47743,
+    "DEB": 8138,
+    "TUM": 2259,
+    "ADI": 148,
+    "MUC": 214,
+    "MUS": 3231,
+    "STR": 4872,
+    "LYM": 600
+   }
+  },
+  "fill_low_classes_keep": 8729,
+  "cells_by_lin_class_keep": {
+   "BACK": {
+    "healthy": 752,
+    "cancer": 1820,
+    "immune": 338
+   },
+   "NORM": {
+    "healthy": 187903,
+    "cancer": 0,
+    "immune": 58822
+   },
+   "DEB": {
+    "healthy": 47977,
+    "cancer": 825,
+    "immune": 2839
+   },
+   "TUM": {
+    "healthy": 3207,
+    "cancer": 9357,
+    "immune": 2673
+   },
+   "ADI": {
+    "healthy": 517,
+    "cancer": 75,
+    "immune": 35
+   },
+   "MUC": {
+    "healthy": 1127,
+    "cancer": 104,
+    "immune": 65
+   },
+   "MUS": {
+    "healthy": 28521,
+    "cancer": 74,
+    "immune": 998
+   },
+   "STR": {
+    "healthy": 36057,
+    "cancer": 145,
+    "immune": 2285
+   },
+   "LYM": {
+    "healthy": 1217,
+    "cancer": 441,
+    "immune": 9963
+   }
+  },
+  "old_vs_new": {
+   "old_objects_keep": 246754,
+   "old_pop_frac_keep": {
+    "healthy": 0.4369,
+    "cancer": 0.4296,
+    "immune": 0.1335
+   },
+   "old_state_frac_keep": {
+    "prolif": 0.2643,
+    "nonprolif": 0.7334,
+    "dead": 0.0023
+   },
+   "matched_objects": 225199,
+   "unmatched_objects_on_background": 21555,
+   "pop_confusion_rows_old_cols_new": [
+    [
+     84863,
+     772,
+     13401
+    ],
+    [
+     79218,
+     4148,
+     11861
+    ],
+    [
+     10552,
+     151,
+     20233
+    ]
+   ],
+   "state_confusion_rows_old_cols_new": [
+    [
+     5908,
+     55504,
+     7
+    ],
+    [
+     3,
+     163241,
+     21
+    ],
+    [
+     0,
+     0,
+     515
+    ]
+   ],
+   "pop_agreement": 0.4851,
+   "state_agreement": 0.7534,
+   "norm_epithelial_cells_keep": 71063
+  }
+ },
+ "nuclei_render": {
+  "mode": "full",
+  "sev_src": "/gscratch/cheme/chiu/hfv_lintype_20261118/sev/src",
+  "nucleus_mode": "loose",
+  "n_render_tiles": 9418,
+  "n_compare_tiles": 445,
+  "nuclei_keep": {
+   "n": 398137,
+   "cell_mask_area_matches_csv": 1.0,
+   "touching_frac": 0.9028,
+   "strict_empty": 10255,
+   "loose_empty": 0,
+   "target_from_loose": 10255,
+   "target_floor": 0,
+   "q_um2_cell": [
+    24.6,
+    33.8,
+    45.3,
+    59.4,
+    75.6
+   ],
+   "q_um2_strict": [
+    2.1,
+    6.2,
+    12.6,
+    20.6,
+    30.5
+   ],
+   "q_um2_loose": [
+    13.6,
+    18.6,
+    26.4,
+    35.8,
+    46.7
+   ],
+   "q_um2_strict_isolated": [
+    11.6,
+    15.0,
+    21.0,
+    31.3,
+    43.8
+   ],
+   "q_um2_strict_touching": [
+    1.9,
+    5.6,
+    11.5,
+    19.3,
+    28.6
+   ],
+   "q_um2_loose_touching": [
+    14.0,
+    19.2,
+    26.8,
+    36.1,
+    46.9
+   ]
+  },
+  "library": {
+   "path": "/gscratch/cheme/chiu/hfv_lintype_20261118/out/nucleus_shapes_lin_crc33_01.npz",
+   "tiles": 400,
+   "candidates": 16775,
+   "empty": 0,
+   "too_big": 88,
+   "kept": 16687,
+   "per_type": {
+    "cancer": 693,
+    "healthy": 12671,
+    "immune": 3323
+   },
+   "q_px_area": {
+    "cancer": [
+     148.2,
+     200.0,
+     277.0,
+     370.0,
+     478.8
+    ],
+    "healthy": [
+     127.0,
+     171.0,
+     244.0,
+     337.0,
+     442.0
+    ],
+    "immune": [
+     145.0,
+     193.0,
+     259.0,
+     326.0,
+     400.0
+    ]
+   }
+  },
+  "render": {
+   "tiles": 9418,
+   "mean_frac": {
+    "cell_masks": 0.16760000586509705,
+    "cell_type_healthy": 0.12919999659061432,
+    "cell_type_cancer": 0.005799999926239252,
+    "cell_type_immune": 0.032600000500679016,
+    "cell_state_prolif": 0.007799999788403511,
+    "cell_state_nonprolif": 0.15960000455379486,
+    "cell_state_dead": 0.00019999999494757503
+   },
+   "instances_per_tile_median": 35.0,
+   "overlap_px_frac_of_mask": 0.038
+  },
+  "exp_index": {
+   "old_keys": {
+    "exp_256": 10379
+   },
+   "new_key": "exp_256",
+   "new_n": 9418
+  },
+  "compare_sample": {
+   "cov_old": [
+    0.0841,
+    0.0785,
+    0.0888,
+    445
+   ],
+   "cov_new": [
+    0.1083,
+    0.0985,
+    0.1174,
+    445
+   ],
+   "cov_strict": [
+    0.0804,
+    0.0726,
+    0.0857,
+    445
+   ],
+   "cov_loose": [
+    0.1104,
+    0.0996,
+    0.1212,
+    445
+   ],
+   "cov_linmask": [
+    0.2251,
+    0.2096,
+    0.2443,
+    445
+   ],
+   "dice_old_new": [
+    0.5802,
+    0.5698,
+    0.591,
+    440
+   ],
+   "dice_old_strict": [
+    0.535,
+    0.5176,
+    0.5517,
+    440
+   ],
+   "dice_strict_new": [
+    0.6423,
+    0.6285,
+    0.6532,
+    439
+   ],
+   "dice_old_loose": [
+    0.6751,
+    0.6657,
+    0.6858,
+    440
+   ],
+   "dice_old_linmask": [
+    0.5205,
+    0.5102,
+    0.5335,
+    441
+   ],
+   "auc_old": [
+    0.9609,
+    0.9597,
+    0.9629,
+    434
+   ],
+   "auc_new": [
+    0.7937,
+    0.7876,
+    0.8,
+    439
+   ],
+   "auc_strict": [
+    0.8368,
+    0.8305,
+    0.8457,
+    439
+   ],
+   "auc_loose": [
+    0.8604,
+    0.8541,
+    0.8672,
+    439
+   ],
+   "auc_linmask": [
+    0.7282,
+    0.7208,
+    0.7375,
+    440
+   ],
+   "frac_old_cell_type_healthy": [
+    0.0379,
+    0.0333,
+    0.0437,
+    445
+   ],
+   "frac_new_cell_type_healthy": [
+    0.1009,
+    0.09,
+    0.1083,
+    445
+   ],
+   "dice_cell_type_healthy": [
+    0.2726,
+    0.2476,
+    0.303,
+    438
+   ],
+   "frac_old_cell_type_cancer": [
+    0.0236,
+    0.0197,
+    0.0325,
+    445
+   ],
+   "frac_new_cell_type_cancer": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "dice_cell_type_cancer": [
+    0.0,
+    0.0,
+    0.0,
+    372
+   ],
+   "frac_old_cell_type_immune": [
+    0.0023,
+    0.0015,
+    0.003,
+    445
+   ],
+   "frac_new_cell_type_immune": [
+    0.0027,
+    0.0,
+    0.0041,
+    445
+   ],
+   "dice_cell_type_immune": [
+    0.0,
+    0.0,
+    0.0864,
+    311
+   ],
+   "frac_old_cell_state_prolif": [
+    0.0014,
+    0.0,
+    0.0057,
+    445
+   ],
+   "frac_new_cell_state_prolif": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "dice_cell_state_prolif": [
+    0.0,
+    0.0,
+    0.0229,
+    230
+   ],
+   "frac_old_cell_state_nonprolif": [
+    0.0671,
+    0.0613,
+    0.0718,
+    445
+   ],
+   "frac_new_cell_state_nonprolif": [
+    0.1072,
+    0.096,
+    0.1158,
+    445
+   ],
+   "dice_cell_state_nonprolif": [
+    0.4471,
+    0.4229,
+    0.472,
+    440
+   ],
+   "frac_old_cell_state_dead": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "frac_new_cell_state_dead": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "dice_cell_state_dead": [
+    0.5363,
+    0.3888,
+    0.6434,
+    20
+   ]
+  },
+  "compare_sample_note": "per key: [median over tiles, bootstrap 95% CI low, high, n tiles]",
+  "old_png_values_max": [
+   0,
+   255
+  ]
+ },
+ "channels_keep": {
+  "cell_masks": {
+   "old_mean": 0.1236,
+   "new_mean": 0.1676,
+   "pearson_r_tiles": 0.97,
+   "new_strict_mean": 0.0928
+  },
+  "cell_type_healthy": {
+   "old_mean": 0.0464,
+   "new_mean": 0.1292,
+   "pearson_r_tiles": 0.272,
+   "new_strict_mean": 0.075
+  },
+  "cell_type_cancer": {
+   "old_mean": 0.0624,
+   "new_mean": 0.0058,
+   "pearson_r_tiles": 0.279,
+   "new_strict_mean": 0.0027
+  },
+  "cell_type_immune": {
+   "old_mean": 0.0148,
+   "new_mean": 0.0326,
+   "pearson_r_tiles": 0.868,
+   "new_strict_mean": 0.0151
+  },
+  "cell_state_prolif": {
+   "old_mean": 0.0492,
+   "new_mean": 0.0078,
+   "pearson_r_tiles": 0.628,
+   "new_strict_mean": 0.0032
+  },
+  "cell_state_nonprolif": {
+   "old_mean": 0.0742,
+   "new_mean": 0.1596,
+   "pearson_r_tiles": 0.642,
+   "new_strict_mean": 0.0895
+  },
+  "cell_state_dead": {
+   "old_mean": 0.0002,
+   "new_mean": 0.0002,
+   "pearson_r_tiles": 0.938,
+   "new_strict_mean": 0.0002
+  }
+ },
+ "nuclei_render_strict": {
+  "mode": "full",
+  "sev_src": "/gscratch/cheme/chiu/hfv_lintype_20261118/sev/src",
+  "nucleus_mode": "strict",
+  "n_render_tiles": 9418,
+  "n_compare_tiles": 445,
+  "nuclei_keep": {
+   "n": 398137,
+   "cell_mask_area_matches_csv": 1.0,
+   "touching_frac": 0.9028,
+   "strict_empty": 10255,
+   "loose_empty": 0,
+   "target_from_loose": 10255,
+   "target_floor": 0,
+   "q_um2_cell": [
+    24.6,
+    33.8,
+    45.3,
+    59.4,
+    75.6
+   ],
+   "q_um2_strict": [
+    2.1,
+    6.2,
+    12.6,
+    20.6,
+    30.5
+   ],
+   "q_um2_loose": [
+    13.6,
+    18.6,
+    26.4,
+    35.8,
+    46.7
+   ],
+   "q_um2_strict_isolated": [
+    11.6,
+    15.0,
+    21.0,
+    31.3,
+    43.8
+   ],
+   "q_um2_strict_touching": [
+    1.9,
+    5.6,
+    11.5,
+    19.3,
+    28.6
+   ],
+   "q_um2_loose_touching": [
+    14.0,
+    19.2,
+    26.8,
+    36.1,
+    46.9
+   ]
+  },
+  "library": {
+   "path": "/gscratch/cheme/chiu/hfv_lintype_20261118/out/nucleus_shapes_lin_crc33_01_strict.npz",
+   "tiles": 400,
+   "candidates": 16775,
+   "empty": 420,
+   "too_big": 50,
+   "kept": 16305,
+   "per_type": {
+    "cancer": 660,
+    "healthy": 12418,
+    "immune": 3227
+   },
+   "q_px_area": {
+    "cancer": [
+     14.0,
+     34.0,
+     93.0,
+     172.0,
+     271.2
+    ],
+    "healthy": [
+     27.0,
+     66.0,
+     127.0,
+     203.0,
+     299.0
+    ],
+    "immune": [
+     19.0,
+     46.0,
+     94.0,
+     161.0,
+     233.0
+    ]
+   }
+  },
+  "render": {
+   "tiles": 9418,
+   "mean_frac": {
+    "cell_masks": 0.09279999881982803,
+    "cell_type_healthy": 0.07500000298023224,
+    "cell_type_cancer": 0.0027000000700354576,
+    "cell_type_immune": 0.01510000042617321,
+    "cell_state_prolif": 0.0031999999191612005,
+    "cell_state_nonprolif": 0.08950000256299973,
+    "cell_state_dead": 0.00019999999494757503
+   },
+   "instances_per_tile_median": 34.0,
+   "overlap_px_frac_of_mask": 0.0018
+  },
+  "exp_index": {
+   "old_keys": {
+    "exp_256": 10379
+   },
+   "new_key": "exp_256",
+   "new_n": 9418
+  },
+  "compare_sample": {
+   "cov_old": [
+    0.0841,
+    0.0785,
+    0.0888,
+    445
+   ],
+   "cov_new": [
+    0.0787,
+    0.073,
+    0.085,
+    445
+   ],
+   "cov_strict": [
+    0.0804,
+    0.0726,
+    0.0857,
+    445
+   ],
+   "cov_loose": [
+    0.1104,
+    0.0996,
+    0.1212,
+    445
+   ],
+   "cov_linmask": [
+    0.2251,
+    0.2096,
+    0.2443,
+    445
+   ],
+   "dice_old_new": [
+    0.4914,
+    0.4824,
+    0.5017,
+    440
+   ],
+   "dice_old_strict": [
+    0.535,
+    0.5176,
+    0.5517,
+    440
+   ],
+   "dice_strict_new": [
+    0.6624,
+    0.658,
+    0.6678,
+    439
+   ],
+   "dice_old_loose": [
+    0.6751,
+    0.6657,
+    0.6858,
+    440
+   ],
+   "dice_old_linmask": [
+    0.5205,
+    0.5102,
+    0.5335,
+    441
+   ],
+   "auc_old": [
+    0.9609,
+    0.9597,
+    0.9629,
+    434
+   ],
+   "auc_new": [
+    0.796,
+    0.7882,
+    0.8014,
+    439
+   ],
+   "auc_strict": [
+    0.8368,
+    0.8305,
+    0.8457,
+    439
+   ],
+   "auc_loose": [
+    0.8604,
+    0.8541,
+    0.8672,
+    439
+   ],
+   "auc_linmask": [
+    0.7282,
+    0.7208,
+    0.7375,
+    440
+   ],
+   "frac_old_cell_type_healthy": [
+    0.0379,
+    0.0333,
+    0.0437,
+    445
+   ],
+   "frac_new_cell_type_healthy": [
+    0.0692,
+    0.0654,
+    0.0748,
+    445
+   ],
+   "dice_cell_type_healthy": [
+    0.2732,
+    0.2416,
+    0.3014,
+    438
+   ],
+   "frac_old_cell_type_cancer": [
+    0.0236,
+    0.0197,
+    0.0325,
+    445
+   ],
+   "frac_new_cell_type_cancer": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "dice_cell_type_cancer": [
+    0.0,
+    0.0,
+    0.0,
+    372
+   ],
+   "frac_old_cell_type_immune": [
+    0.0023,
+    0.0015,
+    0.003,
+    445
+   ],
+   "frac_new_cell_type_immune": [
+    0.0017,
+    0.0,
+    0.0029,
+    445
+   ],
+   "dice_cell_type_immune": [
+    0.0,
+    0.0,
+    0.0983,
+    311
+   ],
+   "frac_old_cell_state_prolif": [
+    0.0014,
+    0.0,
+    0.0057,
+    445
+   ],
+   "frac_new_cell_state_prolif": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "dice_cell_state_prolif": [
+    0.0,
+    0.0,
+    0.009,
+    230
+   ],
+   "frac_old_cell_state_nonprolif": [
+    0.0671,
+    0.0613,
+    0.0718,
+    445
+   ],
+   "frac_new_cell_state_nonprolif": [
+    0.0786,
+    0.0712,
+    0.083,
+    445
+   ],
+   "dice_cell_state_nonprolif": [
+    0.4241,
+    0.4066,
+    0.4387,
+    440
+   ],
+   "frac_old_cell_state_dead": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "frac_new_cell_state_dead": [
+    0.0,
+    0.0,
+    0.0,
+    445
+   ],
+   "dice_cell_state_dead": [
+    0.4897,
+    0.3283,
+    0.5964,
+    20
+   ]
+  },
+  "compare_sample_note": "per key: [median over tiles, bootstrap 95% CI low, high, n tiles]",
+  "old_png_values_max": [
+   0,
+   255
+  ]
+ },
+ "paired_area": {
+  "n": 151036,
+  "touching_frac": 0.8122,
+  "strict_px": {
+   "median_ratio_to_cellvit": 0.795,
+   "median_abs_log2_ratio": 0.468,
+   "zero": 521,
+   "isolated": 0.988,
+   "touching": 0.741
+  },
+  "loose_px": {
+   "median_ratio_to_cellvit": 1.17,
+   "median_abs_log2_ratio": 0.37,
+   "zero": 0,
+   "isolated": 0.988,
+   "touching": 1.216
+  },
+  "cell_px": {
+   "median_ratio_to_cellvit": 2.32,
+   "median_abs_log2_ratio": 1.216,
+   "zero": 0,
+   "isolated": 2.638,
+   "touching": 2.232
+  }
+ },
+ "area_um2_quantiles_10_25_50_75_90": {
+  "CellViT objects": [
+   10.4,
+   15.7,
+   23.8,
+   37.1,
+   60.3
+  ],
+  "Lin cell mask": [
+   24.6,
+   33.8,
+   45.3,
+   59.4,
+   75.6
+  ],
+  "Lin eroded (strict)": [
+   2.1,
+   6.2,
+   12.6,
+   20.6,
+   30.5
+  ],
+  "Lin eroded (loose)": [
+   13.6,
+   18.6,
+   26.4,
+   35.8,
+   46.7
+  ],
+  "library: CellViT outlines": [
+   11.8,
+   17.1,
+   24.3,
+   35.8,
+   51.4
+  ],
+  "library: Lin nuclei": [
+   13.7,
+   18.6,
+   26.3,
+   35.5,
+   45.8
+  ]
+ },
+ "area_n": {
+  "CellViT objects": 246754,
+  "Lin cell mask": 398137,
+  "Lin eroded (strict)": 398137,
+  "Lin eroded (loose)": 398137,
+  "library: CellViT outlines": 7141,
+  "library: Lin nuclei": 16687
+ },
+ "example_tiles": [
+  "21760_21760",
+  "11008_2560",
+  "10240_14592"
+ ]
+}

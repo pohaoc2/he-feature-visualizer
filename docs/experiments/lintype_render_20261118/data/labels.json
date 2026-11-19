@@ -1,0 +1,193 @@
+{
+ "n_cells": 443514,
+ "n_tiles": 10379,
+ "n_ink_tiles": 961,
+ "n_keep_tiles": 9418,
+ "cells_in_keep_tiles": 398137,
+ "cells_in_ink_tiles": 19557,
+ "ki67_gate": 331.49426945965996,
+ "celesta_nocall": 0,
+ "dead": {
+  "cellvit_dead": 719,
+  "cellvit_dead_on_background": 87,
+  "lin_cells_dead": 627
+ },
+ "pop": {
+  "all": {
+   "healthy": 343115,
+   "cancer": 16903,
+   "immune": 83496
+  },
+  "keep": {
+   "healthy": 307278,
+   "cancer": 12841,
+   "immune": 78018
+  }
+ },
+ "pop_frac": {
+  "all": {
+   "healthy": 0.7736,
+   "cancer": 0.0381,
+   "immune": 0.1883
+  },
+  "keep": {
+   "healthy": 0.7718,
+   "cancer": 0.0323,
+   "immune": 0.196
+  }
+ },
+ "state_frac": {
+  "all": {
+   "prolif": 0.0381,
+   "nonprolif": 0.9605,
+   "dead": 0.0014
+  },
+  "keep": {
+   "prolif": 0.042,
+   "nonprolif": 0.9567,
+   "dead": 0.0013
+  }
+ },
+ "source": {
+  "keep": {
+   "immune": {
+    "healthy": 0,
+    "cancer": 0,
+    "immune": 77418
+   },
+   "stromal": {
+    "healthy": 171492,
+    "cancer": 0,
+    "immune": 0
+   },
+   "epithelial": {
+    "healthy": 71063,
+    "cancer": 10582,
+    "immune": 0
+   },
+   "unknown_fill": {
+    "healthy": 64723,
+    "cancer": 2259,
+    "immune": 600
+   },
+   "nocall_fill": {
+    "healthy": 0,
+    "cancer": 0,
+    "immune": 0
+   }
+  }
+ },
+ "fill_by_lin_class": {
+  "keep": {
+   "BACK": 377,
+   "NORM": 47743,
+   "DEB": 8138,
+   "TUM": 2259,
+   "ADI": 148,
+   "MUC": 214,
+   "MUS": 3231,
+   "STR": 4872,
+   "LYM": 600
+  }
+ },
+ "fill_low_classes_keep": 8729,
+ "cells_by_lin_class_keep": {
+  "BACK": {
+   "healthy": 752,
+   "cancer": 1820,
+   "immune": 338
+  },
+  "NORM": {
+   "healthy": 187903,
+   "cancer": 0,
+   "immune": 58822
+  },
+  "DEB": {
+   "healthy": 47977,
+   "cancer": 825,
+   "immune": 2839
+  },
+  "TUM": {
+   "healthy": 3207,
+   "cancer": 9357,
+   "immune": 2673
+  },
+  "ADI": {
+   "healthy": 517,
+   "cancer": 75,
+   "immune": 35
+  },
+  "MUC": {
+   "healthy": 1127,
+   "cancer": 104,
+   "immune": 65
+  },
+  "MUS": {
+   "healthy": 28521,
+   "cancer": 74,
+   "immune": 998
+  },
+  "STR": {
+   "healthy": 36057,
+   "cancer": 145,
+   "immune": 2285
+  },
+  "LYM": {
+   "healthy": 1217,
+   "cancer": 441,
+   "immune": 9963
+  }
+ },
+ "old_vs_new": {
+  "old_objects_keep": 246754,
+  "old_pop_frac_keep": {
+   "healthy": 0.4369,
+   "cancer": 0.4296,
+   "immune": 0.1335
+  },
+  "old_state_frac_keep": {
+   "prolif": 0.2643,
+   "nonprolif": 0.7334,
+   "dead": 0.0023
+  },
+  "matched_objects": 225199,
+  "unmatched_objects_on_background": 21555,
+  "pop_confusion_rows_old_cols_new": [
+   [
+    84863,
+    772,
+    13401
+   ],
+   [
+    79218,
+    4148,
+    11861
+   ],
+   [
+    10552,
+    151,
+    20233
+   ]
+  ],
+  "state_confusion_rows_old_cols_new": [
+   [
+    5908,
+    55504,
+    7
+   ],
+   [
+    3,
+    163241,
+    21
+   ],
+   [
+    0,
+    0,
+    515
+   ]
+  ],
+  "pop_agreement": 0.4851,
+  "state_agreement": 0.7534,
+  "norm_epithelial_cells_keep": 71063
+ }
+}

@@ -5,9 +5,15 @@ recovers the nucleus exactly for an isolated, convex-enough cell (dilation then 
 touch, the dilation stopped at the shared border, so erosion also eats into the nucleus from that side:
   strict : a pixel stays only if every pixel within the disk carries the same label (neighbours count as outside);
            this is "erode the cell by 5 px" and under-recovers nuclei of touching cells;
-  loose  : a pixel stays if no background lies within the disk (neighbours count as inside); this over-recovers
-           touching cells (keeps up to the shared border).
-The true nucleus of a touching cell lies between the two; `strict` is used, `loose` is reported as the bound.
+  loose  : as strict, but the border between two cells counts as inside; this over-recovers touching cells (keeps
+           everything up to the shared border).
+Lin's CRC33_01 mask never lets two labels share an edge: touching cells are separated by a one-pixel background line
+(checked on the mask: 0 direct 4-neighbour contacts in sample tiles, hundreds of line pixels). `gap_lines` finds those
+pixels (background whose 3x3 window holds two different labels), `loose` treats them as foreground, and
+`touching_labels` counts a cell as touching when another label lies within such a line (2 px).
+The true nucleus of a touching cell lies between the two. Paired with CellViT objects on CRC33_01, loose is closer
+(median |log2 area ratio| 0.37 vs 0.47; isolated cells 0.99 for both) and aligns better with hematoxylin, so loose
+is the default and strict is kept as the alternative (docs/experiments/lintype_render_20261118).
 """
 from __future__ import annotations
 
@@ -36,22 +42,30 @@ def erode_labels(lab: np.ndarray, r: int = DILATION_PX):
     hi = cv2.dilate(f, k, borderType=cv2.BORDER_REPLICATE)
     fg = lab > 0
     strict = np.where(fg & (lo == hi), lab, 0)
-    keep = cv2.erode(fg.astype(np.uint8), k, borderType=cv2.BORDER_REPLICATE) > 0
+    keep = cv2.erode((fg | gap_lines(lab)).astype(np.uint8), k, borderType=cv2.BORDER_REPLICATE) > 0
     loose = np.where(fg & keep, lab, 0)
     return strict, loose
 
 
-def touching_labels(lab: np.ndarray) -> np.ndarray:
-    """Labels with at least one 4-neighbour pixel of another non-zero label."""
-    lab = np.asarray(lab)
-    f = lab.astype(np.float32)
-    cross = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], np.uint8)
-    big = np.float32(2 ** 24)
-    hi = cv2.dilate(f, cross, borderType=cv2.BORDER_REPLICATE)
-    lo = cv2.erode(np.where(lab > 0, f, big), cross, borderType=cv2.BORDER_REPLICATE)
-    fg = lab > 0
-    t = fg & ((hi > f) | (lo < f))
-    return np.unique(lab[t])
+def _window_minmax(lab, size):
+    f = np.asarray(lab).astype(np.float32)
+    w = np.ones((size, size), np.uint8)
+    hi = cv2.dilate(f, w, borderType=cv2.BORDER_REPLICATE)
+    lo = cv2.erode(np.where(f > 0, f, np.float32(2 ** 24)), w, borderType=cv2.BORDER_REPLICATE)
+    return f, hi, lo
+
+
+def gap_lines(lab: np.ndarray) -> np.ndarray:
+    """Background pixels whose 3x3 window holds two different labels (the line separating two touching cells)."""
+    f, hi, lo = _window_minmax(lab, 3)
+    return (f == 0) & (hi > 0) & (lo < 2 ** 24) & (hi != lo)
+
+
+def touching_labels(lab: np.ndarray, reach: int = 2) -> np.ndarray:
+    """Labels with another non-zero label within `reach` px (square window): direct contact or across a gap line."""
+    f, hi, lo = _window_minmax(lab, 2 * reach + 1)
+    t = (f > 0) & ((hi > f) | (lo < f))
+    return np.unique(np.asarray(lab)[t])
 
 
 def stamp(mask: np.ndarray, box: int = BOX):

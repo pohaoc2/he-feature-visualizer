@@ -6,7 +6,7 @@
 
 1. nuclei : every Lin cell eroded by the 5 px dilation, block-wise over the whole mask (stages/lin_typing/nuclei.py);
             per cell strict / loose nucleus area, cell area, touches-another-cell flag.
-2. library: Lin nuclei (strict) of the cells centred in 400 random kept tiles (the tile count of sim-exp-validation's
+2. library: Lin nuclei (NUC: loose by default, see below) of the cells centred in 400 random kept tiles (the tile count of sim-exp-validation's
             build_nucleus_shape_library.py) -> N/out/nucleus_shapes_lin_crc33_01.npz (new file; same keys).
 3. render : every kept tile (training tiles minus ink tiles) through morphology_renderer.render_crop
             (stages/lin_typing/render.py), written with rasterize.write_channel_dir to node-local disk, then one tar
@@ -39,10 +39,15 @@ from stages.lin_typing import render as RD    # noqa: E402
 rasterize, mr, channels = RD.renderer(SEV)
 NAMES = list(channels.CHANNEL_NAMES[:7])
 HE = "/gscratch/cheme/chiu/crc16-20261024/darkdiag_20261031/s3/he"   # training H&E tiles, read only
+# NUC = which eroded nucleus feeds the target areas and the library (stages/lin_typing/nuclei.py): loose (default; does
+# not erode across the one-pixel line between touching cells) or strict (erodes every cell by 5 px on all sides).
+NUC = os.environ.get("NUC", "loose")
+assert NUC in ("loose", "strict")
+SUF = "" if NUC == "loose" else "_strict"
 OUT = f"{N}/out" if MODE == "full" else f"{N}/out/test"
 os.makedirs(OUT, exist_ok=True)
-LIB = f"{OUT}/nucleus_shapes_lin_crc33_01.npz"
-TAR = f"{N}/data/new_exp_channels.tar" if MODE == "full" else f"{OUT}/new_exp_channels_test.tar"
+LIB = f"{OUT}/nucleus_shapes_lin_crc33_01{SUF}.npz"
+TAR = f"{N}/data/new_exp_channels{SUF}.tar" if MODE == "full" else f"{OUT}/new_exp_channels_test{SUF}.tar"
 for p in (LIB, TAR):
     if os.path.exists(p):
         raise SystemExit(f"STOP: {p} exists (new files only)")
@@ -53,7 +58,7 @@ def log(*a):
     print(f"[{time.time() - T0:7.0f}s]", *a, flush=True)
 
 
-R = dict(mode=MODE, sev_src=SEV)
+R = dict(mode=MODE, sev_src=SEV, nucleus_mode=NUC)
 c = np.load(f"{N}/out/cells_labels.npz")
 cid = c["cell_id"]
 keep_all = open(f"{N}/out/tiles_keep.txt").read().split()
@@ -88,9 +93,9 @@ for y0 in range(0, H, B):
 touch[0] = False
 log("nuclei done")
 strict_c, loose_c, cell_c, touch_c = strict_a[cid], loose_a[cid], cell_a[cid], touch[cid]
-area_t = RD.target_area(strict_c, loose_c)
+area_t = RD.target_area(strict_c, loose_c) if NUC == "strict" else np.maximum(loose_c, 1.0)
 if MODE == "full":
-    np.savez_compressed(f"{N}/out/cells_nuclei.npz", cell_id=cid, strict_px=strict_c, loose_px=loose_c, cell_px=cell_c,
+    np.savez_compressed(f"{N}/out/cells_nuclei{SUF}.npz", cell_id=cid, strict_px=strict_c, loose_px=loose_c, cell_px=cell_c,
                         touching=touch_c, target_px=area_t)
 k = c["in_keep"]
 um2 = LB.MPP ** 2
@@ -120,7 +125,8 @@ lib_n = dict(candidates=0, empty=0, too_big=0)
 for t in lib_tiles:
     x0, y0 = map(int, t.split("_"))
     blk, ya, xa = region(x0, y0, 64)
-    s, _ = NU.erode_labels(blk)
+    s, l = NU.erode_labels(blk)
+    s = l if NUC == "loose" else s
     inside = np.flatnonzero((c["x"] >= x0) & (c["x"] < x0 + 256) & (c["y"] >= y0) & (c["y"] < y0 + 256))
     u, inv = np.unique(s, return_inverse=True)
     comp = inv.reshape(s.shape)
@@ -177,7 +183,7 @@ with mp.get_context("fork").Pool(NPROC) as pool:
     res = pool.map(work, render_tiles, chunksize=16)
 log("rendered", len(res))
 frac_new = np.array([r[1] for r in res])
-np.savez_compressed(f"{OUT}/render_tiles.npz", tile=np.array([r[0] for r in res]), frac=frac_new, names=np.array(NAMES),
+np.savez_compressed(f"{OUT}/render_tiles{SUF}.npz", tile=np.array([r[0] for r in res]), frac=frac_new, names=np.array(NAMES),
                     n_inst=np.array([r[2] for r in res]), overlap_px=np.array([r[3] for r in res]),
                     clipped=np.array([r[4] for r in res]))
 R["render"] = dict(tiles=len(res), mean_frac=dict(zip(NAMES, np.round(frac_new.mean(0), 4).tolist())),
@@ -231,8 +237,9 @@ for t in cmp_tiles:
     rows.append(row)
 keys = [k for k in rows[0] if k != "tile"]
 tab = {k: np.array([r[k] for r in rows], float) for k in keys}
-np.savez_compressed(f"{OUT}/compare_tiles.npz", tile=np.array([r["tile"] for r in rows]),
-                    ero_strict=np.packbits(np.stack([ero[r["tile"]][0] for r in rows])), **tab)
+np.savez_compressed(f"{OUT}/compare_tiles{SUF}.npz", tile=np.array([r["tile"] for r in rows]),
+                    ero_strict=np.packbits(np.stack([ero[r["tile"]][0] for r in rows])),
+                    ero_loose=np.packbits(np.stack([ero[r["tile"]][1] for r in rows])), **tab)
 brng = np.random.default_rng(20261118)
 
 
@@ -247,6 +254,6 @@ def med_ci(v):
 R["compare_sample"] = {k: med_ci(v) for k, v in tab.items()}
 R["compare_sample_note"] = "per key: [median over tiles, bootstrap 95% CI low, high, n tiles]"
 R["old_png_values_max"] = sorted(old_png_max)
-json.dump(R, open(f"{OUT}/nuclei_render.json", "w"), indent=1)
+json.dump(R, open(f"{OUT}/nuclei_render{SUF}.json", "w"), indent=1)
 shutil.rmtree(LOCAL)
 log("done")
