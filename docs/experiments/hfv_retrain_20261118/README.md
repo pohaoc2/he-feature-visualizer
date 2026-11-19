@@ -214,6 +214,9 @@
   | ORION H&E LPIPS | 0.5463 ± 0.0792 | 不變 |
   | ORION H&E HED | 0.2930 ± 0.2129 | 不變 |
 
+  - 寫死的 Vanilla 數值和論文 `si_a1_a2/cache.json` 裡的 Vanilla（`a2_off_shelf`，100 張）並不相同：cache 是 FUD 240.93、PQ 0.6987 ± 0.1471、DICE 0.8529 ± 0.1408。寫死的值是從哪一批 tile 算出來的，查不到。這次照協調者的決定，用和 cache 同樣定義的次要組 100 張。
+  - 替換由 `eval/figrender.py`（`bands`、`run --bands`）做：`bands` 從這次次要組的 `cache.json` 取出三條 Vanilla 參考帶，`run` 在載入 figure 腳本前就地改寫這個 dict。
+
 - **血管、氧、葡萄糖通道：重現原本的 CRC33_01 檔案時有 6 張 tile 的 vasculature 不完全相同（協調者 2026-11-18 決定接受）**：CRC36 和 CRC34 的這三個通道是用 `crc36_render_20261118/mx/` 的流程產生的，參數是 hfv 的程式預設值：ds 4、O2 Krogh 長度 200 µm、glucose 120 µm、不做 SMA 修正。這組參數是從訓練資料本身推出來的；論文 `_methods.tex` 和 PixCell 文件寫的是 160/450 µm、ds 8，但這組數值重現不了訓練資料。用這組參數重算 CRC33_01 全部 10,379 張 tile：oxygen 和 glucose 都是 10,379/10,379 張逐位元組相同；vasculature 是 10,373/10,379 張相同。不同的 6 張每張差 64–1,502 個像素（IoU 0.99998），差異都落在 Otsu 門檻上，也就是門檻差了 1 個灰階。可能是函式庫版本或浮點捨入造成，原本執行時的版本沒有紀錄，無法確認。CRC33_01 的訓練仍然用原本的通道檔案。
 
 ## 結果
