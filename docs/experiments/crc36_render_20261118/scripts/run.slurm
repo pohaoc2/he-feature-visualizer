@@ -26,6 +26,18 @@ PYG=/gscratch/cheme/chiu/cell-model-fit-20261021/envsmc/bin/python # pandas, skl
 CSV=$N/lin/data__CRC36__P37_S79-CRC36.csv
 echo "== $(date -Is) $(hostname) MODE=$MODE task=${SLURM_ARRAY_TASK_ID:-}"
 case $MODE in
+  cvdead)
+    # Colab CellViT output (S3 outputs/cellvit_crc36) -> dead Lin ids (cellvit_dead.py); the first-pass (no dead) labels /
+    # render outputs move to out/pass1_nodead and data/pass1_nodead, then MODE=labels and MODE=full run again
+    set +u; module load coenv/aws/2.17.32; set -u
+    mkdir -p $N/cv36 && aws s3 cp --quiet s3://bagherilab-working/pohao/hfv_retrain_20261118/outputs/cellvit_crc36 $N/cv36/cellvit_crc36.tar
+    tar -xf $N/cv36/cellvit_crc36.tar -C $N/cv36 && rm $N/cv36/cellvit_crc36.tar
+    $PYC -u $N/scripts/cellvit_dead.py $N $N/cv36/cv36
+    mkdir -p $N/out/pass1_nodead $N/data/pass1_nodead
+    for f in cells_labels.npz labels.json cells_nuclei.npz compare_tiles.npz nuclei_render.json render_tiles.npz nucleus_shapes_lin_crc36.npz; do
+      if [ -e $N/out/$f ]; then mv $N/out/$f $N/out/pass1_nodead/; fi; done
+    if [ -e $N/data/crc36_exp_channels.tar ]; then mv $N/data/crc36_exp_channels.tar $N/data/pass1_nodead/; fi
+    ;;
   mxfetch)
     cd $N/lin; f=P37_S79_Full_A24_C59qX_E15_20220302_235254_496641-zlib.ome.tiff; n=105398296221; o=data__CRC36__$f
     if [ "$(stat -c %s $o 2>/dev/null || echo 0)" != $n ]; then

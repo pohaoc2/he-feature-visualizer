@@ -12,7 +12,7 @@
 #             --skip-uni, unmodified), returned as masklat_crc33_01.tar, then installed into vae_features/
 #   probe   : probe_sweep.py on the four paper variant configs (Concat, Grouped, Grouped + bypass, Per-channel)
 #   cvgate  : CellViT-256 card gate (50 CRC34 tiles vs the reference JSONs)   cv36 : CellViT on the CRC36 H&E tiles
-#   feat36  : UNI-2h + SD3.5 VAE features of the CRC36 H&E tiles
+#   feat36  : UNI-2h + SD3.5 VAE features of the CRC36 H&E tiles   masklat36 : mask latents of the CRC36 cell_masks
 # Results (logs, json) return as result_<TAG>.tar.gz; the log is pushed every 2 min to log_<TAG>.
 set -u
 W=/content/hfv; mkdir -p $W; LOG=$W/colab_$TAG.log
@@ -42,12 +42,12 @@ if [ ! -f /content/HFV_SETUP_OK ]; then
   mkdir -p $W/dl $W/pt $W/data
   # parallel downloads (s3io.py get resumes and checks the size)
   for n in code req pixcell-256 pixcell-256-controlnet sd-3.5-vae uni-2h orion-crc33 newch33; do
-    ( python3 $W/kit/s3io.py get $W/links.json $n $W/dl/$n.bin || echo "DOWNLOAD_FAILED $n" ) & done
+    ( python3 $W/kit/s3io.py get $W/links.json $n $W/dl/$n.bin || echo "DOWNLOAD_FAILED $n" ) & DLP="${DLP:-} $!"; done
   pip -q install uv >/dev/null 2>&1
-  uv venv -q --python 3.12 $W/env; $PY --version
+  [ -x $PY ] || uv venv -q --python 3.12 $W/env; $PY --version   # a rerun after an interrupted setup reuses the venv
   uv pip install -q --python $PY torch==2.10.0+cu128 torchvision==0.25.0+cu128 --index-url https://download.pytorch.org/whl/cu128
   st torch
-  wait; st downloads; ls -la $W/dl
+  wait $DLP; st downloads; ls -la $W/dl   # only the download PIDs (a bare wait would also wait on the log loop)
   grep -q DOWNLOAD_FAILED $LOG && { echo "STOP: a download failed"; st STOP; kill $LOGPID; exit 1; }
   echo "setuptools==75.2.0" > $W/bc.txt
   uv pip install -q --python $PY --build-constraints $W/bc.txt xformers==0.0.35 -r $W/dl/req.bin \
@@ -115,6 +115,14 @@ for t in $TASKS; do
       (cd $P && $PY -u stage1_extract_features.py --image-dir $W/he36/he --output-dir $W/f36/vae_features --skip-uni) ; r2=$?
       st "feat36 rc $r1 $r2"; echo "uni $(ls $W/f36/features | wc -l) vae $(ls $W/f36/vae_features | wc -l)"
       [ $r1 = 0 ] && [ $r2 = 0 ] && tar -cf $W/feat_crc36.tar -C $W f36 && put feat_crc36 $W/feat_crc36.tar ;;
+    masklat36)
+      # SD3.5 VAE mask latents of the CRC36 cell_masks channel (first-pass render; cell_masks does not depend on the
+      # CellViT dead labels, which change only the state channels - checked by md5 after the dead re-render on Hyak)
+      mkdir -p $W/c36; python3 $W/kit/s3io.py get $W/links.json crc36ch $W/dl/c36.tar && tar -xf $W/dl/c36.tar -C $W/c36 && rm $W/dl/c36.tar
+      (cd $P && $PY -u stage1_extract_features.py --image-dir $W/c36/orion-crc36/exp_channels/cell_masks --output-dir $W/masklat36 \
+         --vae-prefix mask_sd3_vae --skip-uni); rc=$?; st "masklat36 rc $rc"
+      echo "mask latents $(ls $W/masklat36 | wc -l) of $(ls $W/c36/orion-crc36/exp_channels/cell_masks | wc -l)"
+      [ $rc = 0 ] && tar -cf $W/masklat_crc36.tar -C $W masklat36 && put masklat_crc36 $W/masklat_crc36.tar ;;
     *) echo "unknown task $t" ;;
   esac
 done

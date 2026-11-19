@@ -3,8 +3,8 @@
   python presign.py OUT TAG TASKS [--put NAME[:multipart:N_PARTS:PART_MB] ...]
 Writes OUT/boot_<TAG>.sh = LINKS (JSON) + TASKS + TAG + boot.sh, uploads it to the run prefix and prints the one line the
 notebook runs. OUT stays outside git (mode 600); links expire after one day and are never committed.
-GET names: code, kit, req, the four pretrained tars, orion-crc33, newch33, cellvit_kit, he36.
-PUT slots: log_<TAG>, result_<TAG>, masklat_crc33_01, cellvit_crc36, feat_crc36 by default; --put adds more (multipart slots for files > 5 GB).
+GET names: code, kit, req, the four pretrained tars, orion-crc33, newch33, cellvit_kit, he36, crc36ch.
+PUT slots: log_<TAG>, result_<TAG>, masklat_crc33_01, cellvit_crc36, feat_crc36, masklat_crc36 by default; --put adds more (multipart slots for files > 5 GB).
 """
 import json
 import os
@@ -49,10 +49,11 @@ def main():
     g = {"code": get(P + "inputs/pixcell_cb62fa7.tar.gz"), "kit": get(P + "inputs/kit.tar.gz"), "req": get(UG + "req.txt"),
          "orion-crc33": get("pohao/share_space/02_datasets/orion-crc33.zip"),
          "newch33": get(P + "inputs/new_exp_channels_crc33_01.tar"),
-         "cellvit_kit": get(P + "inputs/cellvit_kit.tar"), "he36": get(P + "inputs/crc36_he_tiles.tar")}
+         "cellvit_kit": get(P + "inputs/cellvit_kit.tar"), "he36": get(P + "inputs/crc36_he_tiles.tar"),
+         "crc36ch": get(P + "inputs/crc36_exp_channels_pass1.tar")}
     for d in ("pixcell-256", "pixcell-256-controlnet", "sd-3.5-vae", "uni-2h"):
         g[d] = get(UG + d + ".tar")
-    pu = dict(put_slot(s) for s in [f"log_{tag}", f"result_{tag}", "masklat_crc33_01", "cellvit_crc36", "feat_crc36"] + extra_put)
+    pu = dict(put_slot(s) for s in [f"log_{tag}", f"result_{tag}", "masklat_crc33_01", "cellvit_crc36", "feat_crc36", "masklat_crc36"] + extra_put)
     import datetime
     links = {"expires": (datetime.datetime.utcnow() + datetime.timedelta(seconds=DAY)).isoformat() + "Z", "get": g, "put": pu}
     body = (HERE / "boot.sh").read_text().split("\n", 1)[1]

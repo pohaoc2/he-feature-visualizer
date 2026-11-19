@@ -22,7 +22,7 @@ import s3io  # noqa: E402
 W = "/content/hfv"
 if os.path.exists(f"{W}/links.json"):
     L = json.load(open(f"{W}/links.json"))
-    for slot in ("masklat_crc33_01", "cellvit_crc36", "feat_crc36"):
+    for slot in ("masklat_crc33_01", "cellvit_crc36", "feat_crc36", "masklat_crc36"):
         f = f"{W}/{slot}.tar"
         if os.path.exists(f) and not os.path.exists(f + ".sent") and slot in L["put"]:
             try:
