@@ -39,10 +39,11 @@ cp $E/scripts/evalgen.py $E/scripts/pxrun.py $Wd/
 for t in $TASKS; do IFS=: read -r kind root rest <<< "$t"; g=${kind}_${root#orion-}
   if [ -f $K/sent_$g ]; then echo "skip $t (done and sent)"; continue; fi
   $PY -u $Wd/evalgen.py --pixcell $P --work $Wd --ck $Wd/ck --roots $Wd/roots "$t"; rc=$?
-  [ $kind = speed ] && g=$(cd $Wd/out && ls -d speed_${root#orion-}_* | tail -1)
-  tar -cf $Wd/gen_hyak_$g.tar -C $Wd/out $g $(cd $Wd/out && ls speed_*.json 2>/dev/null) && \
-    aws s3 cp --only-show-errors $Wd/gen_hyak_$g.tar $S/outputs/gen_hyak_$g.tar && rm $Wd/gen_hyak_$g.tar && touch $K/sent_$g
+  [ $kind = speed ] && g=$(cd $Wd/out && ls -d speed_${root#orion-}_*/ | tail -1); g=${g%/}   # directory only, not the .json
+  up=1; tar -cf $Wd/gen_hyak_$g.tar -C $Wd/out $g $(cd $Wd/out && ls speed_*.json 2>/dev/null) && \
+    aws s3 cp --only-show-errors $Wd/gen_hyak_$g.tar $S/outputs/gen_hyak_$g.tar && { up=0; rm $Wd/gen_hyak_$g.tar; }
+  [ $rc -eq 0 ] && [ $up -eq 0 ] && touch $K/sent_$g   # only a finished and uploaded group is skipped on requeue
   cp $Wd/out/$g/DONE $Wd/out/$g/FAILED $Wd/out/$g/gen.log $Wd/out/speed_*.json $K/ 2>/dev/null
-  echo "### $(date -Is) task $t rc $rc"
+  echo "### $(date -Is) task $t rc $rc upload $([ $up -eq 0 ] && echo ok || echo FAILED)"
 done
 echo "### $(date -Is) done"

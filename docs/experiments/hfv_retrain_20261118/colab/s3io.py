@@ -4,6 +4,9 @@
   python s3io.py put  LINKS.json SLOT FILE            upload FILE to links["put"][SLOT] (single PUT or multipart)
   python s3io.py list LINKS.json                      show slot names and expiry
 
+A multipart slot is single-use: its upload id is consumed by the first completed upload, so a second upload through the
+same slot gets 404 (NoSuchUpload). Slots that carry both a single and a multipart link use the single PUT (reusable
+until expiry) for files under 5 GB and the multipart link only for larger files.
 LINKS.json is written on Hyak by presign.py and fetched once from a presigned GET link pasted into the notebook; it is
 never committed. A "put" slot is {"single": url} (file < 5 GB) or {"multipart": {"part_bytes": n, "parts": [url, ...],
 "complete": url}}; multipart parts are sent in order and completed with the returned ETags.
@@ -57,8 +60,7 @@ def put(links, slot, path):
     s = links["put"][slot]
     n = os.path.getsize(path)
     t0 = time.time()
-    if "single" in s:
-        assert n < 5 * 10**9, "single PUT limited to 5 GB"
+    if "single" in s and n < 5 * 10**9:   # a single-PUT link can be reused until it expires
         with open(path, "rb") as f:
             _req(s["single"], "PUT", data=f.read(), headers={"Content-Length": str(n), "Content-Type": ""})
     else:

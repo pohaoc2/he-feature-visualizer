@@ -7,9 +7,13 @@ CK   folder with the inference checkpoints: CK/<run>/step_*/{controlnet_epoch_*_
      (run = tr_concat, tr_grouped, tr_bypass, tr_perch; eval/slimck.py)
 R    folder with the extracted evaluation packs (R/orion-crc36ho, R/orion-crc33sec, R/orion-crc34eval) and their lists
 TASK (group = the comparison group = one output folder, generated on one GPU type):
-  speed:ROOT:IDS         throwaway speed probe: Concat, first 8 tiles at 30 steps (build_cache) and first 4 tiles x 15
-                         conditions at 20 steps (ablation); images per minute from the PNG write times (model loading
-                         excluded); writes W/out/speed_<ROOT>_<gpu>.json, the images are not used
+  speed:ROOT:IDS         throwaway speed probe: Concat, first 16 tiles at 30 steps (build_cache, 1 image per tile) and
+                         first 8 tiles x 15 conditions at 20 steps (ablation; its per-tile cell_mask.png is not an
+                         image and is not counted). Per command: wall seconds (model loading included), seconds to the
+                         first finished tile, steady images per minute from the finished-tile times (first tile and
+                         model loading excluded: (tiles - 1) x images per tile / (last - first finish)), and the
+                         loading overhead = first finish - one steady tile interval. Writes
+                         W/out/speed_<ROOT>_<gpu>.json; the images are not used
   fig2:ROOT:IDS          Fig 2 group: Concat, Grouped, Grouped + bypass, Per-channel and Vanilla ControlNet
                          (build_cache.py, 30 steps, guidance 1.5, seed 42), then the group-drop renders of the
                          conditioned variants (sensitivity_eval.py --mode render; LPIPS scoring on Hyak)
@@ -154,6 +158,19 @@ def pngs(d):
     return sorted(Path(d).rglob("*.png"), key=lambda p: p.stat().st_mtime)
 
 
+def speed_stats(tiles, t_start, t_end):
+    """tiles: {tile: [image files]}; finish time of a tile = its newest image"""
+    fin = sorted(max(f.stat().st_mtime for f in fs) for fs in tiles.values() if fs)
+    n_img = sum(len(fs) for fs in tiles.values())
+    out = dict(tiles=len(fin), images=n_img, wall_s=round(t_end - t_start, 1))
+    if len(fin) >= 2:
+        per_tile = n_img / len(fin)
+        step = (fin[-1] - fin[0]) / (len(fin) - 1)
+        out.update(first_tile_s=round(fin[0] - t_start, 1), steady_s_per_tile=round(step, 2),
+                   steady_images_per_min=round(per_tile * 60 / step, 2), load_overhead_s=round(fin[0] - t_start - step, 1))
+    return out
+
+
 def rate(files):
     if len(files) < 2:
         return None
@@ -183,17 +200,20 @@ for task in A.tasks:
         for d in ("s30", "s20"):
             shutil.rmtree(G / d, ignore_errors=True)
         ids = ids_of(args[1])
+        (G / "ids16.txt").write_text("".join(f"{t}\n" for t in ids[:16]))
         (G / "ids8.txt").write_text("".join(f"{t}\n" for t in ids[:8]))
-        (G / "ids4.txt").write_text("".join(f"{t}\n" for t in ids[:4]))
         V = view(root, args[1])
         S = shadow(V, ["tr_concat"])
-        rc |= run([PY, "-u", "tools/ablation_a1_a2/build_cache.py", "--cache-dir", G / "s30", "--tile-ids-file", G / "ids8.txt",
+        a = time.time()
+        rc |= run([PY, "-u", "tools/ablation_a1_a2/build_cache.py", "--cache-dir", G / "s30", "--tile-ids-file", G / "ids16.txt",
                    "--tile-id-cache-key", "metric_tile_ids", "--variants", "a1_concat", "--device", "cuda"], S, log)
+        b = time.time()
         rc |= run([PY, "-u", "tools/stage3/generate_ablation_subset_cache.py", "--config", CONCAT, "--checkpoint-dir",
-                   step_dir("tr_concat"), "--data-root", V, "--tile-list", G / "ids4.txt", "--output-dir", G / "s20"], S, log)
-        r = dict(gpu=GPU, steps30_images_per_min=rate(pngs(G / "s30/tiles/a1_concat")), steps30_images=len(pngs(G / "s30/tiles/a1_concat")),
-                 steps20_images_per_min=rate(pngs(G / "s20")),
-                 steps20_images=len(pngs(G / "s20")), rc=rc)
+                   step_dir("tr_concat"), "--data-root", V, "--tile-list", G / "ids8.txt", "--output-dir", G / "s20"], S, log)
+        c = time.time()
+        t30 = {f.stem: [f] for f in (G / "s30/tiles/a1_concat").glob("*.png")}
+        t20 = {d.name: [f for f in d.rglob("*.png") if f.name != "cell_mask.png"] for d in (G / "s20").iterdir() if d.is_dir()}
+        r = dict(gpu=GPU, rc=rc, steps30=speed_stats(t30, a, b), steps20=speed_stats(t20, b, c))
         json.dump(r, open(W / "out" / f"speed_{root}_{GPU.replace(' ', '_')}.json", "w"), indent=1)
         print(f"[evalgen] speed {json.dumps(r)}", flush=True)
     elif kind == "fig2":

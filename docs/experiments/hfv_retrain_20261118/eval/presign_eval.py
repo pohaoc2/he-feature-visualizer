@@ -34,6 +34,9 @@ for r in ("tr_concat", "tr_grouped", "tr_bypass", "tr_perch"):
     g["infer_" + r] = ps.get(P + f"outputs/infer_{r}_e20.tar")
 n = len(tasks.split())
 pu = dict(ps.put_slot(s) for s in [f"log_{tag}"] + [f"gen_{tag}_{k}:multipart:16:512" for k in range(1, n + 1)])
+for k in range(1, n + 1):   # reusable single PUT for files < 5 GB (a rerun of the same boot must be able to upload again)
+    pu[f"gen_{tag}_{k}"]["single"] = ps.s3.generate_presigned_url(
+        "put_object", Params=dict(Bucket=ps.B, Key=P + f"outputs/gen_{tag}_{k}"), ExpiresIn=ps.DAY)
 links = {"expires": (datetime.datetime.utcnow() + datetime.timedelta(seconds=ps.DAY)).isoformat() + "Z", "get": g, "put": pu}
 body = (HERE / "boot_eval.sh").read_text().split("\n", 1)[1]
 f = out / f"boot_eval_{tag}.sh"

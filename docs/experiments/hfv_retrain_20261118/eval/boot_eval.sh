@@ -64,9 +64,10 @@ ls $W/roots $W/ck/*; st inputs
 k=0
 for t in $TASKS; do k=$((k + 1))
   $PY -u $W/kit/evalgen.py --pixcell $W/PixCell --work $W --ck $W/ck --roots $W/roots "$t"; rc=$?
-  IFS=: read -r kind root rest <<< "$t"; g=${kind}_${root#orion-}; [ $kind = speed ] && g=$(ls -d $W/out/speed_${root#orion-}_* | tail -1 | xargs basename)
-  tar -cf $W/gen_${TAG}_$k.tar -C $W/out $g $(cd $W/out && ls speed_*.json 2>/dev/null) && \
-    python3 $W/kit/s3io.py put $W/links.json gen_${TAG}_$k $W/gen_${TAG}_$k.tar && rm $W/gen_${TAG}_$k.tar
-  st "task $k $t rc $rc"
+  IFS=: read -r kind root rest <<< "$t"; g=${kind}_${root#orion-}; [ $kind = speed ] && g=$(ls -d $W/out/speed_${root#orion-}_*/ | tail -1 | xargs basename)   # directory only, not the .json
+  up=1; tar -cf $W/gen_${TAG}_$k.tar -C $W/out $g $(cd $W/out && ls speed_*.json 2>/dev/null) && \
+    python3 $W/kit/s3io.py put $W/links.json gen_${TAG}_$k $W/gen_${TAG}_$k.tar && { up=0; rm $W/gen_${TAG}_$k.tar; }
+  [ $rc -eq 0 ] && [ $up -eq 0 ] || NFAIL=$((${NFAIL:-0} + 1))
+  st "task $k $t rc $rc upload $([ $up -eq 0 ] && echo ok || echo FAILED)"
 done
-st DONE; kill $LOGPID
+st "DONE failed tasks ${NFAIL:-0}"; kill $LOGPID

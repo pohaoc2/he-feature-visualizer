@@ -130,6 +130,13 @@
   - PixCell 程式不改。有兩支腳本把 checkpoint 和資料路徑寫死在程式裡（`build_cache.py` 的 `INFERENCE_VARIANTS`、`sensitivity_eval.py` 的 `data/orion-crc33`），改用一個由 symlink 組成的影子目錄提供這些路徑。
   - 每個比較組有自己的輸出資料夾，裡面記錄生成時用的 GPU 型號；如果換到別種 GPU 上接續，程式就停止。
   - 速度實測用 `speed` 任務：生成的圖只用來算速度，不進入任何結果。
+    - 30 步：前 16 張 tile，每張 1 張圖（`build_cache.py`）。20 步：前 8 張 tile × 15 個條件（消融腳本）。消融腳本每張 tile 另外寫一個 `cell_mask.png`，它不是生成的圖，不算進張數。
+    - 每支指令記四個數：總耗時（含模型載入）、到第一張 tile 完成的秒數、穩定速度、載入開銷。
+    - 穩定速度只用 tile 完成的時間點算：(tile 數 − 1) × 每張 tile 的圖數 ÷ (最後一張 tile 完成時間 − 第一張完成時間)。這樣模型載入和第一張 tile 都不算在內。
+    - 載入開銷 = 到第一張 tile 完成的秒數 − 一個穩定的 tile 間隔。
+    - 2026-11-19 第一版的速度數字（L4：30 步 25.38 張/分鐘，只有 8 張；20 步 113.24 張/分鐘，64 個檔案裡含 4 個 `cell_mask.png`）樣本太少，而且計法不同，不用來規劃。
+  - 上傳失敗也算這個任務失敗。Colab 的 task 行會寫出 `upload ok/FAILED`，最後一行寫失敗的任務數。Hyak 上傳失敗時不寫 `sent_` 記號，重排時會重做。
+  - multipart 的上傳槽只能用一次：第一次完成上傳後，upload id 就失效，再傳同一個槽會得到 404。所以每個 `gen_` 槽另外附一個可以重複使用的單一 PUT 連結，5 GB 以下的檔案走這條。每次重跑都產生新的 boot 和新的 TAG。
 - **Vanilla ControlNet 的 seed（偏離）**：`pixcell_offshelf_inference.py` 的起始雜訊用 `torch.randn_like` 產生，沒有設 seed，所以論文的 Vanilla 圖會受前面生成過的 tile 影響（上面寫的「seed 42」只對四個變體成立）。這次用 `eval/pxrun.py` 在每張 Vanilla tile 生成前設 `torch.manual_seed(42)`，讓結果可以重現；腳本的其他部分不動。
 - **論文 ΔLPIPS 的 tile 數不一致（只記錄）**：論文 `si_a1_a2/cache.json` 裡，Grouped 和 Concat 的敏感度各用了 500 張 tile，Per-channel 和 Grouped+bypass 只用 100 張。這次四個變體都用同一批 tile。
 
