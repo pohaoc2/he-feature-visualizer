@@ -8,6 +8,8 @@ architecture) does not reproduce the stored UNI features while the SD3.5 VAE lat
   A  extractor as shipped: resolve_data_config(model.pretrained_cfg)
   B  pretrained_cfg of pretrained_models/uni-2h/config.json (the UNI2-h hub config: ImageNet mean/std, crop_pct 1, bilinear)
   C  as B with bicubic interpolation
+B is the preprocessing sim-exp-validation already uses (forward.py:load_uni_extractor, commit ea5d5bd9, 2026-09-30);
+the L4 run (TAG l4u) found B reproduces the stored features to float precision, A and C do not.
 Per variant: resolved config, max abs difference, median per-tile max abs difference, min / median cosine.
 """
 import json
