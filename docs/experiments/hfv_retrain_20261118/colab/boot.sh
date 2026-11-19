@@ -154,6 +154,44 @@ for t in $TASKS; do
         [ $rc = 0 ] && tar -cf $W/uni_crc36_$V.tar -C $W u36 && put uni_crc36_$V $W/uni_crc36_$V.tar
       fi ;;
     unicheck) (cd $P && $PY -u $W/kit/unicheck.py $P $D $R/unicheck.json); st "unicheck rc $?" ;;
+    cvgate34|cv34|uni34hub|feat34|masklat34)
+      # CRC34 (held out, patient 2) evaluation inputs rebuilt with the CRC36 pipeline (crc34_render_20261118).
+      # cvgate34 = README criterion fixed before the run (cvgate34.py: 50 seed-42 eval tiles, TF32 off; count, centroid,
+      # class, contour identical; byte-identical reported); cv34 only if cvgate34 fails; uni34hub = UNI-2h config.json
+      # transform (feat_uni.py hub = ea5d5bd9); feat34 = SD3.5 VAE H&E latents; masklat34 = mask latents of the new cell_masks
+      case $t in cvgate34|cv34)
+        $PY -c "import skimage, numba, sys; sys.exit(not (skimage.__version__ == '0.26.0' and numba.__version__ == '0.68.0'))" 2>/dev/null || \
+          uv pip install -q --python $PY scikit-image==0.26.0 numba==0.68.0 llvmlite==0.50.0 numpy==2.0.2
+        K=$W/cellvit; if [ ! -d $K/CellViT ]; then mkdir -p $K; python3 $W/kit/s3io.py get $W/links.json cellvit_kit $W/dl/cv.tar && tar -xf $W/dl/cv.tar -C $K && rm $W/dl/cv.tar; fi
+        CV="env NVIDIA_TF32_OVERRIDE=0 $PY -u $K/hfv/stages/run_cellvit_local.py --checkpoint $K/ckpt/CellViT-256.pth --cellvit-repo $K/CellViT --no-skip-existing" ;; esac
+      case $t in cv34|uni34hub|feat34)
+        if [ ! -f $W/he34/zip.ok ]; then mkdir -p $W/he34; python3 $W/kit/s3io.py get $W/links.json he34 $W/dl/he34.tar
+          tar -xf $W/dl/he34.tar -C $W/he34 && rm $W/dl/he34.tar && (cd $W/he34 && zip -q -0 -r he34.zip he) && touch $W/he34/zip.ok; fi ;; esac
+      case $t in
+        cvgate34)
+          getf kit $W/kit.tar.gz && tar -xzf $W/kit.tar.gz -C $W/kit
+          mkdir -p $W/g34; python3 $W/kit/s3io.py get $W/links.json cvgate34in $W/dl/g34.tar && tar -xf $W/dl/g34.tar -C $W/g34 && rm $W/dl/g34.tar
+          PYTHONPATH=$K/CellViT $CV --zip $W/g34/he_tiles.zip --out $R/cvgate34; rc=$?
+          $PY $W/kit/cvgate34.py $W/g34/ref $R/cvgate34 $R/cvgate34.json; st "cvgate34 rc $rc" ;;
+        cv34)
+          PYTHONPATH=$K/CellViT $CV --zip $W/he34/he34.zip --out $W/cv34 --batch-size 32; rc=$?; st "cv34 rc $rc"
+          echo "cellvit json $(find $W/cv34 -name '*.json' | wc -l) of $(ls $W/he34/he | wc -l) tiles"
+          [ $rc = 0 ] && tar -cf $W/cellvit_crc34.tar -C $W cv34 && put cellvit_crc34 $W/cellvit_crc34.tar ;;
+        uni34hub)
+          $PY -u $W/kit/feat_uni.py $P hub --image-dir $W/he34/he --output-dir $W/u34/features --skip-vae; rc=$?; st "uni34hub rc $rc"
+          echo "uni $(ls $W/u34/features | wc -l) of $(ls $W/he34/he | wc -l)"
+          [ $rc = 0 ] && tar -cf $W/uni_crc34_hub.tar -C $W u34 && put uni_crc34_hub $W/uni_crc34_hub.tar ;;
+        feat34)
+          (cd $P && $PY -u stage1_extract_features.py --image-dir $W/he34/he --output-dir $W/f34/vae_features --skip-uni); rc=$?
+          st "feat34 rc $rc"; echo "vae $(ls $W/f34/vae_features | wc -l) of $(ls $W/he34/he | wc -l)"
+          [ $rc = 0 ] && tar -cf $W/feat_crc34.tar -C $W f34 && put feat_crc34 $W/feat_crc34.tar ;;
+        masklat34)
+          mkdir -p $W/c34; python3 $W/kit/s3io.py get $W/links.json crc34ch $W/dl/c34.tar && tar -xf $W/dl/c34.tar -C $W/c34 && rm $W/dl/c34.tar
+          M=$(find $W/c34 -type d -path '*exp_channels/cell_masks' | head -1)
+          (cd $P && $PY -u stage1_extract_features.py --image-dir $M --output-dir $W/masklat34 --vae-prefix mask_sd3_vae --skip-uni); rc=$?
+          st "masklat34 rc $rc"; echo "mask latents $(ls $W/masklat34 | wc -l) of $(ls $M | wc -l)"
+          [ $rc = 0 ] && tar -cf $W/masklat_crc34.tar -C $W masklat34 && put masklat_crc34 $W/masklat_crc34.tar ;;
+      esac ;;
     train:*)
       # train:RUN:CONFIG:MICRO_BS - one paper variant on CRC33_01 + CRC36 (train_wrap.py: effective batch 80, 20 epochs,
       # epoch-end checkpoints, every 2nd epoch and the last uploaded in the background, resume from S3 on a new runtime)

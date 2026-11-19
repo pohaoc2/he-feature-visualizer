@@ -3,7 +3,7 @@
   python presign.py OUT TAG TASKS [--put NAME[:multipart:N_PARTS:PART_MB] ...]
 Writes OUT/boot_<TAG>.sh = LINKS (JSON) + TASKS + TAG + boot.sh, uploads it to the run prefix and prints the one line the
 notebook runs. OUT stays outside git (mode 600); links expire after one day and are never committed.
-GET names: code, kit, req, the four pretrained tars, orion-crc33, newch33, cellvit_kit, he36, crc36ch.
+GET names: code, kit, req, the four pretrained tars, orion-crc33, newch33, cellvit_kit, he36, crc36ch, he34, crc34ch, cvgate34in.
 PUT slots: log_<TAG>, result_<TAG>, masklat_crc33_01, cellvit_crc36, feat_crc36, masklat_crc36 by default; --put adds more (multipart slots for files > 5 GB).
 An extra argument train:RUN adds, for every 2nd epoch and epoch 20, the checkpoint slots ckpt_RUN_eNN_cn (multipart,
 24 x 512 MB), _tme and _meta, and GET links of the same keys (train_wrap.py --fetch-resume); GET names c36train
@@ -53,7 +53,11 @@ def main():
          "orion-crc33": get("pohao/share_space/02_datasets/orion-crc33.zip"),
          "newch33": get(P + "inputs/new_exp_channels_crc33_01.tar"),
          "cellvit_kit": get(P + "inputs/cellvit_kit.tar"), "he36": get(P + "inputs/crc36_he_tiles.tar"),
-         "crc36ch": get(P + "inputs/crc36_exp_channels_pass1.tar")}
+         "crc36ch": get(P + "inputs/crc36_exp_channels_pass1.tar"),
+         # CRC34 evaluation inputs (crc34_render_20261118 cvprep34.py / run.slurm); outputs via --put cellvit_crc34,
+         # uni_crc34_hub, feat_crc34, masklat_crc34 when those tasks run
+         "he34": get(P + "inputs/crc34_he_tiles.tar"), "crc34ch": get(P + "inputs/crc34_exp_channels.tar"),
+         "cvgate34in": get(P + "inputs/cvgate34_inputs.tar")}
     for d in ("pixcell-256", "pixcell-256-controlnet", "sd-3.5-vae", "uni-2h"):
         g[d] = get(UG + d + ".tar")
     g["c36train"] = get(P + "inputs/c36train.tar")
