@@ -1,0 +1,1341 @@
+{
+ "tiff": "/gscratch/cheme/chiu/hfv_mx_20261118/lin/CRC33_01__P37_S76_01_A24_C59qX_E15_20220302_235136_561323-zlib.ome.tiff",
+ "ome": {
+  "axes": "IYX",
+  "shape": [
+   19,
+   52740,
+   36354
+  ],
+  "levels": [
+   [
+    19,
+    52740,
+    36354
+   ],
+   [
+    19,
+    26370,
+    18177
+   ],
+   [
+    19,
+    13185,
+    9089
+   ],
+   [
+    19,
+    6593,
+    4545
+   ],
+   [
+    19,
+    3297,
+    2273
+   ],
+   [
+    19,
+    1649,
+    1137
+   ],
+   [
+    19,
+    825,
+    569
+   ]
+  ],
+  "dtype": "uint16",
+  "mpp": [
+   0.325,
+   0.325
+  ]
+ },
+ "sample_n": 500,
+ "sample_seed": 20261118,
+ "train_dtypes": {
+  "vasculature": "bool",
+  "oxygen": "float32",
+  "glucose": "float32"
+ },
+ "vasculature": {
+  "cd31_only": {
+   "tile_equal_frac": 1.0,
+   "max_abs": 0.0,
+   "mean_abs": 0.0,
+   "p99_abs": 0.0,
+   "pearson": 1.0,
+   "byte_equal_frac": 1.0
+  },
+  "cd31_sma": {
+   "tile_equal_frac": 0.018,
+   "max_abs": 1.0,
+   "mean_abs": 0.06654541015625,
+   "p99_abs": 1.0,
+   "pearson": 0.8408068057558377,
+   "byte_equal_frac": 0.018
+  }
+ },
+ "fields": [
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": false,
+   "L_um": 60.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.42763088643550873,
+   "mean_abs": 0.05325479156074584,
+   "p99_abs": 0.3681744042038917,
+   "pearson": 0.9262005042950838,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": false,
+   "L_um": 60.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5780453681945801,
+   "mean_abs": 0.03574664140089385,
+   "p99_abs": 0.2264593845605849,
+   "pearson": 0.9277170944964822,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": false,
+   "L_um": 100.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4053586721420288,
+   "mean_abs": 0.024543527791342966,
+   "p99_abs": 0.19169736087322198,
+   "pearson": 0.9264516464906813,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": false,
+   "L_um": 100.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5800409317016602,
+   "mean_abs": 0.018992305808665604,
+   "p99_abs": 0.20095336854457768,
+   "pearson": 0.9236669757309918,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": false,
+   "L_um": 120.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4058600664138794,
+   "mean_abs": 0.018164393563034537,
+   "p99_abs": 0.14633959650993322,
+   "pearson": 0.9253302472607268,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": false,
+   "L_um": 120.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5805423259735107,
+   "mean_abs": 0.021699456638670653,
+   "p99_abs": 0.21899616718292236,
+   "pearson": 0.9213165828677896,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": false,
+   "L_um": 160.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.40648823976516724,
+   "mean_abs": 0.012647885170032168,
+   "p99_abs": 0.1304959666728971,
+   "pearson": 0.9230011875460021,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": false,
+   "L_um": 160.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5811704993247986,
+   "mean_abs": 0.033631344877104764,
+   "p99_abs": 0.24755644798278809,
+   "pearson": 0.9173593380006003,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": false,
+   "L_um": 200.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4068659543991089,
+   "mean_abs": 0.014011923428906812,
+   "p99_abs": 0.1461796760559082,
+   "pearson": 0.9210251489848729,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": false,
+   "L_um": 200.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5815482139587402,
+   "mean_abs": 0.041226450837422365,
+   "p99_abs": 0.2680187255144113,
+   "pearson": 0.9143568399187884,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": false,
+   "L_um": 450.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4077073335647583,
+   "mean_abs": 0.03183312659387684,
+   "p99_abs": 0.21217304646968804,
+   "pearson": 0.9147639079450836,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": false,
+   "L_um": 450.0,
+   "coarse_shape": [
+    3,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5823895931243896,
+   "mean_abs": 0.059175872952339434,
+   "p99_abs": 0.3653666737675654,
+   "pearson": 0.9056830804557331,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": true,
+   "L_um": 60.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.42763088643550873,
+   "mean_abs": 0.05209292392838529,
+   "p99_abs": 0.3681383433938026,
+   "pearson": 0.9265772668665001,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": true,
+   "L_um": 60.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5780453681945801,
+   "mean_abs": 0.035298634606432414,
+   "p99_abs": 0.22641730308532715,
+   "pearson": 0.9279993879652374,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": true,
+   "L_um": 100.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4053586721420288,
+   "mean_abs": 0.0242465584089241,
+   "p99_abs": 0.19168400824069964,
+   "pearson": 0.9267521421630829,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": true,
+   "L_um": 100.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5800409317016602,
+   "mean_abs": 0.01961632682653044,
+   "p99_abs": 0.20109165012836394,
+   "pearson": 0.9238838521739259,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": true,
+   "L_um": 120.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4058600664138794,
+   "mean_abs": 0.018119112883516208,
+   "p99_abs": 0.14635121852159494,
+   "pearson": 0.925614245108205,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": true,
+   "L_um": 120.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5805423259735107,
+   "mean_abs": 0.02255822706679055,
+   "p99_abs": 0.2190738922357558,
+   "pearson": 0.9215197872500327,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": true,
+   "L_um": 160.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.40648823976516724,
+   "mean_abs": 0.01297188007656041,
+   "p99_abs": 0.13057476460933648,
+   "pearson": 0.9232660085218001,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": true,
+   "L_um": 160.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5811704993247986,
+   "mean_abs": 0.03431153188383678,
+   "p99_abs": 0.24758935332298204,
+   "pearson": 0.9175469438374981,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": true,
+   "L_um": 200.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4068659543991089,
+   "mean_abs": 0.014536800565017985,
+   "p99_abs": 0.14620798885822284,
+   "pearson": 0.9212792093825658,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": true,
+   "L_um": 200.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5815482139587402,
+   "mean_abs": 0.0417795759178166,
+   "p99_abs": 0.26801949977874706,
+   "pearson": 0.9145358511604209,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 2,
+   "sma": true,
+   "L_um": 450.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.4077073335647583,
+   "mean_abs": 0.03208480502839029,
+   "p99_abs": 0.21217972099781024,
+   "pearson": 0.9149958918910599,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "glucose",
+   "ds": 2,
+   "sma": true,
+   "L_um": 450.0,
+   "coarse_shape": [
+    4,
+    26370,
+    18177
+   ],
+   "tile_equal_frac": 0.002,
+   "max_abs": 0.5823895931243896,
+   "mean_abs": 0.059429987234056625,
+   "p99_abs": 0.3653840452432626,
+   "pearson": 0.9058448593023559,
+   "byte_equal_frac": 0.002
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": false,
+   "L_um": 60.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.4178372621536255,
+   "mean_abs": 0.08466427272599662,
+   "p99_abs": 0.40336281061172485,
+   "pearson": 0.9871118427885288,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": false,
+   "L_um": 60.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.24999943375587463,
+   "mean_abs": 0.057311325195307516,
+   "p99_abs": 0.24610728055238718,
+   "pearson": 0.9941066985384804,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": false,
+   "L_um": 100.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.24999970197677612,
+   "mean_abs": 0.03997522179796624,
+   "p99_abs": 0.2201251101493833,
+   "pearson": 0.9970706222375748,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": false,
+   "L_um": 100.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.06697943806648254,
+   "mean_abs": 0.012622274267277135,
+   "p99_abs": 0.06366851940751073,
+   "pearson": 0.9997091209746155,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": false,
+   "L_um": 120.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.18590319156646729,
+   "mean_abs": 0.027352947530689106,
+   "p99_abs": 0.1562042236328125,
+   "pearson": 0.9986233588791089,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": false,
+   "L_um": 120.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 1.0,
+   "max_abs": 0.0,
+   "mean_abs": 0.0,
+   "p99_abs": 0.0,
+   "pearson": 1.0,
+   "byte_equal_frac": 1.0
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": false,
+   "L_um": 160.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.08191972970962524,
+   "mean_abs": 0.010608882852819988,
+   "p99_abs": 0.06346023142337787,
+   "pearson": 0.9997921715520679,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": false,
+   "L_um": 160.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.10546854138374329,
+   "mean_abs": 0.016744064677869118,
+   "p99_abs": 0.0927436953783034,
+   "pearson": 0.9994847703525129,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": false,
+   "L_um": 200.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 1.0,
+   "max_abs": 0.0,
+   "mean_abs": 0.0,
+   "p99_abs": 0.0,
+   "pearson": 1.0,
+   "byte_equal_frac": 1.0
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": false,
+   "L_um": 200.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.18590319156646729,
+   "mean_abs": 0.027352947530689106,
+   "p99_abs": 0.1562042236328125,
+   "pearson": 0.998623358879109,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": false,
+   "L_um": 450.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.2678358554840088,
+   "mean_abs": 0.025264422857196222,
+   "p99_abs": 0.16570246517658171,
+   "pearson": 0.9988191028574824,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": false,
+   "L_um": 450.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.44974343478679657,
+   "mean_abs": 0.05261737038788533,
+   "p99_abs": 0.3219059735536569,
+   "pearson": 0.9949045354716425,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": true,
+   "L_um": 60.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.4178372621536255,
+   "mean_abs": 0.08181688055952441,
+   "p99_abs": 0.40335130721330636,
+   "pearson": 0.9857423158255435,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": true,
+   "L_um": 60.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.24999943375587463,
+   "mean_abs": 0.05526952877816234,
+   "p99_abs": 0.24606570631265634,
+   "pearson": 0.9924590165905105,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": true,
+   "L_um": 100.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.24999970197677612,
+   "mean_abs": 0.03865264196799444,
+   "p99_abs": 0.22009897470474193,
+   "pearson": 0.9955774321348573,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": true,
+   "L_um": 100.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.06697943806648254,
+   "mean_abs": 0.012973047633281568,
+   "p99_abs": 0.06361281871795654,
+   "pearson": 0.9979637333125057,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": true,
+   "L_um": 120.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.18590319156646729,
+   "mean_abs": 0.02652110654008129,
+   "p99_abs": 0.15617626965045917,
+   "pearson": 0.9971112780420006,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": true,
+   "L_um": 120.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.18,
+   "max_abs": 0.04844099283218384,
+   "mean_abs": 0.0018984171512729517,
+   "p99_abs": 0.03449678421020508,
+   "pearson": 0.9982428085520156,
+   "byte_equal_frac": 0.18
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": true,
+   "L_um": 160.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.08191972970962524,
+   "mean_abs": 0.010644916735933293,
+   "p99_abs": 0.06342154860496496,
+   "pearson": 0.9982640042516174,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": true,
+   "L_um": 160.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.11399960517883301,
+   "mean_abs": 0.018190356856991913,
+   "p99_abs": 0.09323698282241821,
+   "pearson": 0.9977206827631537,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": true,
+   "L_um": 200.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.18,
+   "max_abs": 0.02938556671142578,
+   "mean_abs": 0.0011681661441398318,
+   "p99_abs": 0.021368801593780518,
+   "pearson": 0.9984663841337906,
+   "byte_equal_frac": 0.18
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": true,
+   "L_um": 200.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.18994638323783875,
+   "mean_abs": 0.02852111367482894,
+   "p99_abs": 0.1562575101852417,
+   "pearson": 0.996859510829083,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": true,
+   "L_um": 450.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.2678358554840088,
+   "mean_abs": 0.025795039169804114,
+   "p99_abs": 0.16570246517658171,
+   "pearson": 0.9972852248432772,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": true,
+   "L_um": 450.0,
+   "coarse_shape": [
+    4,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.44974343478679657,
+   "mean_abs": 0.05314798670049322,
+   "p99_abs": 0.3219059735536569,
+   "pearson": 0.993153517950655,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": false,
+   "L_um": 60.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.8685373961925507,
+   "mean_abs": 0.12375464701297233,
+   "p99_abs": 0.5609332998842,
+   "pearson": 0.9107843370381988,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": false,
+   "L_um": 60.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.8666490018367767,
+   "mean_abs": 0.09662743447834328,
+   "p99_abs": 0.4884277614951127,
+   "pearson": 0.9214799422820373,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": false,
+   "L_um": 100.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.7054958045482635,
+   "mean_abs": 0.0679901322416331,
+   "p99_abs": 0.3802110558748244,
+   "pearson": 0.921812680744422,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": false,
+   "L_um": 100.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.7032215297222137,
+   "mean_abs": 0.040968156870752864,
+   "p99_abs": 0.3115863251686086,
+   "pearson": 0.9287931058812026,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": false,
+   "L_um": 120.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.6390957832336426,
+   "mean_abs": 0.05186668405477076,
+   "p99_abs": 0.3195470583438871,
+   "pearson": 0.923776332513456,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": false,
+   "L_um": 120.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.636744350194931,
+   "mean_abs": 0.02516709493782582,
+   "p99_abs": 0.2540836369991295,
+   "pearson": 0.9296716214860706,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": false,
+   "L_um": 160.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.5341920554637909,
+   "mean_abs": 0.03024598312895341,
+   "p99_abs": 0.23349732816219193,
+   "pearson": 0.925591257129279,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": false,
+   "L_um": 160.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.5319643616676331,
+   "mean_abs": 0.01981259945222382,
+   "p99_abs": 0.1749768877029414,
+   "pearson": 0.9300330446984177,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": false,
+   "L_um": 200.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.4568898677825928,
+   "mean_abs": 0.01659003217482041,
+   "p99_abs": 0.17644155144691442,
+   "pearson": 0.9262767189301278,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": false,
+   "L_um": 200.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.4549087882041931,
+   "mean_abs": 0.024155080221957632,
+   "p99_abs": 0.1600278615951538,
+   "pearson": 0.9297926507041416,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": false,
+   "L_um": 450.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.2669932544231415,
+   "mean_abs": 0.02130923562926273,
+   "p99_abs": 0.15628927946090698,
+   "pearson": 0.926479571440914,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": false,
+   "L_um": 450.0,
+   "coarse_shape": [
+    3,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.45129191875457764,
+   "mean_abs": 0.04655482962741417,
+   "p99_abs": 0.31042024761438314,
+   "pearson": 0.927788778263442,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": true,
+   "L_um": 60.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.8685373961925507,
+   "mean_abs": 0.1178664549684438,
+   "p99_abs": 0.559794665277004,
+   "pearson": 0.9095404233040439,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": true,
+   "L_um": 60.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.8666490018367767,
+   "mean_abs": 0.09150953312671185,
+   "p99_abs": 0.48700159937143295,
+   "pearson": 0.9198082627947959,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": true,
+   "L_um": 100.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.7054958045482635,
+   "mean_abs": 0.06465053304654475,
+   "p99_abs": 0.3790254598855971,
+   "pearson": 0.9202009716195637,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": true,
+   "L_um": 100.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.7032215297222137,
+   "mean_abs": 0.0390503226294868,
+   "p99_abs": 0.31027758151292795,
+   "pearson": 0.9267839305757349,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": true,
+   "L_um": 120.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.6390957832336426,
+   "mean_abs": 0.04928062018498486,
+   "p99_abs": 0.31838262110948556,
+   "pearson": 0.922096060470615,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": true,
+   "L_um": 120.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.636744350194931,
+   "mean_abs": 0.024749333728309467,
+   "p99_abs": 0.2528432714939095,
+   "pearson": 0.9276023106836706,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": true,
+   "L_um": 160.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.5341920554637909,
+   "mean_abs": 0.02882340587807448,
+   "p99_abs": 0.23246097981929692,
+   "pearson": 0.9238395286330174,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": true,
+   "L_um": 160.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.5319643616676331,
+   "mean_abs": 0.020839338361870886,
+   "p99_abs": 0.17377126216888428,
+   "pearson": 0.927903235715081,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": true,
+   "L_um": 200.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.4568898677825928,
+   "mean_abs": 0.016306359978317232,
+   "p99_abs": 0.17554724752902873,
+   "pearson": 0.9244899040983381,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": true,
+   "L_um": 200.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.4549087882041931,
+   "mean_abs": 0.02543075782934511,
+   "p99_abs": 0.15977790981531137,
+   "pearson": 0.9276345383653203,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "oxygen",
+   "ds": 8,
+   "sma": true,
+   "L_um": 450.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.2669932544231415,
+   "mean_abs": 0.022059804756384437,
+   "p99_abs": 0.15634518921375262,
+   "pearson": 0.9246360011711232,
+   "byte_equal_frac": 0.004
+  },
+  {
+   "channel": "glucose",
+   "ds": 8,
+   "sma": true,
+   "L_um": 450.0,
+   "coarse_shape": [
+    4,
+    6593,
+    4545
+   ],
+   "tile_equal_frac": 0.004,
+   "max_abs": 0.45129191875457764,
+   "mean_abs": 0.047445644596988586,
+   "p99_abs": 0.3104392927885047,
+   "pearson": 0.9255894767780813,
+   "byte_equal_frac": 0.004
+  }
+ ],
+ "best": {
+  "oxygen": {
+   "channel": "oxygen",
+   "ds": 4,
+   "sma": false,
+   "L_um": 200.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 1.0,
+   "max_abs": 0.0,
+   "mean_abs": 0.0,
+   "p99_abs": 0.0,
+   "pearson": 1.0,
+   "byte_equal_frac": 1.0
+  },
+  "glucose": {
+   "channel": "glucose",
+   "ds": 4,
+   "sma": false,
+   "L_um": 120.0,
+   "coarse_shape": [
+    3,
+    13185,
+    9089
+   ],
+   "tile_equal_frac": 1.0,
+   "max_abs": 0.0,
+   "mean_abs": 0.0,
+   "p99_abs": 0.0,
+   "pearson": 1.0,
+   "byte_equal_frac": 1.0
+  }
+ },
+ "wall_s": 2039.2628228664398
+}

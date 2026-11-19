@@ -1,0 +1,114 @@
+{
+ "repro": "/gscratch/cheme/chiu/hfv_mx_20261118/out/crc33_repro_mx_channels.tar",
+ "train": "/gscratch/cheme/chiu/hfv_mx_20261118/raw/o33_mx_channels.tar",
+ "vasculature": {
+  "n_train": 10379,
+  "n_compared": 10379,
+  "missing_in_repro": 0,
+  "byte_equal_frac": 0.9994219096252047,
+  "array_equal_frac": 0.9994219096252047,
+  "max_abs": 1.0,
+  "mean_abs": 3.909155035859668e-06,
+  "tile_p999_abs_max": 1.0,
+  "pearson_pooled": 0.9999892080262917,
+  "pearson_tile_median": 1.0,
+  "pearson_tile_p1": 0.9999999999999998,
+  "n_tiles_with_r": 10379,
+  "worst_tiles": [
+   [
+    1.0,
+    "9216_1280"
+   ],
+   [
+    1.0,
+    "23040_38656"
+   ],
+   [
+    1.0,
+    "22528_17920"
+   ],
+   [
+    1.0,
+    "19200_12288"
+   ],
+   [
+    1.0,
+    "15104_44032"
+   ]
+  ],
+  "pixel_agreement": 0.9999960908449641,
+  "iou": 0.9999835431193637
+ },
+ "oxygen": {
+  "n_train": 10379,
+  "n_compared": 10379,
+  "missing_in_repro": 0,
+  "byte_equal_frac": 1.0,
+  "array_equal_frac": 1.0,
+  "max_abs": 0.0,
+  "mean_abs": 0.0,
+  "tile_p999_abs_max": 0.0,
+  "pearson_pooled": 1.0,
+  "pearson_tile_median": 1.0,
+  "pearson_tile_p1": 0.9999999999999998,
+  "n_tiles_with_r": 10353,
+  "worst_tiles": [
+   [
+    0.0,
+    "9984_9984"
+   ],
+   [
+    0.0,
+    "9984_9728"
+   ],
+   [
+    0.0,
+    "9984_9472"
+   ],
+   [
+    0.0,
+    "9984_9216"
+   ],
+   [
+    0.0,
+    "9984_8960"
+   ]
+  ]
+ },
+ "glucose": {
+  "n_train": 10379,
+  "n_compared": 10379,
+  "missing_in_repro": 0,
+  "byte_equal_frac": 1.0,
+  "array_equal_frac": 1.0,
+  "max_abs": 0.0,
+  "mean_abs": 0.0,
+  "tile_p999_abs_max": 0.0,
+  "pearson_pooled": 1.0,
+  "pearson_tile_median": 1.0,
+  "pearson_tile_p1": 0.9999999999999998,
+  "n_tiles_with_r": 10353,
+  "worst_tiles": [
+   [
+    0.0,
+    "9984_9984"
+   ],
+   [
+    0.0,
+    "9984_9728"
+   ],
+   [
+    0.0,
+    "9984_9472"
+   ],
+   [
+    0.0,
+    "9984_9216"
+   ],
+   [
+    0.0,
+    "9984_8960"
+   ]
+  ]
+ }
+}

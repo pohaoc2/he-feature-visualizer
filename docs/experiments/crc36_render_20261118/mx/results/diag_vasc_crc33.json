@@ -1,0 +1,127 @@
+{
+ "n_diff": 6,
+ "tiles": [
+  {
+   "tile": "11520_31488",
+   "n_diff_px": 73,
+   "frac_train": 0.08038330078125,
+   "frac_repro": 0.0792694091796875,
+   "otsu_thr_repro": 107.0,
+   "p1": 138.3499755859375,
+   "p99": 503.0,
+   "levels_train_only": [
+    107
+   ],
+   "levels_repro_only": [],
+   "hist_at_thr": [
+    172,
+    73,
+    162,
+    88
+   ],
+   "touches_edge": false
+  },
+  {
+   "tile": "15104_44032",
+   "n_diff_px": 64,
+   "frac_train": 0.9374847412109375,
+   "frac_repro": 0.9365081787109375,
+   "otsu_thr_repro": 99.0,
+   "p1": 0.0,
+   "p99": 313.65234375,
+   "levels_train_only": [
+    99
+   ],
+   "levels_repro_only": [],
+   "hist_at_thr": [
+    29,
+    64,
+    38,
+    38
+   ],
+   "touches_edge": false
+  },
+  {
+   "tile": "19200_12288",
+   "n_diff_px": 227,
+   "frac_train": 0.113128662109375,
+   "frac_repro": 0.1165924072265625,
+   "otsu_thr_repro": 77.0,
+   "p1": 188.0,
+   "p99": 471.65234375,
+   "levels_train_only": [],
+   "levels_repro_only": [
+    78
+   ],
+   "hist_at_thr": [
+    237,
+    250,
+    227,
+    214
+   ],
+   "touches_edge": false
+  },
+  {
+   "tile": "22528_17920",
+   "n_diff_px": 107,
+   "frac_train": 0.069305419921875,
+   "frac_repro": 0.0676727294921875,
+   "otsu_thr_repro": 92.0,
+   "p1": 191.0,
+   "p99": 612.3046875,
+   "levels_train_only": [
+    91,
+    92
+   ],
+   "levels_repro_only": [],
+   "hist_at_thr": [
+    108,
+    50,
+    112,
+    52
+   ],
+   "touches_edge": false
+  },
+  {
+   "tile": "23040_38656",
+   "n_diff_px": 686,
+   "frac_train": 0.2439422607421875,
+   "frac_repro": 0.2334747314453125,
+   "otsu_thr_repro": 83.0,
+   "p1": 193.0,
+   "p99": 475.65234375,
+   "levels_train_only": [
+    82,
+    83
+   ],
+   "levels_repro_only": [],
+   "hist_at_thr": [
+    691,
+    346,
+    320,
+    305
+   ],
+   "touches_edge": false
+  },
+  {
+   "tile": "9216_1280",
+   "n_diff_px": 1502,
+   "frac_train": 0.42138671875,
+   "frac_repro": 0.398468017578125,
+   "otsu_thr_repro": 102.0,
+   "p1": 190.0,
+   "p99": 276.65234375,
+   "levels_train_only": [
+    102
+   ],
+   "levels_repro_only": [],
+   "hist_at_thr": [
+    0,
+    1502,
+    0,
+    0
+   ],
+   "touches_edge": false
+  }
+ ]
+}

@@ -1,0 +1,153 @@
+{
+ "mx_tiff": "/gscratch/cheme/chiu/hfv_mx_20261118/lin/CRC33_01__P37_S76_01_A24_C59qX_E15_20220302_235136_561323-zlib.ome.tiff",
+ "mx_tiff_bytes": 47088812824,
+ "ome": {
+  "axes": "IYX",
+  "shape": [
+   19,
+   52740,
+   36354
+  ],
+  "levels": [
+   [
+    19,
+    52740,
+    36354
+   ],
+   [
+    19,
+    26370,
+    18177
+   ],
+   [
+    19,
+    13185,
+    9089
+   ],
+   [
+    19,
+    6593,
+    4545
+   ],
+   [
+    19,
+    3297,
+    2273
+   ],
+   [
+    19,
+    1649,
+    1137
+   ],
+   [
+    19,
+    825,
+    569
+   ]
+  ],
+  "dtype": "uint16",
+  "mpp": [
+   0.325,
+   0.325
+  ]
+ },
+ "markers": [
+  "Hoechst",
+  "AF1",
+  "CD31",
+  "CD45",
+  "CD68",
+  "Argo550",
+  "CD4",
+  "FOXP3",
+  "CD8a",
+  "CD45RO",
+  "CD20",
+  "PD-L1",
+  "CD3e",
+  "CD163",
+  "E-cadherin",
+  "PD-1",
+  "Ki67",
+  "Pan-CK",
+  "SMA"
+ ],
+ "channel_index": {
+  "CD31": 2,
+  "Ki67": 16,
+  "CD68": 4,
+  "SMA": 18
+ },
+ "tiles_json": "/gscratch/cheme/chiu/hfv_mx_20261118/raw/processed_crc33_index.json",
+ "n_tiles_all": 10379,
+ "n_ink_excluded": 0,
+ "n_tiles": 10379,
+ "tiles_outside_image": 0,
+ "params": {
+  "ds": 4,
+  "oxygen_L_um": 200.0,
+  "glucose_L_um": 120.0,
+  "sma_refine": false,
+  "mpp": 0.325,
+  "k_base": 0.1,
+  "demand_weight": 0.3,
+  "cd68_weight": 0.1,
+  "sma_adjacency_px": 2,
+  "vasc_noisy_max_fraction": 0.98,
+  "coarse_shape": [
+   3,
+   13185,
+   9089
+  ]
+ },
+ "hfv_equivalent_command": "python -m stages.multiplex_layers --multiplex-dir <patchify multiplex/> --index <index.json> --metadata-csv <markers> --out <out> --multiplex-tiff <mx tiff> --oxygen-model wsi-pde --glucose-model wsi-pde --wsi-pde-ds 4 --oxygen-pde-krogh-um 200 --glucose-pde-krogh-um 120",
+ "command": "/gscratch/cheme/chiu/hfv_mx_20261118/scripts/mx_channels.py --mx-tiff /gscratch/cheme/chiu/hfv_mx_20261118/lin/CRC33_01__P37_S76_01_A24_C59qX_E15_20220302_235136_561323-zlib.ome.tiff --markers /gscratch/cheme/chiu/hfv_mx_20261118/lin/CRC33_01__markers.csv --tiles /gscratch/cheme/chiu/hfv_mx_20261118/raw/processed_crc33_index.json --out-tar /gscratch/cheme/chiu/hfv_mx_20261118/out/crc33_repro_mx_channels.tar --prefix orion-crc33/exp_channels --summary /gscratch/cheme/chiu/hfv_mx_20261118/out/crc33_repro.json --ds 4 --o2-L-um 200 --glc-L-um 120 --workers 16 --expect-mpp 0.325",
+ "format": {
+  "vasculature": "npy bool (256,256)",
+  "oxygen": "npy float32 (256,256) [0,1]",
+  "glucose": "npy float32 (256,256) [0,1]",
+  "member": "orion-crc33/exp_channels/<channel>/<x0>_<y0>.npy"
+ },
+ "per_tile_mean": {
+  "vasculature_fraction": {
+   "mean": 0.23753567166452016,
+   "p5": 0.022735595703125,
+   "p50": 0.250213623046875,
+   "p95": 0.5029464721679687
+  },
+  "oxygen": {
+   "mean": 0.9574006954097647,
+   "p5": 0.8644515633583069,
+   "p50": 0.9716758728027344,
+   "p95": 0.9993703544139863
+  },
+  "glucose": {
+   "mean": 0.9324448359432977,
+   "p5": 0.7889667510986328,
+   "p50": 0.9538748860359192,
+   "p95": 0.9989549934864044
+  }
+ },
+ "value_range": {
+  "oxygen": [
+   0.3664400577545166,
+   1.0
+  ],
+  "glucose": [
+   0.1876455545425415,
+   1.0
+  ]
+ },
+ "tiles_with_any_vessel": 10379,
+ "out_tar": "/gscratch/cheme/chiu/hfv_mx_20261118/out/crc33_repro_mx_channels.tar",
+ "out_tar_bytes": 6153676800,
+ "content_sha256": "aa770d8a214b62592ee615ac04640b2468064377577b11a9c7adde975cf95800",
+ "timing_s": {
+  "wsi_fields": 97.93019533157349,
+  "level0_planes": 35.71232748031616,
+  "tiles": 24.689354181289673,
+  "total": 220.77728652954102
+ },
+ "workers": 16,
+ "host": "n3044"
+}
