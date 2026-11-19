@@ -26,6 +26,10 @@ checkpoint folders -> CK. No PixCell file is changed.
 Vanilla ControlNet: tools/baselines/pixcell_offshelf_inference.py draws its starting noise with torch.randn_like and no
 seed; here torch.manual_seed(42) is set before each tile (pxrun.py) so the baseline is reproducible (README deviation).
 Each group records its GPU in W/out/<group>/gpu.txt and stops when resumed on another GPU type.
+Every PixCell command runs with cwd = the shadow root and PYTHONPATH = the shadow root (the scripts import tools.* and
+src.* without adding the repo to sys.path). View roots link each channel file under its own extension (the packs keep
+vasculature / oxygen / glucose as .npy, the cell channels as .png). Exit code 1 when any task has rc != 0 or stops.
+EVALGEN_GPU (optional) names the device when nvidia-smi is absent (dry tests only).
 """
 import argparse
 import json
@@ -48,8 +52,11 @@ P, W, CK, R = (Path(x).resolve() for x in (A.pixcell, A.work, A.ck, A.roots))
 PY = sys.executable
 CH = ["cell_masks", "cell_type_healthy", "cell_type_cancer", "cell_type_immune", "cell_state_prolif",
       "cell_state_nonprolif", "cell_state_dead", "vasculature", "oxygen", "glucose"]
-GPU = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True,
-                     text=True).stdout.strip().splitlines()[0]
+try:
+    GPU = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True,
+                         text=True).stdout.strip().splitlines()[0]
+except (FileNotFoundError, IndexError):
+    GPU = os.environ.get("EVALGEN_GPU") or sys.exit("STOP no GPU found (nvidia-smi) and EVALGEN_GPU not set")
 print(f"[evalgen] GPU {GPU}", flush=True)
 
 
@@ -99,18 +106,26 @@ def view(root, name):
     """data root holding only the tiles of R/name (symlinks to the pack)"""
     src = R / root
     V = W / "views" / f"{root}__{Path(name).stem}"
-    if (V / "VIEW_OK").is_file():
+    if (V / "VIEW_OK_v2").is_file():
         return V
     if V.exists():
         shutil.rmtree(V)
     for t in ids_of(name):
         for c in CH:
-            link(V / "exp_channels" / c / f"{t}.png", src / "exp_channels" / c / f"{t}.png")
-        link(V / "features" / f"{t}_uni.npy", src / "features" / f"{t}_uni.npy")
-        for s in ("sd3_vae", "mask_sd3_vae"):
-            link(V / "vae_features" / f"{t}_{s}.npy", src / "vae_features" / f"{t}_{s}.npy")
-        link(V / "he" / f"{t}.png", src / "he" / f"{t}.png")
-    (V / "VIEW_OK").write_text("")
+            f = sorted((src / "exp_channels" / c).glob(f"{t}.*"))
+            if len(f) != 1:
+                sys.exit(f"STOP view {root}: {len(f)} files for {c}/{t}")
+            link(V / "exp_channels" / c / f[0].name, f[0])
+        files = [src / "features" / f"{t}_uni.npy", src / "he" / f"{t}.png"] + \
+                [src / "vae_features" / f"{t}_{s}.npy" for s in ("sd3_vae", "mask_sd3_vae")]
+        for f in files:
+            if not f.is_file():
+                sys.exit(f"STOP view {root}: missing {f}")
+            link(V / f.relative_to(src), f)
+    bad = [p for p in V.rglob("*") if p.is_symlink() and not p.exists()]
+    if bad:
+        sys.exit(f"STOP view {root}: {len(bad)} dangling links, e.g. {bad[0]}")
+    (V / "VIEW_OK_v2").write_text("")
     return V
 
 
@@ -128,8 +143,9 @@ def group_dir(group):
 def run(cmd, cwd, log):
     t0 = time.time()
     print(f"[evalgen] $ {' '.join(map(str, cmd))}", flush=True)
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(cwd)] + [x for x in [os.environ.get("PYTHONPATH")] if x]))
     with open(log, "a") as f:
-        rc = subprocess.run([str(c) for c in cmd], cwd=cwd, stdout=f, stderr=subprocess.STDOUT).returncode
+        rc = subprocess.run([str(c) for c in cmd], cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT).returncode
     print(f"[evalgen] rc {rc} {time.time() - t0:.0f} s (log {log})", flush=True)
     return rc
 
@@ -161,7 +177,11 @@ for task in A.tasks:
     log = G / "gen.log"
     t0 = time.time()
     rc = 0
-    if kind == "speed":
+    for stale in ("DONE", "FAILED"):
+        (G / stale).unlink(missing_ok=True)
+    if kind == "speed":   # throwaway: start clean
+        for d in ("s30", "s20"):
+            shutil.rmtree(G / d, ignore_errors=True)
         ids = ids_of(args[1])
         (G / "ids8.txt").write_text("".join(f"{t}\n" for t in ids[:8]))
         (G / "ids4.txt").write_text("".join(f"{t}\n" for t in ids[:4]))
@@ -219,3 +239,4 @@ for task in A.tasks:
     summary.append((task, f"rc {rc} pngs {n} {time.time() - t0:.0f} s"))
     print(f"[evalgen] {task}: rc {rc}, {n} png, {time.time() - t0:.0f} s", flush=True)
 print("[evalgen] summary", json.dumps(summary), flush=True)
+sys.exit(0 if all(r.startswith("rc 0 ") for _, r in summary) else 1)
