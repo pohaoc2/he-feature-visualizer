@@ -95,6 +95,30 @@
 - 執行位置（協調者 2026-11-18）：這個 Colab 帳號一次只能開一個付費 GPU session，Colab 要依序跑三個變體的訓練，所以 CRC34 的 GPU 步驟（cvgate34、必要時 cv34、uni34hub、feat34、masklat34）改在 Hyak 的 checkpoint 分區 A100 上跑（`crc34_render_20261118/scripts/gpu34.slurm`）。指令和 Colab 的 `boot.sh` 相同；環境用 CRC16 G-ckpt 閘門那次的 Hyak CellViT 環境（它的套件版本就是 Colab 版本表加上 scikit-image / numba），以前的 G-ckpt 閘門也是在 Hyak A100 上跑的。預訓練權重用 Colab tar 當初打包時的 Hyak 原始檔案。
 - 背景：以前的 G-ckpt 閘門（sim-exp-validation prereg_crc16.md 修訂 1）用的就是固定的 50 張 CRC34 tile。TF32 關閉時，50/50 張細胞數相同，1,228/1,228 顆質心距離為 0，48/50 個 JSON 逐位元組相同。
 
+### 評估的 tile、生成和評分規則（協調者 2026-11-18 決定，在任何評估結果出現之前）
+
+這些規則在第一張評估圖生成之前就已 commit。各項評估的程式都是 PixCell cb62fa7 的原始腳本；唯一的改動是在執行時把 checkpoint 路徑和資料根目錄換成這次的（例如 `build_cache.py` 的 `INFERENCE_VARIANTS` 原本寫死了舊 checkpoint）。
+
+1. **Fig 2 四個變體的指標（FUD、LPIPS、PQ、DICE、HED）**
+   - 比較組：四個變體加上 Vanilla ControlNet，五者算一組。五者在同一種 GPU 上生成，盡量在同一個 session 或作業內完成，步數、guidance、seed 都相同（照論文 `si_a1_a2`：30 步、guidance 1.5、seed 42）。
+   - **主要結果**：CRC36 保留區 300 張和 CRC34 300 張，與消融主要組是同一批 tile（取樣方法見上面的消融段落）。每一組都重新生成 Vanilla。
+   - **次要組**：論文 Fig 2 那 100 張 CRC33 tile（`metric_tile_ids`）。**可和論文比較；這些是訓練 tile，不是保留區。**
+2. **ΔLPIPS**：和第 1 點用同一批 tile，兩種定義都算、分開報告（定義見上面 Vanilla 段落）。
+3. **UNI×TME 分解（Fig 3）和每個子通道的影響（Fig 4，ΔE / ΔPQ）**
+   - 都用 Concat、20 步、guidance 2.5、seed 42（照論文）。
+   - 主要結果：CRC36 保留區那 300 張。
+   - 次要組：照論文的 tile 選法，在新的 CRC33_01 上各跑一次（分解取排序後前 500 張；Fig 4 取 `paired_1000_tile_ids.txt` 前 300 張，扣掉墨水 tile 後實際 299 張）。這組同樣是訓練 tile，只用來和論文比較。
+   - 每個子通道拿掉時用的基準圖，都在同一次執行裡重新生成（`--regenerate-baseline`）。
+   - Fig 3D–F 的 a4 掃描（30 張 tile × 掃描值）**這次未執行**。這不是取消，之後需要時再做。
+4. **CRC34 凍結推論**
+   - 照論文 `run_evaluation.py`：n = 1000，`random.seed(42)` 加 `random.sample`；paired 用該 tile 自己的 UNI，unpaired 用「下一張」tile 的 UNI（`tile_ids[(i+1) % N]`）；Concat、20 步、guidance 2.5、seed 42。
+   - **注意**：CRC34 的輸入已經重建（見偏離紀錄），送進抽樣的 tile 清單和論文的不同。抽樣程序相同，但抽到的 tile 不一定相同，和論文比較時要附上這個前提。
+5. **生成和評分的硬體**
+   - 每個比較組（一個條件和它的基準圖、Fig 2 的五個模型）從頭到尾在同一種 GPU 上生成。如果有組被拆到不同種 GPU，要在這裡記錄。生成可以在 Colab L4 或 Hyak checkpoint 分區的 A100 上做，Tillicum 只用來訓練。
+   - 所有評分（CellViT、FUD 的 UNI 特徵、LPIPS 等）都集中在 Hyak 的 A100 上做，TF32 關閉（`NVIDIA_TF32_OVERRIDE=0`）。
+   - 速度：kit 完成後，先在 Colab L4 和 Hyak A100 上各跑一批，分別實測 20 步和 30 步每分鐘生成幾張，再依實測數字分配 session。只寫實測數字，不寫推估值。
+6. **可解碼性**：只用真實 H&E，不需要新的 checkpoint。照論文的程序做，目標換成新的細胞通道：CRC33_01 的 tile，空間分塊 5-fold（2048 px 一塊）。程式預設是 3 折，所以要加 `--n-splits 5`。
+
 ## 偏離紀錄
 
 - **CRC34 的輸入改用新流程重建（偏離論文的 CRC34 輸入）**：CRC34 的評估輸入照 CRC36 的流程重新建立，規則、門檻和程式路徑都相同（`crc34_render_20261118/`）。流程包含 Lin 分割、CELESTA 加 Lin Fig. 3d 判定細胞類型、NucleusShapes 繪製、CellViT 判定死細胞，以及血管、氧、葡萄糖通道；這三個通道的參數直接讀 CRC36 那次執行的設定。論文用的舊 `orion-CRC34.tar` 不再使用，但仍原封不動保留在 S3（`share_space/02_datasets/`）。這是協調者在 2026-11-18 決定的，當時還沒有任何評估結果。
