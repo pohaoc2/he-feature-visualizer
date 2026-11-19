@@ -56,3 +56,7 @@ for cfg in CONFIGS:
         break
     json.dump(res, open(f"{OUT}/probe_{TAG}.json", "w"), indent=1)
     print(name, {k: v for k, v in res[name].items() if k != "error"}, flush=True)
+bad = [n for n, r in res.items() if not r.get("samples_per_s")]
+if bad:
+    print(f"STOP probe: no timing for {bad}", flush=True)
+    sys.exit(1)

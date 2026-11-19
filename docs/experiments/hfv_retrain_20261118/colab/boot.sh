@@ -13,8 +13,10 @@
 #   probe   : probe_sweep.py on the four paper variant configs (Concat, Grouped, Grouped + bypass, Per-channel)
 #   cvgate  : CellViT-256 card gate (50 CRC34 tiles vs the reference JSONs)   cv36 : CellViT on the CRC36 H&E tiles
 #   feat36  : UNI-2h + SD3.5 VAE features of the CRC36 H&E tiles   masklat36 : mask latents of the CRC36 cell_masks
+#   unicheck: which UNI-2h preprocessing reproduces the stored orion-crc33 UNI features (unicheck.py)
 # Results (logs, json) return as result_<TAG>.tar.gz; the log is pushed every 2 min to log_<TAG>.
 set -u
+export MPLBACKEND=Agg   # Colab exports the notebook inline backend; scripts here run outside the kernel
 W=/content/hfv; mkdir -p $W; LOG=$W/colab_$TAG.log
 exec > >(tee -a $LOG) 2>&1
 T0=$(date +%s)
@@ -94,6 +96,10 @@ for t in $TASKS; do
       # CellViT-256 (he-feature-visualizer stages/run_cellvit_local.py e88f450, unmodified) in the same environment
       # (the Hyak CellViT env freeze equals req.txt + torch / torchvision / xformers). cvgate = the 50-tile CRC34 gate of
       # crc16-20261024/cellvit (cellvit_gate.py compare: counts equal, centroids within 2 px); cv36 = all CRC36 H&E tiles.
+      # CellViT also imports scikit-image (watershed) and numba (tools.py), which req.txt lacks; versions compatible with
+      # the pinned numpy 2.0.2 (the Hyak CellViT env's own versions were not readable at build time); cvgate checks the result
+      $PY -c "import skimage, numba" 2>/dev/null || uv pip install -q --python $PY scikit-image==0.25.2 numba==0.61.2 numpy==2.0.2
+      $PY -c "import skimage, numba, numpy; print('cellvit deps', skimage.__version__, numba.__version__, numpy.__version__)"
       K=$W/cellvit; if [ ! -d $K/CellViT ]; then mkdir -p $K; python3 $W/kit/s3io.py get $W/links.json cellvit_kit $W/dl/cv.tar && tar -xf $W/dl/cv.tar -C $K && rm $W/dl/cv.tar; fi
       CV="$PY -u $K/hfv/stages/run_cellvit_local.py --checkpoint $K/ckpt/CellViT-256.pth --cellvit-repo $K/CellViT --no-skip-existing"
       if [ $t = cvgate ]; then
@@ -123,6 +129,7 @@ for t in $TASKS; do
          --vae-prefix mask_sd3_vae --skip-uni); rc=$?; st "masklat36 rc $rc"
       echo "mask latents $(ls $W/masklat36 | wc -l) of $(ls $W/c36/orion-crc36/exp_channels/cell_masks | wc -l)"
       [ $rc = 0 ] && tar -cf $W/masklat_crc36.tar -C $W masklat36 && put masklat_crc36 $W/masklat_crc36.tar ;;
+    unicheck) (cd $P && $PY -u $W/kit/unicheck.py $P $D $R/unicheck.json); st "unicheck rc $?" ;;
     *) echo "unknown task $t" ;;
   esac
 done

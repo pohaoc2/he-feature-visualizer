@@ -29,6 +29,7 @@ import sys
 import time
 
 EFFECTIVE_BS = 80
+os.environ["MPLBACKEND"] = "Agg"   # Colab exports the notebook inline backend, which matplotlib rejects outside a kernel
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--pixcell", required=True)
