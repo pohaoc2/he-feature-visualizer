@@ -194,7 +194,7 @@
 | | c、d ΔE / ΔPQ 排名 | 同 Fig 4b 的 LOO CSV | 新模型重做 |
 | si_performance_ranking | 單 panel | 同 Fig 2d 的消融指標 | 新模型重做 |
 | ablation_grids_combined | a paired 網格，tile `10752_13824` | 消融生成圖和 metrics（這張 tile 在 299 張之內） | 新模型重做 |
-| | b unpaired 網格，tile `13056_27392`（風格 `12032_15104`） | 這張是論文 unpaired 清單的第 1,001 張，不在 299 張裡 | 協調者 2026-11-19 核准：把這張 tile 補進消融生成（1 張 × 15 條件，unpaired，風格 `12032_15104`），和次要組消融同一比較組、同一種 GPU。如果它在新的 CRC33_01 裡沒有新通道，就這次未重做（舊模型輸入） |
+| | b unpaired 網格，tile `13056_27392`（風格 `12032_15104`） | 這張是論文 unpaired 清單的第 1,001 張，不在 299 張裡 | 協調者 2026-11-19 核准：把這張 tile 補進消融生成（1 張 × 15 條件，unpaired，風格 `12032_15104`），和次要組消融同一比較組、同一種 GPU。如果它在新的 CRC33_01 裡沒有新通道，就這次未重做（舊模型輸入）。**結果（packgrid33 43393902，2026-11-19）：這張 tile 在新的 CRC33_01 裡沒有新的細胞通道（NO_CHANNELS），所以 panel b 這次未重做，保留舊模型輸入。** |
 | si_qualitative_variants | 單 panel：10 張 tile × 五個模型 | `si_a1_a2/tiles/<variant>/<tile>.png`（`metric_tile_ids[:10]`） | 新模型重做 |
 | si_threshold_sensitivity | a、b | 同 Fig 4c 的 a6 JSON | 同 Fig 4c–f：ΔPQ 的 C33、C34 = 新模型重做，C10 這次未重做；R² 的 C33 = 新通道重做，C34、C10 這次未重做 |
 | si_patient_generalization | a CRC33 對 CRC34 指標 | `share-space-paper/figures/data/patient_generalization_metrics.json`。PixCell 裡沒有產生這個檔的程式，原本的 JSON 由哪支程式產生**不明** | 新模型重做。這次的 JSON 是**重建的**：由 `eval/` 的 wrapper 用同樣的鍵，從 CRC34 評估（規則第 4 點）和 CRC33 消融的全通道條件算出 |
