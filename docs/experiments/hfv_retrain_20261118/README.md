@@ -119,6 +119,20 @@
    - 速度：kit 完成後，先在 Colab L4 和 Hyak A100 上各跑一批，分別實測 20 步和 30 步每分鐘生成幾張，再依實測數字分配 session。只寫實測數字，不寫推估值。
 6. **可解碼性**：只用真實 H&E，不需要新的 checkpoint。照論文的程序做，目標換成新的細胞通道：CRC33_01 的 tile，空間分塊 5-fold（2048 px 一塊）。程式預設是 3 折，所以要加 `--n-splits 5`。
 
+### 評估 kit（`eval/`）
+
+- **評估包**（Hyak CPU 作業打包後放到 S3 `inputs/eval/`）：每張切片一個 tar，格式就是 PixCell 讀的 ORION 目錄（10 個通道、UNI、H&E 的 VAE latent、mask latent、H&E、index）。來源檔案就是組訓練資料用的那些檔案（`eval/evalpack.py`）。缺任何一項就停止。
+  - `evalpack_crc36ho`：CRC36 保留區全部 1,092 張（緩衝帶和訓練 tile 不放）。主要組的 300 張和 derangement 由 `eval/picks.py` 產生（`crc36ho_p300_ids.txt`、`crc36ho_p300_unpaired.json`）。
+  - `evalpack_crc33sec`：CRC33_01 次要組，共 824 張；另有 209 張只當 unpaired 風格來源（只需要 UNI 和 H&E）。`eval/sets33.py` 從論文的 tile 清單切出：Fig 2 100 張（全部都有新通道）、消融和 Fig 4 共 299 張（`10496_17664` 是墨水 tile，扣掉）、分解 500 張（PixCell 的數字排序，取前 500 張）。論文的三份清單從 `inference_output_20260527.zip` 用 range 讀取取出（另讀約 52 MB），放在 `inputs/eval/paper_lists/`。
+  - `evalpack_crc34eval`：要等 CRC34 的 CellViT 閘門和重繪完成才能打包。
+- **checkpoint**：生成用的是 epoch 20 的推論副本 `outputs/infer_<run>_e20.tar`（`eval/slimck.py`）。PixCell 推論只讀 `state_dict`（`_extract_state_dict`）和 `tme_module.pth`，所以副本只保留這兩部分。副本重新載入後逐個 tensor 和原檔比對，必須完全相同。完整的訓練 checkpoint 仍留在 S3。
+- **生成**：`eval/evalgen.py`，Colab（`eval/boot_eval.sh` + `eval/presign_eval.py`，只用 presigned 連結）和 Hyak A100（`eval/gen_hyak.slurm`）跑的是同一支程式。
+  - PixCell 程式不改。有兩支腳本把 checkpoint 和資料路徑寫死在程式裡（`build_cache.py` 的 `INFERENCE_VARIANTS`、`sensitivity_eval.py` 的 `data/orion-crc33`），改用一個由 symlink 組成的影子目錄提供這些路徑。
+  - 每個比較組有自己的輸出資料夾，裡面記錄生成時用的 GPU 型號；如果換到別種 GPU 上接續，程式就停止。
+  - 速度實測用 `speed` 任務：生成的圖只用來算速度，不進入任何結果。
+- **Vanilla ControlNet 的 seed（偏離）**：`pixcell_offshelf_inference.py` 的起始雜訊用 `torch.randn_like` 產生，沒有設 seed，所以論文的 Vanilla 圖會受前面生成過的 tile 影響（上面寫的「seed 42」只對四個變體成立）。這次用 `eval/pxrun.py` 在每張 Vanilla tile 生成前設 `torch.manual_seed(42)`，讓結果可以重現；腳本的其他部分不動。
+- **論文 ΔLPIPS 的 tile 數不一致（只記錄）**：論文 `si_a1_a2/cache.json` 裡，Grouped 和 Concat 的敏感度各用了 500 張 tile，Per-channel 和 Grouped+bypass 只用 100 張。這次四個變體都用同一批 tile。
+
 ## 偏離紀錄
 
 - **CRC34 的輸入改用新流程重建（偏離論文的 CRC34 輸入）**：CRC34 的評估輸入照 CRC36 的流程重新建立，規則、門檻和程式路徑都相同（`crc34_render_20261118/`）。流程包含 Lin 分割、CELESTA 加 Lin Fig. 3d 判定細胞類型、NucleusShapes 繪製、CellViT 判定死細胞，以及血管、氧、葡萄糖通道；這三個通道的參數直接讀 CRC36 那次執行的設定。論文用的舊 `orion-CRC34.tar` 不再使用，但仍原封不動保留在 S3（`share_space/02_datasets/`）。這是協調者在 2026-11-18 決定的，當時還沒有任何評估結果。
