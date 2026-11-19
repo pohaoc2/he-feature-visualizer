@@ -92,7 +92,7 @@
 - 抽樣方法：把 CRC34 評估 tile 的名稱排序後，用 `numpy.random.default_rng(42).choice(..., 50, replace=False)` 抽 50 張（`crc34_render_20261118/scripts/cvprep34.py`）。消融主要組的 300 張也用同一種寫法另外抽一次（`default_rng(42).choice(排序後的名稱, 300, replace=False)`），CRC36 保留區也一樣。這兩次抽樣互相獨立，閘門的 50 張不一定落在那 300 張裡面。
 - 50/50 張都通過才沿用舊 JSON，並在這裡引用結果；只要有任何一張不符，就把所有 CRC34 tile 重跑一次（cv34）。
 - 逐位元組相同的檔案數另外回報，不算在通過條件裡。
-- 執行位置（協調者 2026-11-18）：這個 Colab 帳號一次只能開一個付費 GPU session，Colab 要依序跑三個變體的訓練，所以 CRC34 的 GPU 步驟（cvgate34、必要時 cv34、uni34hub、feat34、masklat34）改在 Hyak 的 checkpoint 分區 A100 上跑（`crc34_render_20261118/scripts/gpu34.slurm`）。指令和 Colab 的 `boot.sh` 相同；環境用 CRC16 G-ckpt 閘門那次的 Hyak CellViT 環境（它的套件版本就是 Colab 版本表加上 scikit-image / numba），以前的 G-ckpt 閘門也是在 Hyak A100 上跑的。預訓練權重用 Colab tar 當初打包時的 Hyak 原始檔案。
+- 執行位置（協調者 2026-11-18）：這個 Colab 帳號一次只能開一個付費 GPU session，Colab 要依序跑三個變體的訓練，所以 CRC34 的 GPU 步驟（cvgate34、必要時 cv34、uni34hub、feat34、masklat34）改在 Hyak 的 checkpoint 分區 A100 上跑（`crc34_render_20261118/scripts/gpu34.slurm`）。指令和 Colab 的 `boot.sh` 相同；環境用 CRC16 G-ckpt 閘門那次的 Hyak CellViT 環境（它的套件版本就是 Colab 版本表加上 scikit-image / numba），以前的 G-ckpt 閘門也是在 Hyak A100 上跑的。預訓練權重用 Colab tar 當初打包時的 Hyak 原始檔案。第一次送出（43373407）在 GPU 節點上往 gscratch 寫小檔案時，每個檔案要花約 1 秒，70 分鐘只解開了 4.5 萬張 H&E 中的 3.2 萬張，所以取消了。改成在節點本機的 /tmp 工作，標記檔、cvgate34.json 和輸出 tar 留在 gscratch（43376448）。這只改了存放位置，指令和判定條件都沒變。
 - 背景：以前的 G-ckpt 閘門（sim-exp-validation prereg_crc16.md 修訂 1）用的就是固定的 50 張 CRC34 tile。TF32 關閉時，50/50 張細胞數相同，1,228/1,228 顆質心距離為 0，48/50 個 JSON 逐位元組相同。
 
 ### 評估的 tile、生成和評分規則（協調者 2026-11-18 決定，在任何評估結果出現之前）

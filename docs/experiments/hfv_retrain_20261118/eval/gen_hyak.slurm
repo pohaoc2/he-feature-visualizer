@@ -12,16 +12,18 @@
 # Colab req.txt + torch / torchvision / xformers), PixCell cb62fa7 (S3 inputs) + the Hyak pretrained files the Colab
 # tars were made from (sev-conditioning-recovery-20261006/assets; all files md5-identical to the Colab tars).
 # Inputs from S3 (inputs/eval/ packs and lists, outputs/infer_<run>_e20.tar); after each task its group folder goes to
-# S3 outputs/gen_hyak_<group>.tar. A requeued job resumes in the same folder (the PixCell scripts skip finished
-# images; evalgen.py stops a group if the requeue lands on another GPU model).
+# S3 outputs/gen_hyak_<group>.tar (and E/gen/NAME/). Work folder = node-local /tmp: creating one file on gscratch took
+# about 1 s on the GPU nodes (2026-11-18), so packs, PixCell and images stay on the node. A requeued job starts the
+# unfinished groups again from scratch in its own /tmp (finished groups are marked in E/gen/NAME/sent_<group>).
 #   sbatch --job-name=ev-gen-NAME --exclude=$(bash /gscratch/cheme/chiu/slow_nodes/slow_nodes.sh list) eval/gen_hyak.slurm NAME "TASK [TASK ...]"
 set -uo pipefail
 NAME=$1; TASKS=$2
-E=/gscratch/cheme/chiu/hfv_eval_20261118; Wd=$E/gen/$NAME; PY=/gscratch/cheme/chiu/crc16-20261024/cellvit/env/bin/python
+E=/gscratch/cheme/chiu/hfv_eval_20261118; K=$E/gen/$NAME; Wd=/tmp/hfv_eval_$SLURM_JOB_ID; PY=/gscratch/cheme/chiu/crc16-20261024/cellvit/env/bin/python
 A=/gscratch/cheme/chiu/sev-conditioning-recovery-20261006/assets; P=$Wd/PixCell; S=s3://bagherilab-working/pohao/hfv_retrain_20261118
 export MPLBACKEND=Agg HF_HOME=$Wd/cache/hf XDG_CACHE_HOME=$Wd/cache OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load coenv/aws/2.17.32
-mkdir -p $Wd/roots $Wd/ck $Wd/dl
+mkdir -p $K $Wd/roots $Wd/ck $Wd/dl
+trap 'rm -rf $Wd' EXIT
 echo "### $(date -Is) job $SLURM_JOB_ID restart ${SLURM_RESTART_COUNT:-0} $(hostname) tasks $TASKS"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 if [ ! -f $P/ok ]; then rm -rf $P; mkdir -p $P/pretrained_models
@@ -35,11 +37,12 @@ for t in $TASKS; do IFS=: read -r kind root rest <<< "$t"
 done
 cp $E/scripts/evalgen.py $E/scripts/pxrun.py $Wd/
 for t in $TASKS; do IFS=: read -r kind root rest <<< "$t"; g=${kind}_${root#orion-}
-  if [ -f $Wd/out/$g/DONE ] && [ -f $Wd/out/$g/sent ]; then echo "skip $t (done and sent)"; continue; fi
+  if [ -f $K/sent_$g ]; then echo "skip $t (done and sent)"; continue; fi
   $PY -u $Wd/evalgen.py --pixcell $P --work $Wd --ck $Wd/ck --roots $Wd/roots "$t"; rc=$?
   [ $kind = speed ] && g=$(cd $Wd/out && ls -d speed_${root#orion-}_* | tail -1)
   tar -cf $Wd/gen_hyak_$g.tar -C $Wd/out $g $(cd $Wd/out && ls speed_*.json 2>/dev/null) && \
-    aws s3 cp --only-show-errors $Wd/gen_hyak_$g.tar $S/outputs/gen_hyak_$g.tar && rm $Wd/gen_hyak_$g.tar && touch $Wd/out/$g/sent
+    aws s3 cp --only-show-errors $Wd/gen_hyak_$g.tar $S/outputs/gen_hyak_$g.tar && rm $Wd/gen_hyak_$g.tar && touch $K/sent_$g
+  cp $Wd/out/$g/DONE $Wd/out/$g/FAILED $Wd/out/$g/gen.log $Wd/out/speed_*.json $K/ 2>/dev/null
   echo "### $(date -Is) task $t rc $rc"
 done
 echo "### $(date -Is) done"
