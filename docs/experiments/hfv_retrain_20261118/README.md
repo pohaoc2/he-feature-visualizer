@@ -133,6 +133,63 @@
 - **Vanilla ControlNet 的 seed（偏離）**：`pixcell_offshelf_inference.py` 的起始雜訊用 `torch.randn_like` 產生，沒有設 seed，所以論文的 Vanilla 圖會受前面生成過的 tile 影響（上面寫的「seed 42」只對四個變體成立）。這次用 `eval/pxrun.py` 在每張 Vanilla tile 生成前設 `torch.manual_seed(42)`，讓結果可以重現；腳本的其他部分不動。
 - **論文 ΔLPIPS 的 tile 數不一致（只記錄）**：論文 `si_a1_a2/cache.json` 裡，Grouped 和 Concat 的敏感度各用了 500 張 tile，Per-channel 和 Grouped+bypass 只用 100 張。這次四個變體都用同一批 tile。
 
+### 論文 figure 用新模型重繪：逐 panel 的輸入（協調者 2026-11-19 交辦；這張表在重繪之前就 commit）
+
+用新模型重新產生一份論文 figure，和原圖並排比較。原本的 figure 一張都不覆蓋；要不要換進論文由使用者決定。
+
+**做法**
+- 在 Hyak 上另開一份 PixCell cb62fa7 checkout（`/gscratch/cheme/chiu/hfv_figs_20261118/PixCell`），腳本照原樣執行，不改 PixCell。
+- 腳本寫死的 `inference_output/`、`data/`、`results/` 用和 evalgen 一樣的 symlink 影子目錄，指到這次的評估輸出。
+- 輸出（PNG/PDF）只寫在這份 checkout 底下，完成後放到 S3 `hfv_retrain_20261118/figures_rerender/`。
+- 因為論文 figure 都畫 CRC33，重繪一律用評估規則第 1、3 點裡的 **CRC33 次要組**，也就是可和論文比較的訓練 tile：
+  - 消融和 Fig 4：299 張。論文是 1,000 張（消融）或 300 張（Fig 4）。
+  - Fig 2 的四個變體：100 張。論文 Grouped/Concat 的 ΔLPIPS 用 500 張。
+  - 分解：500 張。
+
+**分類**
+- **新模型重做**：輸入由這次的新 checkpoint 生成或評分。
+- **不變**：輸入和生成器無關，例如示意圖、真實 H&E 上的細胞測量、真實 UNI 特徵的探針。照用原輸入。
+- **這次未重做**：輸入依賴生成器或舊通道，但這次沒有重跑。圖中照用原輸入，並排頁標註「舊模型輸入」。
+
+**逐 panel 輸入**
+
+| Figure | Panel | 輸入 | 分類 |
+|---|---|---|---|
+| Fig 1 | a 示意圖 | `stage_1_svg.svg` | 不變 |
+| | b、c 各細胞類型的面積、圓度、marker 熱圖 | hfv `processed_crc33/cell_assignments.csv`、`cell_shape_features.csv`（真實 H&E 和 CODEX） | 不變 |
+| | d 真實資料拼圖 | `stage_1_results.png` | 不變 |
+| | | Fig 1 全部不變，不重繪，並排頁直接放原圖。 | |
+| Fig 2 | a 示意圖 | `stage_2_svg.svg` | 不變 |
+| | b 訓練 loss 曲線 | `si_a1_a2/cache.json["training_curves"]`，來源是各 run 的 `train_log.jsonl`（`log_utils.py` 寫死路徑，用影子目錄指到這次 Tillicum 四個 run 的 log） | 新模型重做 |
+| | c ΔLPIPS 敏感度 | `cache.json["sensitivity"]`（評估規則第 2 點，次要組 100 張） | 新模型重做 |
+| | d 15 條件的指標取捨（paired + unpaired） | `concat_ablation_1000/{paired,unpaired}_ablation/ablation_results/*/metrics.json`、`fud_scores.json`（評分都在 Hyak A100）；Vanilla 參考帶是 `tools/ablation_report/shared.py` 的寫死常數 `TRADEOFF_REFERENCE_BANDS` | 消融 = 新模型重做；Vanilla 參考帶換成這次次要組 100 張的 Vanilla 數值（由 `eval/` 的 wrapper 在執行前替換這個常數，PixCell 不改） |
+| | e、g paired / unpaired 效果量熱圖 | 同 d | 新模型重做 |
+| | f、h paired / unpaired 示例條 | 消融生成圖、`*_cellvit_instances.json`；tile 由腳本從現有 tile 中抽（seed 1），可能和原圖不同；參考 H&E 和 cell_masks 是真實資料 | 新模型重做 |
+| Fig 3 | a 分解 2×2 示例 | `results/a2_decomposition/generated/<tile>/*.png`、`representative_tile.json` | 新模型重做 |
+| | b、c 各模式指標和 UNI/TME/交互熱圖 | `decomposition_summary.csv` | 新模型重做 |
+| | d 探針 ΔR² | `results/a4_uni_probe/probe_results.csv`（真實 UNI 特徵上的 ridge） | 不變 |
+| | e 編輯專一性熱圖 | `specificity_full.csv`，來自 a4 掃描的生成圖 | 這次未重做（舊模型輸入） |
+| | f α 掃描示例 | `results/a4_uni_probe/sweep/*/targeted/alpha_*.png` | 這次未重做（舊模型輸入） |
+| Fig 4 | a 示意圖 | `stage_3_simple_svg.svg` | 不變 |
+| | b ΔE / ΔPQ 對 R² 的象限圖 | ΔE、ΔPQ 來自 `subchannel_loo_n300/per_subchannel_{,layout_}summary.csv`；R² 來自 `a1_probe_mlp_spatial/uni_16`（評估規則第 6 點，新通道） | ΔE/ΔPQ = 新模型重做；R² = 新通道重做 |
+| | c、d、e、f 跨世代比較（C33 / C34 / C10） | `results/a6_cohort_invariance/cohort_invariance_metrics.json`，由 a6 從三個世代的 LOO CSV 和 R² 算出 | C33 = 新模型重做；C34 和 C10 的 LOO 和 R² 這次未重做（舊模型、舊通道輸入）。a6 用新的 C33 加上舊的 C34/C10 重算 |
+| si_channel_decodability_impact | a 四個編碼器的 R² | `a1_probe_mlp_spatial/{uni_16,virchow2_16,ctranspath_07,resnet50_07}` | UNI = 新通道重做；其他三個編碼器這次未重做（舊通道） |
+| | b raw MX 的 R² | `a1_probe_mlp_spatial/t2_spatial` | 這次未重做（舊通道） |
+| | c、d ΔE / ΔPQ 排名 | 同 Fig 4b 的 LOO CSV | 新模型重做 |
+| si_performance_ranking | 單 panel | 同 Fig 2d 的消融指標 | 新模型重做 |
+| ablation_grids_combined | a paired 網格，tile `10752_13824` | 消融生成圖和 metrics（這張 tile 在 299 張之內） | 新模型重做 |
+| | b unpaired 網格，tile `13056_27392`（風格 `12032_15104`） | 這張是論文 unpaired 清單的第 1,001 張，不在 299 張裡 | 預設：把這張 tile 補進消融生成（1 張 × 15 條件，unpaired）；如果它在新的 CRC33_01 裡沒有新通道，就這次未重做（舊模型輸入） |
+| si_qualitative_variants | 單 panel：10 張 tile × 五個模型 | `si_a1_a2/tiles/<variant>/<tile>.png`（`metric_tile_ids[:10]`） | 新模型重做 |
+| si_threshold_sensitivity | a、b | 同 Fig 4c 的 a6 JSON | C33 = 新模型重做；C34/C10 這次未重做 |
+| si_patient_generalization | a CRC33 對 CRC34 指標 | `share-space-paper/figures/data/patient_generalization_metrics.json`；PixCell 裡沒有產生這個檔的程式 | 新模型重做。由 `eval/` 的 wrapper 用同樣的鍵，從 CRC34 評估（規則第 4 點）和 CRC33 消融的全通道條件算出 |
+| | b 每位病人 2 張示例 | CRC33 消融生成圖，CRC34 的 `CRC34_paired/<tid>/{paired,unpaired}/generated_he.png` | 新模型重做 |
+
+**寫入位置的保護**
+- 有幾支腳本會寫入或讀取 `ROOT.parent/share-space-paper/figures`：`publish.save_mirrored`，Fig 4 直接寫 png/pdf，patient 腳本會刪掉 `assets/gen/*.png` 再重新複製。
+- 所以 checkout 的上一層（`hfv_figs_20261118/`）只放一個新建的空資料夾 `share-space-paper/`，當作替身，只裝 patient JSON。
+- 建立前先確認那裡原本沒有這個資料夾，也不是 symlink；重繪前再確認一次。真正的論文 repo 不在 Hyak 上，Mac 上的也不碰。
+- `figures/pngs_updated/` 和 `results/paper_figures/` 都在這份新 checkout 裡。
+
 ## 偏離紀錄
 
 - **CRC34 的輸入改用新流程重建（偏離論文的 CRC34 輸入）**：CRC34 的評估輸入照 CRC36 的流程重新建立，規則、門檻和程式路徑都相同（`crc34_render_20261118/`）。流程包含 Lin 分割、CELESTA 加 Lin Fig. 3d 判定細胞類型、NucleusShapes 繪製、CellViT 判定死細胞，以及血管、氧、葡萄糖通道；這三個通道的參數直接讀 CRC36 那次執行的設定。論文用的舊 `orion-CRC34.tar` 不再使用，但仍原封不動保留在 S3（`share_space/02_datasets/`）。這是協調者在 2026-11-18 決定的，當時還沒有任何評估結果。
