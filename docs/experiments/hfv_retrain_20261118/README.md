@@ -52,10 +52,12 @@
 5. tile 分兩組，分開報告：
    - **主要結果**：CRC36 保留區和 CRC34（patient 2）的 tile。這些 tile 都沒有參加訓練。
    - **「訓練 tile，可和論文比較」**：論文原本的 tile 清單，即 `concat_ablation_1000/tile_lists/paired_1000_tile_ids.txt` 的前 300 張，和 Fig 4 相同。unpaired 的風格來源用 `unpaired_mapping.json`（seed 42）。這 300 張裡有 1 張（`10496_17664`）在新的 CRC33_01 資料中因墨水被排除、沒有新通道，所以這組實際是 299 張。unpaired 的風格只用 UNI，5 張風格來源 tile 是墨水 tile 也照用。
-   - 主要結果那組的取樣方式（提議，等協調者確認後才算定案）：
-     - CRC36 保留區：保留區 tile 不超過 300 張就全部用；超過就以 seed 42 隨機取 300 張。
-     - CRC34：照論文跨病人分析的做法，取排序後的前 300 張。
+   - 主要結果那組的取樣方式（協調者 2026-11-18 決定，在任何評估結果出現之前）：
+     - 取樣前，兩張切片都先套用和訓練 tile 相同的篩選：組織篩選、排除墨水 tile，門檻和程式都相同。CRC36 保留區另外排除緩衝帶。
+     - CRC36 保留區：不超過 300 張就全部用；超過就以 seed 42 隨機取 300 張。
+     - CRC34：以 seed 42 隨機取 300 張。不取「排序後的前 300 張」，因為 tile 名稱依 y_x 排序，前 300 張會集中在切片上方，取樣在空間上有偏差。
      - unpaired 的風格來源：在同一組 tile 內以 seed 42 做一個沒有不動點的排列（derangement），讓每張 tile 的風格都來自另一張 tile。
+   - 次要組「與論文相同的 tile 選法」：CRC34 排序後的前 300 張，和論文跨病人分析相同。單獨報告，不和主要結果合併。
    - 兩份檔案都從 `s3://bagherilab-working/pohao/share_space/04_inference/inference_output_20260527.zip` 用 range 讀取取出，共讀了約 51 MB。
 
 ## 偏離紀錄
