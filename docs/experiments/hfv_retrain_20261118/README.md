@@ -371,7 +371,7 @@
 
 ## 結果
 
-（2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數還在算；論文 figure 還沒重繪。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
+（2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數（StarDist、對 Lin 的檢測 F1）已完成；論文 figure 還沒重繪。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
 
 - **讀法**：
   - PQ/DICE 有兩種參考（見偏離紀錄「PQ 參考遮罩」）。「主要」= 生成圖的細胞核是否落在真實 H&E 上 CellViT 找到細胞核的位置（論文 PQ 的定義）；「次要」= 生成圖是否照著輸入的 Lin 細胞遮罩畫。
@@ -436,8 +436,39 @@
 - 凍結推論（全部通道，1,000 張；PixCell `aggregate_all_only_metrics`）：主要 PQ paired 0.162 ± 0.147、unpaired 0.072 ± 0.078；次要 PQ paired 0.199、unpaired 0.119；FUD paired 102.7、unpaired 127.7；LPIPS paired 0.329、unpaired 0.419。
 - 讀法：CRC34 的結果和 CRC36 一致——主要 PQ 下只有 Concat 比 Vanilla 好，Grouped 分不出；vasculature 在主要 PQ 下效果最大，在次要 PQ 下方向相反。
 
+### PQ 穩健性檢查（2026-11-20；作業 43427854 CRC36、43427855 CRC33、43427856 CRC34，各約 5 分鐘）
+
+- 數字在 `results/robust/`：每組的 `stats_robust_<評估集>.json`（主要分析、排除當掉圖的敏感度分析、當掉清單），`info_<評估集>.json`（配對半徑），`sd_model_<評估集>.json`（StarDist 版本和門檻），`robust_compare.json`（和主要 CellViT PQ 逐項並排，由 `eval/robust_compare.py` 產生）。StarDist 標記 npz 和逐圖 csv 在 Hyak `hfv_robust_20261120/res2/<評估集>/`。
+- StarDist 設定（執行時讀出）：`2D_versatile_he`，機率門檻 0.692478，NMS 門檻 0.3（模型預設值），stardist 0.9.1、tensorflow 2.15.1。
+- 配對半徑（Lin 細胞核等效半徑的中位數，只算評估 tile 內的 Lin 細胞）：CRC36 9.06 px（23,833 顆）、CRC33 8.83 px（15,745 顆）、CRC34 9.44 px（18,117 顆）。
+- **StarDist 當掉**：CRC36 22 張（2 張 tile：54784_45568 的配對消融 10 張、LOO 10 張、分解 1 張；54784_41728 的非配對消融 1 張），CRC33 0 張，CRC34 39 張（55552_58880 的配對消融 15 張、LOO 10 張；52992_54272 的非配對消融 14 張）。每個條件最多 1 張（300 張 tile 的 0.33 %），遠低於停下的標準。真實 H&E 的參考 tile 都沒有當掉，沒有拿掉任何 tile。
+  - 這些空白 tile 的真實 H&E 上，StarDist 在近乎全白的背景找到 1 個假細胞核，所以參考不是空的，當掉的生成圖照 PixCell 的規則得 PQ 0（CellViT 參考是空的，主要 PQ 給 1）。CRC36 那張非配對圖的參考有 26 顆細胞核。
+  - 敏感度分析（把當掉的圖排除，不當成 0 顆）：所有比較的平均值最多差 0.0008，沒有任何一項的結論（區間是否含 0、方向）改變。
+- **真實 H&E 的參考線**（每張 tile 一個值的平均和區間）：
+  - CellViT 對 Lin 的 F1：CRC36 0.517 [0.503, 0.531]、CRC33 0.617 [0.600, 0.634]、CRC34 0.479 [0.453, 0.504]。數量比（CellViT 找到的數目 / Lin 的數目）：0.46、0.89、0.56。
+  - StarDist 對 Lin 的 F1：0.563、0.530、0.538；數量比 0.47、0.76、0.56。
+  - 同一張真實 H&E 上 StarDist 對 CellViT 的 PQ：0.42、0.45、0.39（兩個分割器本身就不太一致）。
+- **讀數 1（StarDist，兩邊對稱）和主要 CellViT PQ 比較**：
+  - 排名：三組都是 Concat 第一、Per-channel 最後，和 CellViT 相同。中間三個（Grouped、bypass、Vanilla）的順序會變，但在 CellViT 下它們彼此本來就分不出差別。
+  - 變體減 Vanilla 的 PQ（StarDist；括號內是 CellViT）：
+    - CRC36：Concat +0.044 [+0.036, +0.052]（+0.047）、Grouped +0.000 [−0.005, +0.006]（+0.007，含 0）、bypass −0.001 [−0.007, +0.005]（+0.007，含 0）、Per-channel −0.137（−0.135）。四項結論都和 CellViT 一致。
+    - CRC33：Concat +0.019 [+0.001, +0.037]（+0.026）、Grouped −0.003（+0.014，含 0）、bypass +0.000（+0.011，含 0）、Per-channel −0.167（−0.188）。四項都一致。
+    - CRC34：Concat +0.009 [−0.004, +0.023]（CellViT +0.026 [+0.015, +0.038]，不含 0）、Grouped −0.016 [−0.024, −0.007]（CellViT +0.001，含 0）、bypass −0.019 [−0.027, −0.009]（CellViT −0.003，含 0）、Per-channel −0.118（−0.105）。這組只有 Per-channel 一致：StarDist 下 Concat 分不出比 Vanilla 好，Grouped 和 bypass 反而比 Vanilla 差。
+  - 變體減 Vanilla 的 DICE：CRC36、CRC34 四項都和 CellViT 一致；CRC33 的 Grouped（−0.024）和 bypass（−0.022）在 StarDist 下比 Vanilla 差，CellViT 下分不出。
+  - 消融（加入一組通道的平均效果）：三組、配對和非配對，StarDist 的 PQ 和 DICE 都是正的，大小接近 CellViT（例如 CRC36 配對 vasculature PQ +0.041 vs CellViT +0.038；CRC34 配對 +0.036 vs +0.036）。唯一不同：CRC33 非配對 vasculature 的 DICE，CellViT −0.015（不含 0），StarDist −0.004（含 0）。
+  - LOO（拿掉一個子通道後 PQ 降多少）：大多一致。vasculature 在 CRC36 和 CRC34 仍是降最多的（CRC36 +0.039 vs CellViT +0.037；CRC34 +0.033 vs +0.034）。不同的小項：CRC36 prolif（StarDist +0.007，CellViT 含 0）、CRC33 immune（StarDist +0.005，CellViT 含 0）、CRC34 prolif 和 healthy（StarDist 含 0，CellViT 為正）。
+  - 分解（相對完整模型）：三種去掉 UNI 或 TME 的模式，StarDist 和 CellViT 結論全部一致。
+- **讀數 2（CellViT 中心點對 Lin 的檢測 F1）**：
+  - 三組都是 Vanilla 的 F1 最高（CRC36 0.633、CRC33 0.846、CRC34 0.625），而且高於真實 H&E 的參考線。四個訓練變體都比 Vanilla 低（Concat 減 Vanilla：CRC36 −0.112、CRC33 −0.109、CRC34 −0.152，區間都不含 0）。CRC36 和 CRC34 的數量比也是 Vanilla 最高（CRC36 0.56，訓練變體約 0.45；CRC34 0.59 vs 約 0.53）；CRC33 的數量比各變體分不出。
+  - 讀法：生成圖是用 Lin 遮罩當條件畫出來的，所以「細胞核畫在 Lin 的位置上」的程度就是這個讀數在量的東西。Vanilla 最貼近遮罩，這和之前次要 PQ（Lin 參考）下 Vanilla 最高的結果一致。這個讀數衡量的是對條件遮罩的忠實度，和主要 PQ 衡量的「像不像真實 H&E 上的細胞核」不是同一件事。
+  - 消融：cell_state、cell_types、microenv 加入後 F1 上升（三組都是）；vasculature 加入後 F1 下降（CRC36 配對 −0.008、CRC33 配對 −0.032，區間不含 0），只有 CRC34 配對是 +0.017。LOO 的 vasculature：拿掉之後 F1 反而上升（CRC36 −0.008、CRC33 −0.024，區間不含 0；CRC34 含 0）。這和次要 PQ（Lin 參考）下 vasculature 方向相反的結果一致。
+- **整體讀法**：
+  - 換成 StarDist 之後，CRC36 和 CRC33 的主要結論都不變：Concat 比 Vanilla 好，Grouped 和 bypass 分不出，Per-channel 最差；消融、LOO、分解的方向也都一樣。
+  - CRC34 是例外：StarDist 下 Concat 的優勢變小到分不出，Grouped 和 bypass 比 Vanilla 差。所以「Concat 比 Vanilla 好」在病人 2 上有一部分依賴分割器。
+  - CellViT 合併相鄰細胞核的問題，看起來沒有造成主要 PQ 的方向錯誤：用不會那樣合併的 StarDist 算，消融和 LOO 的效果大小幾乎一樣。
+  - 對 Lin 的 F1 量的是另一件事（對條件遮罩的忠實度），在這個讀數下 Vanilla 最好、vasculature 是負的，和次要 PQ 的結論一致。
+
 ### 尚未完成
 
-- PQ 穩健性檢查的兩個讀數（StarDist、對 Lin 的檢測 F1）。
-- 論文 figure 重繪（`figs_hyak.slurm`，Hyak 恢復連線後送出）和本機比較頁。
+- 論文 figure 重繪（`figs_hyak.slurm`，主要 PQ 和兩個穩健性讀數都已算完，可以送出）和本機比較頁。
 - 規則 6 的可解碼性：沒有重做（舊通道的輸入）。`si_threshold_sensitivity`、`si_patient_generalization`：待定（原檔只在論文 repo）。

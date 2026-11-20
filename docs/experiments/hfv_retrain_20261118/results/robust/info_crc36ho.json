@@ -1,0 +1,9 @@
+{
+ "set": "crc36ho",
+ "n_images": 14700,
+ "n_ref_tiles": 300,
+ "n_lin_cells_in_tiles": 23833,
+ "match_radius_px": 9.062226582657155,
+ "radius_rule": "median sqrt(loose_px / pi) of the Lin cells with centroid inside the evaluated tiles",
+ "lin_dir": "/gscratch/cheme/chiu/hfv_crc36_20261118/out"
+}

@@ -48,7 +48,7 @@ for k in $(seq 0 $((P - 1))); do
 done
 for p in "${pids[@]}"; do wait $p || stop "stardist process (see $O/sd_*.log)"; done
 cp $W/sd/*.npz $W/sd/sd_model.json $O/ || stop "copy sd"
-echo "### $(date -Is) stardist done: $(cat $W/sd/sd_model.json | tr -d '\n '); crashed images: $(cat $O/sd_*.log | grep -c ^CRASH)"
+echo "### $(date -Is) stardist done: $(cat $W/sd/sd_model.json | tr -d '\n '); crashed images: $(cat $O/sd_*.log | grep -o 'CRASH gen' | wc -l)"
 export OMP_NUM_THREADS=1
 PYTHONPATH=$W/PixCell $PY -u $R/scripts/robust.py metrics $SET $W/score $W/real $W/realcv/realcv_$SET $W/sd $LIN $W/out \
   $SLURM_CPUS_PER_TASK || stop metrics

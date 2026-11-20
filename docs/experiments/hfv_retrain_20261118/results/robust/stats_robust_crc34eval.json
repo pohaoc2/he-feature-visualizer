@@ -1,0 +1,1649 @@
+{
+ "info": {
+  "set": "crc34eval",
+  "n_images": 13500,
+  "n_ref_tiles": 300,
+  "n_lin_cells_in_tiles": 18117,
+  "match_radius_px": 9.440697438826296,
+  "radius_rule": "median sqrt(loose_px / pi) of the Lin cells with centroid inside the evaluated tiles",
+  "lin_dir": "/gscratch/cheme/chiu/hfv_crc34_20261118/out"
+ },
+ "crashes": {
+  "convention": "StarDist abort on a generated image = empty prediction mask passed to the unchanged PixCell _compute_pq / _compute_binary_segmentation_metrics (empty vs empty reference -> PQ 1, DICE 1; empty vs non-empty -> 0), the same convention the primary CellViT scoring applies to blank tiles; abort on the real reference tile -> tile dropped from every variant; sensitivity_crashed_excluded leaves the aborted images out instead",
+  "crashed_images_ref_nuclei": {
+   "abl/paired/55552_58880/cell_types": 1,
+   "abl/paired/55552_58880/cell_state": 1,
+   "abl/paired/55552_58880/vasculature": 1,
+   "abl/paired/55552_58880/microenv": 1,
+   "abl/paired/55552_58880/cell_state+cell_types": 1,
+   "abl/paired/55552_58880/cell_types+vasculature": 1,
+   "abl/paired/55552_58880/cell_types+microenv": 1,
+   "abl/paired/55552_58880/cell_state+vasculature": 1,
+   "abl/paired/55552_58880/cell_state+microenv": 1,
+   "abl/paired/55552_58880/microenv+vasculature": 1,
+   "abl/paired/55552_58880/cell_state+cell_types+vasculature": 1,
+   "abl/paired/55552_58880/cell_state+cell_types+microenv": 1,
+   "abl/paired/55552_58880/cell_types+microenv+vasculature": 1,
+   "abl/paired/55552_58880/cell_state+microenv+vasculature": 1,
+   "abl/paired/55552_58880/cell_state+cell_types+microenv+vasculature": 1,
+   "abl/unpaired/52992_54272/cell_state": 9,
+   "abl/unpaired/52992_54272/vasculature": 9,
+   "abl/unpaired/52992_54272/microenv": 9,
+   "abl/unpaired/52992_54272/cell_state+cell_types": 9,
+   "abl/unpaired/52992_54272/cell_types+vasculature": 9,
+   "abl/unpaired/52992_54272/cell_types+microenv": 9,
+   "abl/unpaired/52992_54272/cell_state+vasculature": 9,
+   "abl/unpaired/52992_54272/cell_state+microenv": 9,
+   "abl/unpaired/52992_54272/microenv+vasculature": 9,
+   "abl/unpaired/52992_54272/cell_state+cell_types+vasculature": 9,
+   "abl/unpaired/52992_54272/cell_state+cell_types+microenv": 9,
+   "abl/unpaired/52992_54272/cell_types+microenv+vasculature": 9,
+   "abl/unpaired/52992_54272/cell_state+microenv+vasculature": 9,
+   "abl/unpaired/52992_54272/cell_state+cell_types+microenv+vasculature": 9,
+   "loo/loo/55552_58880/all_baseline": 1,
+   "loo/loo/55552_58880/cell_type_healthy": 1,
+   "loo/loo/55552_58880/cell_type_cancer": 1,
+   "loo/loo/55552_58880/cell_type_immune": 1,
+   "loo/loo/55552_58880/cell_state_prolif": 1,
+   "loo/loo/55552_58880/cell_state_nonprolif": 1,
+   "loo/loo/55552_58880/cell_state_dead": 1,
+   "loo/loo/55552_58880/vasculature": 1,
+   "loo/loo/55552_58880/oxygen": 1,
+   "loo/loo/55552_58880/glucose": 1
+  },
+  "dropped_ref_tiles": [],
+  "crashed_images": [
+   "abl/paired/55552_58880/cell_state",
+   "abl/paired/55552_58880/cell_state+cell_types",
+   "abl/paired/55552_58880/cell_state+cell_types+microenv",
+   "abl/paired/55552_58880/cell_state+cell_types+microenv+vasculature",
+   "abl/paired/55552_58880/cell_state+cell_types+vasculature",
+   "abl/paired/55552_58880/cell_state+microenv",
+   "abl/paired/55552_58880/cell_state+microenv+vasculature",
+   "abl/paired/55552_58880/cell_state+vasculature",
+   "abl/paired/55552_58880/cell_types",
+   "abl/paired/55552_58880/cell_types+microenv",
+   "abl/paired/55552_58880/cell_types+microenv+vasculature",
+   "abl/paired/55552_58880/cell_types+vasculature",
+   "abl/paired/55552_58880/microenv",
+   "abl/paired/55552_58880/microenv+vasculature",
+   "abl/paired/55552_58880/vasculature",
+   "abl/unpaired/52992_54272/cell_state",
+   "abl/unpaired/52992_54272/cell_state+cell_types",
+   "abl/unpaired/52992_54272/cell_state+cell_types+microenv",
+   "abl/unpaired/52992_54272/cell_state+cell_types+microenv+vasculature",
+   "abl/unpaired/52992_54272/cell_state+cell_types+vasculature",
+   "abl/unpaired/52992_54272/cell_state+microenv",
+   "abl/unpaired/52992_54272/cell_state+microenv+vasculature",
+   "abl/unpaired/52992_54272/cell_state+vasculature",
+   "abl/unpaired/52992_54272/cell_types+microenv",
+   "abl/unpaired/52992_54272/cell_types+microenv+vasculature",
+   "abl/unpaired/52992_54272/cell_types+vasculature",
+   "abl/unpaired/52992_54272/microenv",
+   "abl/unpaired/52992_54272/microenv+vasculature",
+   "abl/unpaired/52992_54272/vasculature",
+   "loo/loo/55552_58880/all_baseline",
+   "loo/loo/55552_58880/cell_state_dead",
+   "loo/loo/55552_58880/cell_state_nonprolif",
+   "loo/loo/55552_58880/cell_state_prolif",
+   "loo/loo/55552_58880/cell_type_cancer",
+   "loo/loo/55552_58880/cell_type_healthy",
+   "loo/loo/55552_58880/cell_type_immune",
+   "loo/loo/55552_58880/glucose",
+   "loo/loo/55552_58880/oxygen",
+   "loo/loo/55552_58880/vasculature"
+  ],
+  "by_condition": {
+   "fig2/fig2/a1_concat": {
+    "n": 300,
+    "crashed": 0,
+    "frac": 0.0
+   },
+   "fig2/fig2/production": {
+    "n": 300,
+    "crashed": 0,
+    "frac": 0.0
+   },
+   "fig2/fig2/a2_bypass_full_tme": {
+    "n": 300,
+    "crashed": 0,
+    "frac": 0.0
+   },
+   "fig2/fig2/a1_per_channel": {
+    "n": 300,
+    "crashed": 0,
+    "frac": 0.0
+   },
+   "fig2/fig2/a2_off_shelf": {
+    "n": 300,
+    "crashed": 0,
+    "frac": 0.0
+   },
+   "abl/paired/cell_types": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state+cell_types": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_types+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_types+microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state+microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state+cell_types+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state+cell_types+microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_types+microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state+microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/paired/cell_state+cell_types+microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_types": {
+    "n": 300,
+    "crashed": 0,
+    "frac": 0.0
+   },
+   "abl/unpaired/cell_state": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_state+cell_types": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_types+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_types+microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_state+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_state+microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_state+cell_types+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_state+cell_types+microenv": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_types+microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_state+microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "abl/unpaired/cell_state+cell_types+microenv+vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/all_baseline": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/cell_type_healthy": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/cell_type_cancer": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/cell_type_immune": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/cell_state_prolif": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/cell_state_nonprolif": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/cell_state_dead": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/vasculature": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/oxygen": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   },
+   "loo/loo/glucose": {
+    "n": 300,
+    "crashed": 1,
+    "frac": 0.0033333333333333335
+   }
+  },
+  "max_frac": 0.0033333333333333335
+ },
+ "main": {
+  "real": {
+   "cv_f1": {
+    "mean": 0.47851959773761543,
+    "ci95": [
+     0.45305614541596584,
+     0.5037048641641618
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "sd_f1": {
+    "mean": 0.5383864520687215,
+    "ci95": [
+     0.5137599245689731,
+     0.5620399883080679
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "sd_vs_cv_pq": {
+    "mean": 0.3873270201637703,
+    "ci95": [
+     0.3659274096670278,
+     0.40908383351130295
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "sd_vs_cv_dice": {
+    "mean": 0.6296550454012416,
+    "ci95": [
+     0.6094190607657484,
+     0.6496374336538602
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cv_count_ratio": {
+    "mean": 0.5622501413057173,
+    "ci95": [
+     0.5025087389022528,
+     0.6342629604166065
+    ],
+    "n": 289,
+    "excludes_0": true
+   },
+   "sd_count_ratio": {
+    "mean": 0.560200890107972,
+    "ci95": [
+     0.5188417880852759,
+     0.6053423636981007
+    ],
+    "n": 289,
+    "excludes_0": true
+   }
+  },
+  "fig2": {
+   "n_tiles": 300,
+   "means": {
+    "a1_concat": {
+     "sd_pq": 0.15310914900934605,
+     "sd_dice": 0.38020219002466443,
+     "f1": 0.473136374630545,
+     "count_ratio": 0.5329831768134933
+    },
+    "production": {
+     "sd_pq": 0.12862171013362472,
+     "sd_dice": 0.3515910521200604,
+     "f1": 0.478198804856223,
+     "count_ratio": 0.5303090504081679
+    },
+    "a2_bypass_full_tme": {
+     "sd_pq": 0.12556665942477488,
+     "sd_dice": 0.34916569315220597,
+     "f1": 0.4797996134683216,
+     "count_ratio": 0.5280596369394965
+    },
+    "a1_per_channel": {
+     "sd_pq": 0.026077325052564018,
+     "sd_dice": 0.11459984048891116,
+     "f1": 0.09598778372262558,
+     "count_ratio": 0.583844054804942
+    },
+    "a2_off_shelf": {
+     "sd_pq": 0.14418210305443793,
+     "sd_dice": 0.3673277973510981,
+     "f1": 0.6253677279505636,
+     "count_ratio": 0.5910312434658842
+    }
+   },
+   "vs_vanilla": {
+    "a1_concat/sd_pq": {
+     "mean": 0.008927045954908121,
+     "ci95": [
+      -0.0037329977620808694,
+      0.022743919553883687
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "a1_concat/sd_dice": {
+     "mean": 0.012874392673566373,
+     "ci95": [
+      -0.0013479126064777356,
+      0.028407603093175745
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "a1_concat/f1": {
+     "mean": -0.1522313533200186,
+     "ci95": [
+      -0.18002801734268778,
+      -0.1253541550123316
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_concat/count_ratio": {
+     "mean": -0.058048066652391095,
+     "ci95": [
+      -0.09155535281839923,
+      -0.02293154159254102
+     ],
+     "n": 289,
+     "excludes_0": true
+    },
+    "production/sd_pq": {
+     "mean": -0.015560392920813217,
+     "ci95": [
+      -0.02389200894171601,
+      -0.006701448950680842
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "production/sd_dice": {
+     "mean": -0.01573674523103766,
+     "ci95": [
+      -0.024965934284534152,
+      -0.0065221806708382546
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "production/f1": {
+     "mean": -0.14716892309434051,
+     "ci95": [
+      -0.17242439366857734,
+      -0.12298535309412628
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "production/count_ratio": {
+     "mean": -0.06072219305771637,
+     "ci95": [
+      -0.0863790086721876,
+      -0.032503865195502184
+     ],
+     "n": 289,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/sd_pq": {
+     "mean": -0.01861544362966302,
+     "ci95": [
+      -0.027444324364473555,
+      -0.009277813264817962
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/sd_dice": {
+     "mean": -0.018162104198892123,
+     "ci95": [
+      -0.027655663734491395,
+      -0.008894263631744321
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/f1": {
+     "mean": -0.1455681144822419,
+     "ci95": [
+      -0.16981568240534425,
+      -0.1226310794949037
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/count_ratio": {
+     "mean": -0.0629716065263877,
+     "ci95": [
+      -0.08615851667417822,
+      -0.03850773763124273
+     ],
+     "n": 289,
+     "excludes_0": true
+    },
+    "a1_per_channel/sd_pq": {
+     "mean": -0.11810477800187393,
+     "ci95": [
+      -0.13396953687937793,
+      -0.10014554861383096
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_per_channel/sd_dice": {
+     "mean": -0.25272795686218696,
+     "ci95": [
+      -0.2746107921503988,
+      -0.22902188528931366
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_per_channel/f1": {
+     "mean": -0.529379944227938,
+     "ci95": [
+      -0.5648549798077039,
+      -0.4945795263564308
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_per_channel/count_ratio": {
+     "mean": -0.007187188660942283,
+     "ci95": [
+      -0.09652402199614658,
+      0.11271031812345393
+     ],
+     "n": 289,
+     "excludes_0": false
+    }
+   },
+   "ranking": {
+    "sd_pq": [
+     "a1_concat",
+     "a2_off_shelf",
+     "production",
+     "a2_bypass_full_tme",
+     "a1_per_channel"
+    ],
+    "sd_dice": [
+     "a1_concat",
+     "a2_off_shelf",
+     "production",
+     "a2_bypass_full_tme",
+     "a1_per_channel"
+    ],
+    "f1": [
+     "a2_off_shelf",
+     "a2_bypass_full_tme",
+     "production",
+     "a1_concat",
+     "a1_per_channel"
+    ],
+    "count_ratio": [
+     "a2_off_shelf",
+     "a1_per_channel",
+     "a1_concat",
+     "production",
+     "a2_bypass_full_tme"
+    ]
+   }
+  },
+  "abl_paired": {
+   "n_tiles": 300,
+   "added_effect": {
+    "cell_types/sd_pq": {
+     "mean": 0.031134868369161666,
+     "ci95": [
+      0.02461860791071305,
+      0.03798614622394712
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/sd_pq": {
+     "mean": 0.031038899988935213,
+     "ci95": [
+      0.02594630187564951,
+      0.03638206932226159
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/sd_pq": {
+     "mean": 0.03580148132333712,
+     "ci95": [
+      0.02780282304634197,
+      0.044298284481776494
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "microenv/sd_pq": {
+     "mean": 0.029184694520254507,
+     "ci95": [
+      0.02383396130360905,
+      0.034320304620254746
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_types/sd_dice": {
+     "mean": 0.0407108541794607,
+     "ci95": [
+      0.03401633583350444,
+      0.04779619734923807
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/sd_dice": {
+     "mean": 0.038126951163523,
+     "ci95": [
+      0.032851054911653084,
+      0.04375522437920056
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/sd_dice": {
+     "mean": 0.036451680361893016,
+     "ci95": [
+      0.02771295848592423,
+      0.045737124221653276
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "microenv/sd_dice": {
+     "mean": 0.02911245322111752,
+     "ci95": [
+      0.024096245475139746,
+      0.03401264913378079
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_types/f1": {
+     "mean": 0.05491534943037666,
+     "ci95": [
+      0.04407406441064394,
+      0.06644781899990022
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/f1": {
+     "mean": 0.06725866250277016,
+     "ci95": [
+      0.05905102457837063,
+      0.07570440101919544
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/f1": {
+     "mean": 0.017219868522456994,
+     "ci95": [
+      0.006382095198606074,
+      0.029491971858100218
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "microenv/f1": {
+     "mean": 0.03371892579217093,
+     "ci95": [
+      0.02348807026800968,
+      0.043910455080439316
+     ],
+     "n": 300,
+     "excludes_0": true
+    }
+   }
+  },
+  "abl_unpaired": {
+   "n_tiles": 300,
+   "added_effect": {
+    "cell_types/sd_pq": {
+     "mean": 0.017303547517431312,
+     "ci95": [
+      0.014628814661367411,
+      0.020093815676796224
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/sd_pq": {
+     "mean": 0.01574440432551857,
+     "ci95": [
+      0.013118225882126272,
+      0.018373746145779128
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/sd_pq": {
+     "mean": 0.018976947350592833,
+     "ci95": [
+      0.01444144127241641,
+      0.02373312068065357
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "microenv/sd_pq": {
+     "mean": 0.014690752190058127,
+     "ci95": [
+      0.011758833640878407,
+      0.017752802959065384
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_types/sd_dice": {
+     "mean": 0.03749616812929848,
+     "ci95": [
+      0.03339568297649947,
+      0.04165898050057672
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/sd_dice": {
+     "mean": 0.03450069000526625,
+     "ci95": [
+      0.030407474493241764,
+      0.03874621810433362
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/sd_dice": {
+     "mean": 0.026628184226479275,
+     "ci95": [
+      0.02026887885015037,
+      0.03343485545492503
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "microenv/sd_dice": {
+     "mean": 0.0242628584568649,
+     "ci95": [
+      0.02077625548172696,
+      0.027823889906159506
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_types/f1": {
+     "mean": 0.0426159928717978,
+     "ci95": [
+      0.03569481089195579,
+      0.04980219200783965
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/f1": {
+     "mean": 0.0497983339167619,
+     "ci95": [
+      0.04360543805956244,
+      0.056277029170591165
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/f1": {
+     "mean": 0.00332770743405238,
+     "ci95": [
+      -0.0038648863058044847,
+      0.01071024456630561
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "microenv/f1": {
+     "mean": 0.030863312213070298,
+     "ci95": [
+      0.023663966309346262,
+      0.03799315839075618
+     ],
+     "n": 300,
+     "excludes_0": true
+    }
+   }
+  },
+  "loo": {
+   "n_tiles": 300,
+   "drop": {
+    "cell_state_dead/sd_pq": {
+     "mean": 1.0211434545055395e-05,
+     "ci95": [
+      -0.00025525149167287674,
+      0.0003366243918164147
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_state_dead/f1": {
+     "mean": -0.00019705207988969186,
+     "ci95": [
+      -0.0010666666666666659,
+      0.00036286321757618753
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_state_nonprolif/sd_pq": {
+     "mean": 0.015220411707519215,
+     "ci95": [
+      0.009833448124716041,
+      0.020708183663743888
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state_nonprolif/f1": {
+     "mean": 0.025271967110863887,
+     "ci95": [
+      0.015560663859601394,
+      0.03574506837954651
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state_prolif/sd_pq": {
+     "mean": 0.0010966568832400125,
+     "ci95": [
+      -0.0007511387180641819,
+      0.002994432107358075
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_state_prolif/f1": {
+     "mean": -0.0027279921551757696,
+     "ci95": [
+      -0.00591522077518129,
+      0.00038742938657682356
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_type_cancer/sd_pq": {
+     "mean": 0.003236483465946289,
+     "ci95": [
+      0.00033825699641293306,
+      0.006191478312351003
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_type_cancer/f1": {
+     "mean": -0.001003275980759673,
+     "ci95": [
+      -0.005699903930276365,
+      0.0036521680414440235
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_type_healthy/sd_pq": {
+     "mean": 0.0016020146787521599,
+     "ci95": [
+      -0.0022663356352857736,
+      0.005302876051611804
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_type_healthy/f1": {
+     "mean": 0.004176354835148928,
+     "ci95": [
+      -0.004737402905260051,
+      0.01306949840344512
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_type_immune/sd_pq": {
+     "mean": 0.013319659858145259,
+     "ci95": [
+      0.009281958113199765,
+      0.017429539786829245
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_type_immune/f1": {
+     "mean": 0.006674374870814084,
+     "ci95": [
+      0.00015082016738850908,
+      0.013357563747865179
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "glucose/sd_pq": {
+     "mean": 0.01834145662385053,
+     "ci95": [
+      0.012848195029261848,
+      0.023765642615923264
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "glucose/f1": {
+     "mean": 0.010480659972752828,
+     "ci95": [
+      0.0006007073132919901,
+      0.020269354070485402
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "oxygen/sd_pq": {
+     "mean": 0.010004132264593965,
+     "ci95": [
+      0.005227721915399152,
+      0.014802088140708802
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "oxygen/f1": {
+     "mean": 0.010346815403253044,
+     "ci95": [
+      0.0002749346018885063,
+      0.021720003693545337
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/sd_pq": {
+     "mean": 0.0327475987859596,
+     "ci95": [
+      0.018922147032108497,
+      0.04563927944747059
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/f1": {
+     "mean": -0.003103980103845752,
+     "ci95": [
+      -0.02114204851967786,
+      0.015178048225522597
+     ],
+     "n": 300,
+     "excludes_0": false
+    }
+   }
+  }
+ },
+ "sensitivity_crashed_excluded": {
+  "real": {
+   "cv_f1": {
+    "mean": 0.47851959773761543,
+    "ci95": [
+     0.45305614541596584,
+     0.5037048641641618
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "sd_f1": {
+    "mean": 0.5383864520687215,
+    "ci95": [
+     0.5137599245689731,
+     0.5620399883080679
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "sd_vs_cv_pq": {
+    "mean": 0.3873270201637703,
+    "ci95": [
+     0.3659274096670278,
+     0.40908383351130295
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "sd_vs_cv_dice": {
+    "mean": 0.6296550454012416,
+    "ci95": [
+     0.6094190607657484,
+     0.6496374336538602
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cv_count_ratio": {
+    "mean": 0.5622501413057173,
+    "ci95": [
+     0.5025087389022528,
+     0.6342629604166065
+    ],
+    "n": 289,
+    "excludes_0": true
+   },
+   "sd_count_ratio": {
+    "mean": 0.560200890107972,
+    "ci95": [
+     0.5188417880852759,
+     0.6053423636981007
+    ],
+    "n": 289,
+    "excludes_0": true
+   }
+  },
+  "fig2": {
+   "n_tiles": 300,
+   "means": {
+    "a1_concat": {
+     "sd_pq": 0.15310914900934605,
+     "sd_dice": 0.38020219002466443,
+     "f1": 0.473136374630545,
+     "count_ratio": 0.5329831768134933
+    },
+    "production": {
+     "sd_pq": 0.12862171013362472,
+     "sd_dice": 0.3515910521200604,
+     "f1": 0.478198804856223,
+     "count_ratio": 0.5303090504081679
+    },
+    "a2_bypass_full_tme": {
+     "sd_pq": 0.12556665942477488,
+     "sd_dice": 0.34916569315220597,
+     "f1": 0.4797996134683216,
+     "count_ratio": 0.5280596369394965
+    },
+    "a1_per_channel": {
+     "sd_pq": 0.026077325052564018,
+     "sd_dice": 0.11459984048891116,
+     "f1": 0.09598778372262558,
+     "count_ratio": 0.583844054804942
+    },
+    "a2_off_shelf": {
+     "sd_pq": 0.14418210305443793,
+     "sd_dice": 0.3673277973510981,
+     "f1": 0.6253677279505636,
+     "count_ratio": 0.5910312434658842
+    }
+   },
+   "vs_vanilla": {
+    "a1_concat/sd_pq": {
+     "mean": 0.008927045954908121,
+     "ci95": [
+      -0.0037329977620808694,
+      0.022743919553883687
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "a1_concat/sd_dice": {
+     "mean": 0.012874392673566373,
+     "ci95": [
+      -0.0013479126064777356,
+      0.028407603093175745
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "a1_concat/f1": {
+     "mean": -0.1522313533200186,
+     "ci95": [
+      -0.18002801734268778,
+      -0.1253541550123316
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_concat/count_ratio": {
+     "mean": -0.058048066652391095,
+     "ci95": [
+      -0.09155535281839923,
+      -0.02293154159254102
+     ],
+     "n": 289,
+     "excludes_0": true
+    },
+    "production/sd_pq": {
+     "mean": -0.015560392920813217,
+     "ci95": [
+      -0.02389200894171601,
+      -0.006701448950680842
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "production/sd_dice": {
+     "mean": -0.01573674523103766,
+     "ci95": [
+      -0.024965934284534152,
+      -0.0065221806708382546
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "production/f1": {
+     "mean": -0.14716892309434051,
+     "ci95": [
+      -0.17242439366857734,
+      -0.12298535309412628
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "production/count_ratio": {
+     "mean": -0.06072219305771637,
+     "ci95": [
+      -0.0863790086721876,
+      -0.032503865195502184
+     ],
+     "n": 289,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/sd_pq": {
+     "mean": -0.01861544362966302,
+     "ci95": [
+      -0.027444324364473555,
+      -0.009277813264817962
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/sd_dice": {
+     "mean": -0.018162104198892123,
+     "ci95": [
+      -0.027655663734491395,
+      -0.008894263631744321
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/f1": {
+     "mean": -0.1455681144822419,
+     "ci95": [
+      -0.16981568240534425,
+      -0.1226310794949037
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a2_bypass_full_tme/count_ratio": {
+     "mean": -0.0629716065263877,
+     "ci95": [
+      -0.08615851667417822,
+      -0.03850773763124273
+     ],
+     "n": 289,
+     "excludes_0": true
+    },
+    "a1_per_channel/sd_pq": {
+     "mean": -0.11810477800187393,
+     "ci95": [
+      -0.13396953687937793,
+      -0.10014554861383096
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_per_channel/sd_dice": {
+     "mean": -0.25272795686218696,
+     "ci95": [
+      -0.2746107921503988,
+      -0.22902188528931366
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_per_channel/f1": {
+     "mean": -0.529379944227938,
+     "ci95": [
+      -0.5648549798077039,
+      -0.4945795263564308
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "a1_per_channel/count_ratio": {
+     "mean": -0.007187188660942283,
+     "ci95": [
+      -0.09652402199614658,
+      0.11271031812345393
+     ],
+     "n": 289,
+     "excludes_0": false
+    }
+   },
+   "ranking": {
+    "sd_pq": [
+     "a1_concat",
+     "a2_off_shelf",
+     "production",
+     "a2_bypass_full_tme",
+     "a1_per_channel"
+    ],
+    "sd_dice": [
+     "a1_concat",
+     "a2_off_shelf",
+     "production",
+     "a2_bypass_full_tme",
+     "a1_per_channel"
+    ],
+    "f1": [
+     "a2_off_shelf",
+     "a2_bypass_full_tme",
+     "production",
+     "a1_concat",
+     "a1_per_channel"
+    ],
+    "count_ratio": [
+     "a2_off_shelf",
+     "a1_per_channel",
+     "a1_concat",
+     "production",
+     "a2_bypass_full_tme"
+    ]
+   }
+  },
+  "abl_paired": {
+   "n_tiles": 300,
+   "added_effect": {
+    "cell_types/sd_pq": {
+     "mean": 0.031238998363707356,
+     "ci95": [
+      0.024862207782183208,
+      0.03806553502621012
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_state/sd_pq": {
+     "mean": 0.031142709018998543,
+     "ci95": [
+      0.026184304017183174,
+      0.03666635506593209
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "vasculature/sd_pq": {
+     "mean": 0.035921218719067345,
+     "ci95": [
+      0.027737485433784383,
+      0.04450847209086086
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "microenv/sd_pq": {
+     "mean": 0.02928230219423529,
+     "ci95": [
+      0.024014288095154136,
+      0.034628839451803214
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_types/sd_dice": {
+     "mean": 0.04084701088240204,
+     "ci95": [
+      0.034183010304673724,
+      0.047928653008002704
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_state/sd_dice": {
+     "mean": 0.038254466050357525,
+     "ci95": [
+      0.03297364436521585,
+      0.044095676351909426
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "vasculature/sd_dice": {
+     "mean": 0.03657359233634751,
+     "ci95": [
+      0.027603219952281023,
+      0.04608701940931141
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "microenv/sd_dice": {
+     "mean": 0.029209819285402196,
+     "ci95": [
+      0.024310116779864593,
+      0.034125761351916355
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_types/f1": {
+     "mean": 0.05491534943037666,
+     "ci95": [
+      0.04407406441064394,
+      0.06644781899990022
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/f1": {
+     "mean": 0.06725866250277016,
+     "ci95": [
+      0.05905102457837063,
+      0.07570440101919544
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/f1": {
+     "mean": 0.017219868522456994,
+     "ci95": [
+      0.006382095198606074,
+      0.029491971858100218
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "microenv/f1": {
+     "mean": 0.03371892579217093,
+     "ci95": [
+      0.02348807026800968,
+      0.043910455080439316
+     ],
+     "n": 300,
+     "excludes_0": true
+    }
+   }
+  },
+  "abl_unpaired": {
+   "n_tiles": 300,
+   "added_effect": {
+    "cell_types/sd_pq": {
+     "mean": 0.01736141891381068,
+     "ci95": [
+      0.014662893171995747,
+      0.020208546746019344
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_state/sd_pq": {
+     "mean": 0.01579706119617248,
+     "ci95": [
+      0.013200328756098657,
+      0.018419425346984795
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "vasculature/sd_pq": {
+     "mean": 0.01904041540193261,
+     "ci95": [
+      0.014504825717543949,
+      0.023814569643512848
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "microenv/sd_pq": {
+     "mean": 0.01473988514052655,
+     "ci95": [
+      0.011742788987306917,
+      0.01785851551420442
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_types/sd_dice": {
+     "mean": 0.037621573373878066,
+     "ci95": [
+      0.033613615528396965,
+      0.04168191705733717
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_state/sd_dice": {
+     "mean": 0.03461607692836079,
+     "ci95": [
+      0.03058089204997126,
+      0.03872056120745011
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "vasculature/sd_dice": {
+     "mean": 0.02671724169880864,
+     "ci95": [
+      0.020323883145039714,
+      0.03349830069911929
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "microenv/sd_dice": {
+     "mean": 0.024344005140667122,
+     "ci95": [
+      0.02087888491300152,
+      0.027967279710844017
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_types/f1": {
+     "mean": 0.0426159928717978,
+     "ci95": [
+      0.03569481089195579,
+      0.04980219200783965
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state/f1": {
+     "mean": 0.0497983339167619,
+     "ci95": [
+      0.04360543805956244,
+      0.056277029170591165
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/f1": {
+     "mean": 0.00332770743405238,
+     "ci95": [
+      -0.0038648863058044847,
+      0.01071024456630561
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "microenv/f1": {
+     "mean": 0.030863312213070298,
+     "ci95": [
+      0.023663966309346262,
+      0.03799315839075618
+     ],
+     "n": 300,
+     "excludes_0": true
+    }
+   }
+  },
+  "loo": {
+   "n_tiles": 300,
+   "drop": {
+    "cell_state_dead/sd_pq": {
+     "mean": 1.0245586500055581e-05,
+     "ci95": [
+      -0.00025052739561873987,
+      0.00033268274865601527
+     ],
+     "n": 299,
+     "excludes_0": false
+    },
+    "cell_state_dead/f1": {
+     "mean": -0.00019705207988969186,
+     "ci95": [
+      -0.0010666666666666659,
+      0.00036286321757618753
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_state_nonprolif/sd_pq": {
+     "mean": 0.015271316094500883,
+     "ci95": [
+      0.009924480893939125,
+      0.02078693758939707
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_state_nonprolif/f1": {
+     "mean": 0.025271967110863887,
+     "ci95": [
+      0.015560663859601394,
+      0.03574506837954651
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "cell_state_prolif/sd_pq": {
+     "mean": 0.0011003246320133906,
+     "ci95": [
+      -0.0007109314587508592,
+      0.0030198970463654424
+     ],
+     "n": 299,
+     "excludes_0": false
+    },
+    "cell_state_prolif/f1": {
+     "mean": -0.0027279921551757696,
+     "ci95": [
+      -0.00591522077518129,
+      0.00038742938657682356
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_type_cancer/sd_pq": {
+     "mean": 0.0032473078253641694,
+     "ci95": [
+      0.0003735595302949161,
+      0.006305076765680404
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_type_cancer/f1": {
+     "mean": -0.001003275980759673,
+     "ci95": [
+      -0.005699903930276365,
+      0.0036521680414440235
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_type_healthy/sd_pq": {
+     "mean": 0.001607372587376749,
+     "ci95": [
+      -0.002265048096089092,
+      0.0052883257118983935
+     ],
+     "n": 299,
+     "excludes_0": false
+    },
+    "cell_type_healthy/f1": {
+     "mean": 0.004176354835148928,
+     "ci95": [
+      -0.004737402905260051,
+      0.01306949840344512
+     ],
+     "n": 300,
+     "excludes_0": false
+    },
+    "cell_type_immune/sd_pq": {
+     "mean": 0.01336420721553036,
+     "ci95": [
+      0.009405404961541911,
+      0.017517409662572394
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "cell_type_immune/f1": {
+     "mean": 0.006674374870814084,
+     "ci95": [
+      0.00015082016738850908,
+      0.013357563747865179
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "glucose/sd_pq": {
+     "mean": 0.018402799288144343,
+     "ci95": [
+      0.012865865830939717,
+      0.023837327829597823
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "glucose/f1": {
+     "mean": 0.010480659972752828,
+     "ci95": [
+      0.0006007073132919901,
+      0.020269354070485402
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "oxygen/sd_pq": {
+     "mean": 0.010037590900930399,
+     "ci95": [
+      0.0053136020726368876,
+      0.014886389341978874
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "oxygen/f1": {
+     "mean": 0.010346815403253044,
+     "ci95": [
+      0.0002749346018885063,
+      0.021720003693545337
+     ],
+     "n": 300,
+     "excludes_0": true
+    },
+    "vasculature/sd_pq": {
+     "mean": 0.03285712252771866,
+     "ci95": [
+      0.019829045981290535,
+      0.046158109936257054
+     ],
+     "n": 299,
+     "excludes_0": true
+    },
+    "vasculature/f1": {
+     "mean": -0.003103980103845752,
+     "ci95": [
+      -0.02114204851967786,
+      0.015178048225522597
+     ],
+     "n": 300,
+     "excludes_0": false
+    }
+   }
+  }
+ }
+}

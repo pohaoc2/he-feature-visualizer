@@ -1,0 +1,14 @@
+{
+ "model": "2D_versatile_he",
+ "thresholds": {
+  "prob": 0.6924782541382084,
+  "nms": 0.3
+ },
+ "normalize": [
+  1,
+  99.8,
+  "axis (0, 1, 2)"
+ ],
+ "stardist": "0.9.1",
+ "tensorflow": "2.15.1"
+}
