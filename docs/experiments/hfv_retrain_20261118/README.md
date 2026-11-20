@@ -344,10 +344,13 @@
   - 兩個讀數都只在 CPU 上算（Hyak cheme），不重新生成圖，也不重跑生成圖的 CellViT。統計和其他指標相同：對 tile 的 95 % bootstrap 區間（10,000 次，seed 42），比較組內用同一組重抽。
   - 論文 figure 要等主要 PQ 和這兩個讀數都算完才重繪。
   - **執行環境（2026-11-20，協調者核准；只改安裝位置和底層 Python，套件和版本不變）**：
-    - 套件：tensorflow-cpu 2.15.1、stardist 0.9.1、numpy < 2、scipy、pillow、scikit-image（完整版本在 Hyak `hfv_robust_20261120/env2/pip_freeze.txt`）。
+    - 套件：tensorflow-cpu 2.15.1、stardist 0.9.1、numpy < 2、scipy、pillow、scikit-image（完整版本在 Hyak `hfv_robust_20261120/env3/pip_freeze.txt`）。
     - 第一次在登入節點往 gscratch 裝 venv：小檔案寫入太慢（40 分鐘只寫了 529 MB），停掉並刪除。
     - 改法 B：在 cheme 計算節點的本機 /tmp 建環境，打包成一個 tar 放回 gscratch（`eval/robust_env.slurm`），之後每個作業在節點上解開到同一路徑 /tmp/rob_sdenv（`eval/robust_envsetup.sh`）。
     - 第一次改法 B（作業 43427059）失敗：底層 Python 用 Hyak 模組 coenv/python/3.11.9，這個 Python 編譯時沒有 `_ctypes`，TensorFlow（protobuf）匯入失敗。沒有重試；經協調者核准後，底層 Python 改用 conda-forge 的 python 3.11（Miniforge3-25.9.1-0 模組），放到新資料夾 `env2`。TensorFlow 2.15 只支援 Python 3.9–3.11，所以不用 3.13。
+    - 第二次（作業 43427175，env2）也失敗：stardist 0.9.1 匯入時要用 `pkg_resources`，conda 環境沒有 setuptools（setuptools 81 以後也不再附 `pkg_resources`）。經協調者核准，安裝清單加上 `setuptools<81`，放到新資料夾 `env3`。其餘套件和版本不變。之後這類純環境、打包的修正（缺少的建置或執行依賴，目標套件版本不變）協調者已預先核准：照做、記在這裡、繼續。
+    - 計算改成每個評估集一個作業（`eval/robust_set.slurm`），全部在節點本機 /tmp 做（從 S3 取評分結果、跑 StarDist、算指標），只把結果（csv、json、StarDist 標記 npz、影像清單、log）放回 gscratch `hfv_robust_20261120/res/<評估集>/`。原因同上：gscratch 建立大量小檔案很慢。方法不變。
+    - 送出前在本機用假輸入試跑整條程式：把 CellViT 的細胞核當成「StarDist 結果」餵進去，算出的 Fig 2 PQ/DICE 平均、消融、LOO、分解的值和主要 PQ 完全相同，確認 PQ/DICE 的計算路徑和主要 PQ 一致。
     - StarDist 的模型權重在建環境時下載一次（`hfv_robust_20261120/keras_home`），計算作業都從這裡讀。
 
 - **S3 物件誤覆寫，已還原（2026-11-20 09:12）**：
