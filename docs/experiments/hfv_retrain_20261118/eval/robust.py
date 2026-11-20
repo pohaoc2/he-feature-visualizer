@@ -102,7 +102,7 @@ def stardist(lst, sd_root, task, ntask):
     from csbdeep.utils import normalize
     from PIL import Image
     from stardist.models import StarDist2D
-    n = int(os.environ.get("SLURM_CPUS_PER_TASK", "1"))
+    n = int(os.environ.get("SD_THREADS", os.environ.get("SLURM_CPUS_PER_TASK", "1")))
     tf.config.threading.set_intra_op_parallelism_threads(n)
     tf.config.threading.set_inter_op_parallelism_threads(1)
     task, ntask = int(task), int(ntask)
@@ -111,7 +111,7 @@ def stardist(lst, sd_root, task, ntask):
     model = StarDist2D.from_pretrained("2D_versatile_he")
     th = dict(prob=float(model.thresholds.prob), nms=float(model.thresholds.nms))
     sd_root = Path(sd_root)
-    if task == 0:
+    if task == 0 and not (sd_root / "sd_model.json").exists():
         import stardist
         json.dump(dict(model="2D_versatile_he", thresholds=th, normalize=[1, 99.8, "axis (0, 1, 2)"],
                        stardist=stardist.__version__, tensorflow=tf.__version__), open(sd_root / "sd_model.json", "w"), indent=1)
