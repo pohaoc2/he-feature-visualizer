@@ -328,6 +328,22 @@
   - Fig 2d 的 Vanilla 參考帶（FUD 不受影響；PQ、DICE）兩種參考都記錄在下面的參考帶表，圖上用和該圖 PQ 軸相同的參考。
   - 論文 figure 的重繪要等主要 PQ 算完才做（`figs_hyak.slurm` 暫停）。
 
+- **PQ 的穩健性檢查：兩個額外讀數（協調者轉達使用者 2026-11-20 的要求；寫在這兩個讀數有任何數字之前）**
+  - **為什麼**：主要 PQ 的兩邊（真實 H&E 和生成圖）都是 CellViT 找的細胞核。CellViT 已知會把相鄰的細胞核合併成一個物件：之前在 CRC16 和 CRC34 用 Cellpose 對 Hoechst（細胞核螢光）重新分割，上皮和腫瘤的 CellViT 物件約有三成其實是兩顆以上細胞核（`sim-exp-validation` 記憶 `cellvit-undersegmentation`）。如果合併在真實圖和生成圖上的發生方式不同，PQ 的高低可能反映的是 CellViT 的毛病，不是生成圖的細胞核位置。所以主要 PQ 照留（可和論文比），另外加兩個不依賴 CellViT 的讀數。
+  - **讀數 1：換一個分割器，兩邊都換（對稱）**
+    - 分割器：StarDist 2D（Schmidt 2018；Weigert 2020），預訓練模型 `2D_versatile_he`（在 H&E 上訓練），門檻用模型自帶的預設值（機率門檻和 NMS 門檻，執行時讀出並記在這裡），輸入照 StarDist 範例做百分位數正規化（1 和 99.8 百分位，三個顏色通道一起）。
+    - 在每組評估集上，對真實 H&E 和 Fig 2、消融、LOO、分解的每一張生成圖都跑 StarDist。
+    - PQ/DICE 用同樣的 PixCell 函式（`_compute_pq`、`_compute_binary_segmentation_metrics`），參考 = 同一張 tile 的真實 H&E 的 StarDist 結果。兩邊都直接用 StarDist 的個別細胞核標記（不先轉成二值再重新取連通區塊，以免相鄰細胞核在參考端被合併）。
+    - 要回答的問題：變體的排名，以及「變體減 Vanilla」的區間是否和 CellViT 的主要 PQ 一致。
+  - **讀數 2：不用 IoU，直接和螢光的細胞核比（檢測 F1）**
+    - Lin 遮罩是 S3segmenter 在 Hoechst 上分割的細胞核，是這裡最接近真實細胞核的東西。
+    - 比法：每顆細胞核取中心點，生成圖（或真實 H&E）的 CellViT 細胞核和 Lin 細胞核一對一配對（Hungarian），中心點距離不超過配對半徑才算配上。F1 = 2 × 配上的數目 /（檢測到的數目 + Lin 的數目）。另外報告數量比（檢測到的數目 / Lin 的數目）。
+    - 配對半徑從資料決定：該評估集裡 Lin 細胞核的等效半徑（√(面積/π)）的中位數，單位是像素，執行時算出並記在這裡。
+    - 這個比法不要求形狀重疊到 IoU 0.5，所以細胞核輪廓大小不同不會被當成錯；但兩顆細胞核被合併成一顆時，只能配上一顆，另一顆算漏掉，所以會懲罰合併。
+    - 真實 H&E 的 CellViT 對 Lin 的 F1 當作參考線。
+  - 兩個讀數都只在 CPU 上算（Hyak cheme），不重新生成圖，也不重跑生成圖的 CellViT。統計和其他指標相同：對 tile 的 95 % bootstrap 區間（10,000 次，seed 42），比較組內用同一組重抽。
+  - 論文 figure 要等主要 PQ 和這兩個讀數都算完才重繪。
+
 - **S3 物件誤覆寫，已還原（2026-11-20 09:12）**：
   - 一個打錯的指令（`aws s3 cp -` 方向寫反）把 S3 `inputs/eval/evalpack_crc34eval.tar.json`（打包摘要，342 bytes）覆寫成空檔案。
   - 已從 Hyak 的原始檔（`/gscratch/cheme/chiu/hfv_eval_20261118/packs/`）放回，md5 494fb4d3 和原檔相同。
