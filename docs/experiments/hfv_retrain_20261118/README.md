@@ -371,7 +371,7 @@
 
 ## 結果
 
-（2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數（StarDist、對 Lin 的檢測 F1）已完成；論文 figure 還沒重繪。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
+（2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數（StarDist、對 Lin 的檢測 F1）已完成；論文 figure 已重繪，但 Fig 3 因缺少輸入沒有重繪（見「尚未完成」）。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
 
 - **讀法**：
   - PQ/DICE 有兩種參考（見偏離紀錄「PQ 參考遮罩」）。「主要」= 生成圖的細胞核是否落在真實 H&E 上 CellViT 找到細胞核的位置（論文 PQ 的定義）；「次要」= 生成圖是否照著輸入的 Lin 細胞遮罩畫。
@@ -470,5 +470,11 @@
 
 ### 尚未完成
 
-- 論文 figure 重繪（`figs_hyak.slurm`，主要 PQ 和兩個穩健性讀數都已算完，可以送出）和本機比較頁。
+- 論文 figure 重繪（作業 43427989，2026-11-20 12:00–12:59）：6 個步驟中 5 個成功，重繪的檔案在 S3 `figures_rerender/`（清單 `rendered.txt`）：Fig 2（`concat/fig2_architecture_performance.png`）、`si/ablation_grids_combined.png`、`si/si_performance_ranking.png`、`si/si_qualitative_variants.png`、`si/si_training_stability.png`、`individual/ablation_analysis/05_paired_ablation_grid.png`。
+  - **Fig 3 失敗（沒有重試）**：`fig_combined_uni_decomp_v2` 的右欄要讀 `results/a4_uni_probe/specificity_full.csv`，但 S3 的舊結果 `share_space/05_results/results/a4_uni_probe` 裡沒有這個檔案（只有 probe_results、features、labels、sweep 等），所以 Fig 3 沒有重繪。要補這個檔案得先決定是從論文 repo 取原檔，還是重跑 a4 的特異度分析，這需要協調者決定。
+  - `SI_A1_A2_unified.png` 這個步驟（`fig_si_a1_a2_unified`）跑完沒有錯誤，但沒有寫出這個檔名，只寫了 `si_training_stability.png` 和 `si_qualitative_variants.png`。
+  - 節點上沒有 `Nimbus Sans` 字型，matplotlib 改用預設字型（字體和論文原圖不同，內容不受影響）。
+  - Fig 2b 四條訓練 loss 曲線幾乎重疊：四次訓練用同一個 seed 和同樣的批次順序，每 50 步記錄的是單一批次的 loss，所以批次之間的起伏主導曲線。各次的數值確實不同（例如第 6500 步：Concat 0.0901、Per-channel 0.0917、Grouped 和 bypass 都是 0.0930），不是同一個檔案讀了四次。
+  - Fig 2 的 D、E、G 是 PixCell 原本的計分（參考 = Lin 輸入遮罩，也就是本文的次要 PQ），程式沒有改。
+- 本機比較頁：`compare/index.html`（原圖在 `compare/old/`，重繪在 `compare/new/`；只在本機，不發佈）。
 - 規則 6 的可解碼性：沒有重做（舊通道的輸入）。`si_threshold_sensitivity`、`si_patient_generalization`：待定（原檔只在論文 repo）。
