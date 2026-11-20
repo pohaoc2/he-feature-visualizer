@@ -226,15 +226,19 @@
 - **CRC34 的輸入改用新流程重建（偏離論文的 CRC34 輸入）**：CRC34 的評估輸入照 CRC36 的流程重新建立，規則、門檻和程式路徑都相同（`crc34_render_20261118/`）。流程包含 Lin 分割、CELESTA 加 Lin Fig. 3d 判定細胞類型、NucleusShapes 繪製、CellViT 判定死細胞，以及血管、氧、葡萄糖通道；這三個通道的參數直接讀 CRC36 那次執行的設定。論文用的舊 `orion-CRC34.tar` 不再使用，但仍原封不動保留在 S3（`share_space/02_datasets/`）。這是協調者在 2026-11-18 決定的，當時還沒有任何評估結果。
 - **重繪 Fig 2d 時替換 Vanilla 參考帶（偏離 PixCell 寫死的常數，協調者 2026-11-19 核准）**：PixCell `tools/ablation_report/shared.py` 的 `TRADEOFF_REFERENCE_BANDS` 寫死了論文 Vanilla 的數值，重新生成也不會更新；新數字旁邊留著舊參考帶會誤導。重繪時由 `eval/` 的 wrapper 在執行前換成這次 CRC33 次要組 100 張的 Vanilla 數值，PixCell 不改。兩條「ORION H&E」參考帶是真實 H&E 的參考值，照用。
 
-  | 參考帶 | 論文（寫死在 `shared.py`） | 這次（次要組 100 張） |
-  |---|---|---|
-  | Vanilla ControlNet FUD | 198.376（平均） | 評分完成後填入 |
-  | Vanilla ControlNet PQ | 0.7035 ± 0.1185 | 評分完成後填入 |
-  | Vanilla ControlNet DICE | 0.8588 ± 0.1061 | 評分完成後填入 |
-  | ORION H&E LPIPS | 0.5463 ± 0.0792 | 不變 |
-  | ORION H&E HED | 0.2930 ± 0.2129 | 不變 |
+  | 參考帶 | 論文（寫死在 `shared.py`） | 這次，參考 = Lin 輸入遮罩（次要結果，次要組 100 張） | 這次，參考 = 真實 H&E 的 CellViT（主要結果，次要組 100 張） |
+  |---|---|---|---|
+  | Vanilla ControlNet FUD | 198.376（平均） | 254.46（FUD 不需要參考遮罩，兩欄相同） | 254.46 |
+  | Vanilla ControlNet PQ | 0.7035 ± 0.1185 | 0.6243 ± 0.1297 | 真實 H&E 的 CellViT 跑完後填入 |
+  | Vanilla ControlNet DICE | 0.8588 ± 0.1061 | 0.8504 ± 0.0549 | 真實 H&E 的 CellViT 跑完後填入 |
+  | ORION H&E LPIPS | 0.5463 ± 0.0792 | 不變 | 不變 |
+  | ORION H&E HED | 0.2930 ± 0.2129 | 不變 | 不變 |
 
-  - 寫死的 Vanilla 數值和論文 `si_a1_a2/cache.json` 裡的 Vanilla（`a2_off_shelf`，100 張）並不相同：cache 是 FUD 240.93、PQ 0.6987 ± 0.1471、DICE 0.8529 ± 0.1408。寫死的值是從哪一批 tile 算出來的，查不到。這次照協調者的決定，用和 cache 同樣定義的次要組 100 張。
+  - 表中是平均 ± 標準差（逐張 tile），和 `shared.py` 的格式相同。Lin 參考那欄由 `figrender.py bands` 從 L4 評分的 `fig2_crc33sec/cache.json`（`a2_off_shelf`，n_tiles 100）取出。
+  - **更正（2026-11-20）**：原本寫「寫死的值是從哪一批 tile 算出來的，查不到」，這不對。
+    - S3 `share_space/04_inference/si_a1_a2/` 裡有兩個 cache：現在的 `cache.json` 是 `a2_off_shelf` n_tiles 1000，FUD 198.376、PQ 0.7035 ± 0.1185、DICE 0.8588 ± 0.1061，和寫死的值完全相同；另一個 `cache.json.bak_n100`（100 張）才是 FUD 240.93、PQ 0.6987 ± 0.1471、DICE 0.8529 ± 0.1408。
+    - 所以寫死的參考帶來自論文的 1000 張 Vanilla，其他四個變體在 cache 裡是 100 張。
+    - 這次的參考帶仍照協調者的決定用次要組 100 張，和四個變體同一批 tile。FUD 會隨張數變，張數少時偏高（論文自己的 Vanilla：100 張 240.93，1000 張 198.38），所以這次的 Vanilla FUD 不能和論文的 198.376 直接比。
   - 替換由 `eval/figrender.py`（`bands`、`run --bands`）做：`bands` 從這次次要組的 `cache.json` 取出三條 Vanilla 參考帶，`run` 在載入 figure 腳本前就地改寫這個 dict。
 
 - **血管、氧、葡萄糖通道：重現原本的 CRC33_01 檔案時有 6 張 tile 的 vasculature 不完全相同（協調者 2026-11-18 決定接受）**：CRC36 和 CRC34 的這三個通道是用 `crc36_render_20261118/mx/` 的流程產生的，參數是 hfv 的程式預設值：ds 4、O2 Krogh 長度 200 µm、glucose 120 µm、不做 SMA 修正。這組參數是從訓練資料本身推出來的；論文 `_methods.tex` 和 PixCell 文件寫的是 160/450 µm、ds 8，但這組數值重現不了訓練資料。用這組參數重算 CRC33_01 全部 10,379 張 tile：oxygen 和 glucose 都是 10,379/10,379 張逐位元組相同；vasculature 是 10,373/10,379 張相同。不同的 6 張每張差 64–1,502 個像素（IoU 0.99998），差異都落在 Otsu 門檻上，也就是門檻差了 1 個灰階。可能是函式庫版本或浮點捨入造成，原本執行時的版本沒有紀錄，無法確認。CRC33_01 的訓練仍然用原本的通道檔案。
