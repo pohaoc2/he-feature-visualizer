@@ -318,7 +318,10 @@
        - 真實 H&E 的 CellViT 用和評分相同的設定重跑三組評估 tile：L4、TF32 關閉、同一個 runner（md5 7e67da08）、同一個 CellViT commit（05097e1）和 checkpoint（md5 b3634bd5）、batch 32。三組是 CRC36 保留區、CRC33 次要組、CRC34（`eval/boot_realcv.sh`、`eval/presign_realcv.py`）。
        - `cellvit_crc36` 那次（死細胞判定用）的 TF32 設定沒有紀錄，所以不沿用。
        - 參考遮罩的做法照論文：把真實 H&E 的 CellViT 輪廓填成二值遮罩，再取連通區塊（和 PixCell `_load_gt_instance_mask` 讀 `cell_masks` 的方式相同）。
-       - 生成圖的 CellViT 結果已經存在（`*_cellvit_instances.json`），所以只在 CPU 上重算 PQ/DICE，用 PixCell 的 `_compute_pq` 和 `_compute_binary_segmentation_metrics`，不重新生成，也不重跑生成圖的 CellViT。
+       - 生成圖的 CellViT 結果已經存在（`*_cellvit_instances.json`），所以只在 CPU 上重算 PQ/DICE，用 PixCell 的 `_compute_pq` 和 `_compute_binary_segmentation_metrics`，不重新生成，也不重跑生成圖的 CellViT（`eval/realref.py`）。
+         - 消融、分解、LOO、CRC34 直接跑 PixCell 自己的腳本（`compute_ablation_metrics.py --metrics` 只選細胞指標、`--device cpu`，`--orion-root` 指向只含真實 H&E 參考遮罩的資料夾），在評分結果的新複本上執行，原本的評分結果不動。
+         - Fig 2 用和 `metrics_io.py compute` 相同的 PQ/DICE 程式路徑，只換掉 `cache.json` 的 pq/dice 和 `fig2_per_tile.csv` 的 pq/dice 欄；其他指標照原本評分。
+         - 檢查：用論文那 100 張 CRC33 的真實 H&E CellViT 畫出的參考遮罩，和論文的舊 `cell_masks` 逐像素相同（100/100）。
     2. **次要結果**：參考是 Lin 輸入遮罩，也就是模型實際拿到的條件，問的是「模型多忠實地照著輸入遮罩畫」。
        - 圖上另外畫一條參考線：真實 H&E 對同一個 Lin 遮罩的 PQ（真實組織本身能達到的程度）。
        - 診斷時的值是 CRC33 0.17、CRC36 0.12，用的是較早的 CellViT 結果；正式的參考線改用上面重跑的真實 H&E CellViT。
