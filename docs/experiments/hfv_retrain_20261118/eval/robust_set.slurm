@@ -28,7 +28,7 @@ for k in fig2 abl loo decomp; do
   aws s3 ls $key >/dev/null 2>&1 || { echo "no $k for $SET"; continue; }
   mkdir $W/score/${k}_$SET
   aws s3 cp --only-show-errors $key $W/t.tar || stop "download $key"
-  tar -xf $W/t.tar -C $W/score/${k}_$SET --exclude='*/features/*' --exclude='*/sensitivity_tiles/*' --exclude='*/generated/*' \
+  tar -xf $W/t.tar -C $W/score/${k}_$SET --exclude='*/features/*' --exclude='*/sensitivity_tiles/*' \
     --exclude='*.npy' --exclude='*.pt' || stop "untar $key"
   rm -f $W/t.tar; echo "### $(date -Is) $k: $(find $W/score/${k}_$SET -name '*.png' | wc -l) png"
 done
