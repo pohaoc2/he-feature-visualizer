@@ -55,9 +55,11 @@ PY = sys.executable
 CV = {k: os.environ[k] for k in ("CV_PY", "CV_REPO", "CV_CKPT", "CV_RUNNER")}
 os.environ["NVIDIA_TF32_OVERRIDE"] = "0"
 try:
-    GPU = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True,
-                         text=True).stdout.strip().splitlines()[0]
-except (FileNotFoundError, IndexError):   # CPU dry tests only
+    _q = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, text=True)
+    GPU = _q.stdout.strip().splitlines()[0] if _q.returncode == 0 else ""
+except (FileNotFoundError, IndexError):
+    GPU = ""
+if not GPU:   # CPU dry tests only
     GPU = os.environ.get("EVALSCORE_GPU") or sys.exit("STOP no GPU found (nvidia-smi) and EVALSCORE_GPU not set")
 print(f"[evalscore] GPU {GPU}; NVIDIA_TF32_OVERRIDE=0", flush=True)
 V4 = ["a1_concat", "production", "a2_bypass_full_tme", "a1_per_channel"]
