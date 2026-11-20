@@ -253,6 +253,33 @@
     - 消融「四組全開」的圖和它們**不同**（3/3 張 md5 不同）。消融腳本走另一條路徑 `generate_group_combination_ablation_images`：15 個條件共用同一個起始雜訊，分批一起去噪（`denoise_batched`）；`generate_from_ctrl` 則在去噪前重設 seed，一次只畫一張。兩條路徑都是 PixCell 原本的寫法，論文的消融和 LOO 也是這樣分開生成的。
     - 評分本身一致：用 PixCell 的 `run_cellvit`、`_compute_pq` 和同一張輸入細胞遮罩，逐張重算三組圖的 PQ，結果和評分輸出完全相同（消融 0.4287 / 0 / 0.1706，對應 `metrics.json`；LOO 和分解都是 0.3282 / 0 / 0，平均就是 0.109403）。
     - 所以：消融「四組全開」的 PQ 和 LOO 基準、分解 `uni_plus_tme` 的 PQ 本來就不必相同，三者不能互相代替；報告時各自引用自己那一組。這 3 張 tile 都在切片邊緣，每張只有 2–17 個真實細胞，只用來檢查程式，不代表任何結果。
+  - **兩條生成路徑的逐項比較（協調者 2026-11-20 要求；結果出現前的說明，只讀程式和論文既有數字，沒有新的 GPU 執行，生成和評分程式都不改）**
+    - 先更正數字：3 張試跑 tile 上，消融「四組全開」的逐張 PQ 是 0.4287 / 0 / 0.1706，平均 **0.200**；LOO 基準（＝分解 `uni_plus_tme`）是 0.3282 / 0 / 0，平均 **0.109**。之前說的「0.43」只是第一張 tile 的值，不是平均，所以並沒有 4 倍的差距。
+    - 「消融路徑」是 `generate_ablation_subset_cache.py` → `generate_ablation_images_with_context` → `denoise_batched`。「單張路徑」是 `run_subchannel_loo.py` 和 `src.a2_decomposition.main` → `generate_from_ctrl` → `denoise`。下表逐項比較兩者（PixCell cb62fa7）：
+
+      | 項目 | 消融路徑 | 單張路徑 | 相同？ |
+      |---|---|---|---|
+      | 模型和 checkpoint | `load_all_models(config, config_path, ckpt_dir)`；evalgen 給的 config 和 `step_dir("tr_concat")` 相同 | `load_sweep_models` 內部呼叫同一個 `load_all_models`，config 和 checkpoint 也相同 | 相同 |
+      | 排程器（scheduler） | `make_inference_scheduler`：DDPM，1000 個訓練步、linear beta、epsilon | 同一個函式 | 相同 |
+      | 步數 | `--num-steps 20`；`denoise_batched` 內部另外用預設的 `num_inference_steps=20` 重設 | `--num-steps 20`；`denoise` 內部同樣用預設 20 重設 | 相同（20 步） |
+      | guidance | 2.5（腳本預設） | 2.5（`DEFAULT_GUIDANCE_SCALE`） | 相同 |
+      | CFG 寫法 | 無條件分支用全 0 的 UNI 加全 0 的 ControlNet 殘差 | 同樣寫法 | 相同 |
+      | 起始雜訊 | `_make_fixed_noise`：先 `manual_seed(42)` 再 `randn`，乘上 `init_noise_sigma`；15 個條件共用 | 同一個函式，同樣的 seed | 相同 |
+      | 去噪過程中每一步的隨機雜訊 | DDPM 每一步都從 torch 全域亂數抽新雜訊。消融路徑在去噪前**不重設 seed**；15 個條件分成 8 張和 7 張兩批一起去噪，「四組全開」是第 15 個條件，在第二批 | 去噪前**重設** `manual_seed(42)`，一次只畫一張 | **不同** |
+      | 條件組裝 | Concat（`RawConditioningPassthrough`）：群組名展開成通道，加上永遠開著的 `cell_masks`。四組全開＝9 個子通道加 `cell_masks`；通道不歸零，也沒有 dropout | 直接給 9 個子通道名稱，加上永遠開著的 `cell_masks`；走同一個 `_fuse_conditioning_latent` | 相同 |
+      | UNI 特徵 | paired：`resolve_uni_embedding` 讀該 tile 自己的 `features/<tile>_uni.npy` | 同一個函式、同一個檔案（資料夾是指向同一批檔案的 view） | 相同 |
+      | 解碼和輸出解析度 | `_decode_latents_to_images`，`config.image_size` | `_decode_latents_to_image`，同樣的 VAE、scale 和 shift | 相同 |
+      | 數值 | fp16，batch 8 或 7 | fp16，batch 1 | batch 大小不同，可能有微小差異 |
+
+    - 結論：兩條路徑畫的是**同一個條件分佈**，用同一個模型、同樣的條件、同一個起始雜訊。差別只在 DDPM 去噪過程中每一步加入的隨機雜訊：兩條路徑各抽了一組不同的雜訊。所以同一張 tile 會得到兩張不同的樣本圖，逐張 PQ 也會不同。但這只是取樣上的變異，不會造成系統性偏差：平均來說，兩條路徑的 PQ 應該相同。
+    - **論文自己的數字支持這個結論**（同一批 tile，舊模型）：
+      - 論文消融「四組全開」（paired）在 `paired_1000_tile_ids.txt` 前 300 張上的平均 PQ 是 **0.8088**（SD 0.1446，n = 300）。這是從 `inference_output_20260527.zip` 用 range 讀取這 300 個 `metrics.json` 算出來的。
+      - 論文 LOO 基準在同樣 300 張上是 **0.8055**（SEM 0.0090，`subchannel_loo_n300/per_subchannel_layout_summary.csv`）。
+      - 兩者差 0.003，不到 LOO 平均值 SEM 的一半。所以在論文裡，兩條路徑對「全通道 PQ」給出的是同一個數。
+      - 論文分解 `uni_plus_tme` 是 0.7769（SD 0.1808，n = 500，`fig3b_condition_means.csv`）。它用的是另一批 tile（數字排序後的前 500 張，包含切片邊緣幾乎沒有細胞的 tile），不能直接和前兩者比較。
+      - 論文消融 unpaired「四組全開」在同樣 300 張上是 0.7260（SD 0.2115），是另一個條件（風格來自別張 tile）。
+    - 對結果的影響：Fig 2（消融）和 Fig 3/4（分解、LOO）的全通道 PQ，各自來自自己那條路徑的樣本。比較時，兩者的差應該落在取樣變異的範圍內；正式結果出來後，用 299 張上的數字確認。每個比較組（例如 LOO 的基準和拿掉一個子通道的圖）都在同一條路徑、同一次執行裡生成，所以組內的差（ΔPQ、效果量）不受這個影響。
+    - 不需要修改任何程式。
 
 ## 結果
 
