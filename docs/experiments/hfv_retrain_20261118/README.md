@@ -369,6 +369,14 @@
   - 已從 Hyak 的原始檔（`/gscratch/cheme/chiu/hfv_eval_20261118/packs/`）放回，md5 494fb4d3 和原檔相同。
   - 沒有任何 boot 或腳本讀這個檔案（`presign_eval.py` 排除 `*.tar.json`），評估包的 tar 本身沒有被動到。
 
+- **2026-11-20 追加工作的偏離（協調者核准，在任何結果出現之前）**：
+  - Fig 3 a4 掃描重跑（追加 1）：
+    - tile：論文固定的 30 張（`shared_tiles.json`）去掉 20992_46080 和 26368_50688，這兩張不在 CRC33_01 的 9,418 張合格 tile 裡（墨水、組織規則，和 crc33sec 拿掉 10496_17664 的規則相同）→ 28 張。
+    - 掃描的 6 個屬性固定成論文掃過的那 6 個（eccentricity_mean、nuclear_area_mean、nuclei_density、texture_e_contrast、texture_h_contrast、texture_h_energy）。原因：zip 裡的 `probe_results.csv` 是掃描之後重新擬合的，照它重選，外觀的前 3 名會變成 texture_e_homogeneity 而不是 texture_h_energy。方向仍由 PixCell 從 `probe_directions/` 讀（和論文的 `w_targeted.npy` 餘弦 1.000000），隨機方向由它自己的 seed 產生（和論文的 `w_random.npy` 相同）。
+    - 生成和 CellViT 在 Colab L4 兩個 session 上跑（每個 session 一半 tile，和論文的 2 個分片相同；依實測時間選擇：L4 每張 ≤ 2.4 s，共 1,008 張）。
+    - 打包檢查（作業 43429800）：PixCell 要改的 UNI 向量（a4 `features.npz` 的 uni）和評估包存的 UNI（`features/<id>_uni.npy`）28 張全部逐位元相同；10 個通道 28 張都在。
+  - Fig 2 參考版本（追加 2）第一次執行（作業 43429730）卡在 S3 下載（7 MB 的 tar，`aws s3 cp` 0 % CPU 37 分鐘；之後從同一節點下載只要 9 秒，節點寫入測試正常，所以沒有記成慢節點）。取消，在新資料夾 `hfv_fig2ref_20261120b` 重跑（作業 43430179，12.7 分鐘，0 個失敗）。方法沒有改。
+
 ## 結果
 
 （2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數（StarDist、對 Lin 的檢測 F1）已完成；論文 figure 已重繪，但 Fig 3 因缺少輸入沒有重繪（見「尚未完成」）。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
@@ -467,6 +475,17 @@
   - CRC34 是例外：StarDist 下 Concat 的優勢變小到分不出，Grouped 和 bypass 比 Vanilla 差。所以「Concat 比 Vanilla 好」在病人 2 上有一部分依賴分割器。
   - CellViT 合併相鄰細胞核的問題，看起來沒有造成主要 PQ 的方向錯誤：用不會那樣合併的 StarDist 算，消融和 LOO 的效果大小幾乎一樣。
   - 對 Lin 的 F1 量的是另一件事（對條件遮罩的忠實度），在這個讀數下 Vanilla 最好、vasculature 是負的，和次要 PQ 的結論一致。
+
+### 追加 2（2026-11-20）：Fig 2 的 D、E、G 用兩種參考各畫一版
+
+- 程式：`eval/fig2_refvariant.py`（PixCell cb62fa7 `fig_combined_method_perf.py` 的複本，只加了參考標籤和可指定的輸入路徑），`eval/fig2ref_hyak.slurm`（作業 43430179）。
+- 檔案在 S3 `figures_rerender/fig2_reference_variants/`，本機在 `compare/fig2ref/`：
+  - `fig2_architecture_performance_ref-primary-cellvit.png`：D、E、G 的 PQ、DICE 對真實 H&E 的 CellViT（主要參考；`realref_abl_crc33sec`，同樣的 299 張 tile，只重算 PQ/DICE/AJI/IoU/accuracy）。D 的參考帶 = Vanilla 對同一參考的分數（PQ 0.190 ± 0.121、DICE 0.525 ± 0.176，`bands_primary.json`）。
+  - `fig2_architecture_performance_ref-secondary-lin.png`：原本的計分（參考 = Lin 輸入遮罩，次要），只多了標籤。
+  - `fig2_architecture_performance_unchanged.png`：原本重繪的圖（保留）。
+- 每一版在 D 那一列右上角用英文寫明參考：「PQ and DICE in D, E, G: reference = CellViT on the real H&E (primary)」或「… = Lin input cell mask (secondary)」。
+- 檢查：三張都是 3641 × 3442。次要版和原圖只差第 1319–1358 列（標籤那一條）；主要版的差別在第 1319–3519 列（D、E、G）。A–C、F、H 和 FUD/LPIPS/HED 欄相同。
+- 看得出的差別：主要參考下，vasculature 在配對消融的 PQ/DICE 效果從 −0.03 變成 +0.02 / +0.00，和上面「Fig 2e/g」的結果一致。
 
 ### 尚未完成
 
