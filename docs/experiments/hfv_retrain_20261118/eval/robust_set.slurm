@@ -9,13 +9,15 @@
 # hfv_retrain_20261118 PQ robustness readouts (eval/robust.py) for one evaluation set, all on node-local /tmp (gscratch
 # small-file creation is slow): stage the scored groups (fig2 / abl / loo / decomp, whichever exist), the real H&E and
 # the real-H&E CellViT JSONs from S3; StarDist 2D_versatile_he on every image (P processes x T threads); per-image metrics
-# and the bootstrap summary. Results (csv / json, StarDist label npz, image list, logs) -> R/res/SET (new folder).
+# and the bootstrap summary. Results (csv / json, StarDist label npz, image list, logs) -> R/res2/SET (new folder; R/res
+# holds the aborted first attempt). StarDist runs each task's images in a child process that is restarted after a
+# C++ abort (robust.py stardist); aborted images are listed per task (CRASH lines in sd_*.log, 'crashed' in the npz).
 #   sbatch --job-name=rob-SET eval/robust_set.slurm SET LIN_DIR
 # Any failure is a STOP: no retry, no requeue.
 set -uo pipefail
 SET=$1; LIN=$2
 R=/gscratch/cheme/chiu/hfv_robust_20261120; S=s3://bagherilab-working/pohao/hfv_retrain_20261118
-O=$R/res/$SET; W=/tmp/rob_${SET}_$SLURM_JOB_ID
+O=$R/res2/$SET; W=/tmp/rob_${SET}_$SLURM_JOB_ID
 stop() { echo "STOP $*"; exit 1; }
 [ -e $O ] && stop "$O exists (new folders only)"
 mkdir -p $O $W/score $W/real $W/realcv $W/sd $W/PixCell; trap 'rm -rf $W' EXIT
@@ -46,7 +48,7 @@ for k in $(seq 0 $((P - 1))); do
 done
 for p in "${pids[@]}"; do wait $p || stop "stardist process (see $O/sd_*.log)"; done
 cp $W/sd/*.npz $W/sd/sd_model.json $O/ || stop "copy sd"
-echo "### $(date -Is) stardist done: $(cat $W/sd/sd_model.json | tr -d '\n ')"
+echo "### $(date -Is) stardist done: $(cat $W/sd/sd_model.json | tr -d '\n '); crashed images: $(cat $O/sd_*.log | grep -c ^CRASH)"
 export OMP_NUM_THREADS=1
 PYTHONPATH=$W/PixCell $PY -u $R/scripts/robust.py metrics $SET $W/score $W/real $W/realcv/realcv_$SET $W/sd $LIN $W/out \
   $SLURM_CPUS_PER_TASK || stop metrics

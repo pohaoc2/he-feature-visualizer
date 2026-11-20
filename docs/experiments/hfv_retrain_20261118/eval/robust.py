@@ -97,43 +97,91 @@ def sdlist(set_, score_root, real_root, out_list):
     print(f"{set_}: {len(refs)} real + {len(jobs)} generated images -> {out_list}")
 
 
-def stardist(lst, sd_root, task, ntask):
+def _sd_worker(q_in, q_out, n):
+    """child process: loads the model once, then predicts one image per request. A StarDist C++ abort (ClipperLib
+    exception in the NMS polygon step, seen on blank tiles) kills only this child; the parent records the image as
+    crashed and starts a new child for the next image."""
+    import fcntl
     import tensorflow as tf
     from csbdeep.utils import normalize
     from PIL import Image
     from stardist.models import StarDist2D
-    n = int(os.environ.get("SD_THREADS", os.environ.get("SLURM_CPUS_PER_TASK", "1")))
+    import stardist
     tf.config.threading.set_intra_op_parallelism_threads(n)
     tf.config.threading.set_inter_op_parallelism_threads(1)
-    task, ntask = int(task), int(ntask)
-    rows = [l.rstrip("\n").split("\t") for l in open(lst) if l.strip()]
-    mine = rows[task::ntask]
-    import fcntl
     # serialise the first-use download / unpack of the pretrained weights across parallel processes and jobs
     with open(os.path.join(os.environ.get("KERAS_HOME", str(Path.home())), "sd_load.lock"), "w") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         model = StarDist2D.from_pretrained("2D_versatile_he")
         fcntl.flock(lk, fcntl.LOCK_UN)
-    th = dict(prob=float(model.thresholds.prob), nms=float(model.thresholds.nms))
+    q_out.put(("ready", dict(prob=float(model.thresholds.prob), nms=float(model.thresholds.nms)),
+               dict(stardist=stardist.__version__, tensorflow=tf.__version__)))
+    while True:
+        item = q_in.get()
+        if item is None:
+            return
+        i, src = item
+        img = np.asarray(Image.open(src).convert("RGB"))
+        lab, _ = model.predict_instances(normalize(img, 1, 99.8, axis=(0, 1, 2)))
+        q_out.put(("done", i, lab.astype(np.uint32)))
+
+
+def stardist(lst, sd_root, task, ntask):
+    import multiprocessing as mp
+    import queue
+    n = int(os.environ.get("SD_THREADS", os.environ.get("SLURM_CPUS_PER_TASK", "1")))
+    task, ntask = int(task), int(ntask)
+    rows = [l.rstrip("\n").split("\t") for l in open(lst) if l.strip()]
+    mine = rows[task::ntask]
     sd_root = Path(sd_root)
-    if task == 0 and not (sd_root / "sd_model.json").exists():
-        import stardist
-        json.dump(dict(model="2D_versatile_he", thresholds=th, normalize=[1, 99.8, "axis (0, 1, 2)"],
-                       stardist=stardist.__version__, tensorflow=tf.__version__), open(sd_root / "sd_model.json", "w"), indent=1)
     out = sd_root / f"sd_{task:04d}.npz"
     if out.exists():
         sys.exit(f"STOP {out} exists (new files only)")
-    labs, rels = {}, []
-    for src, rel in mine:
-        img = np.asarray(Image.open(src).convert("RGB"))
-        lab, _ = model.predict_instances(normalize(img, 1, 99.8, axis=(0, 1, 2)))
-        if lab.max() >= 2 ** 16:
-            sys.exit(f"STOP {src}: {lab.max()} labels do not fit uint16")
-        labs[f"i{len(rels)}"] = lab.astype(np.uint16)
+    ctx = mp.get_context("spawn")
+    st = {}
+
+    def start():
+        st["qi"], st["qo"] = ctx.Queue(), ctx.Queue()
+        st["p"] = ctx.Process(target=_sd_worker, args=(st["qi"], st["qo"], n), daemon=True)
+        st["p"].start()
+        msg = st["qo"].get(timeout=900)
+        assert msg[0] == "ready", msg
+        return msg[1], msg[2]
+
+    th, ver = start()
+    if task == 0 and not (sd_root / "sd_model.json").exists():
+        json.dump(dict(model="2D_versatile_he", thresholds=th, normalize=[1, 99.8, "axis (0, 1, 2)"], **ver),
+                  open(sd_root / "sd_model.json", "w"), indent=1)
+    labs, rels, crashed = {}, [], []
+    verbose = bool(os.environ.get("SD_VERBOSE"))
+    for i, (src, rel) in enumerate(mine):
+        if verbose:
+            print("IMG", rel, flush=True)
+        st["qi"].put((i, src))
+        while True:
+            try:
+                msg = st["qo"].get(timeout=5)
+                break
+            except queue.Empty:
+                if not st["p"].is_alive():
+                    msg = None
+                    break
+        if msg is None:
+            print(f"CRASH {rel} (worker exit code {st['p'].exitcode}); worker restarted", flush=True)
+            crashed.append(rel)
+            start()
+            continue
+        assert msg[0] == "done" and msg[1] == i, msg[:2]
+        if msg[2].max() >= 2 ** 16:
+            sys.exit(f"STOP {src}: {msg[2].max()} labels do not fit uint16")
+        labs[f"i{len(rels)}"] = msg[2].astype(np.uint16)
         rels.append(rel)
-    # one file per task (gscratch file creation is slow): labels under i<k>, rels[k] = the image's relative name
-    np.savez_compressed(out, rels=np.array(rels), **labs)
-    print(f"task {task}/{ntask}: {len(rels)} images, thresholds {th}", flush=True)
+    st["qi"].put(None)
+    st["p"].join(timeout=60)
+    # one file per task (gscratch file creation is slow): labels under i<k>, rels[k] = the image's relative name;
+    # crashed = images on which StarDist aborted (no labels)
+    np.savez_compressed(out, rels=np.array(rels), crashed=np.array(crashed, dtype=str), **labs)
+    print(f"task {task}/{ntask}: {len(rels)} images, {len(crashed)} crashed, thresholds {th}", flush=True)
 
 
 # ---------------------------------------------------------------- metrics
@@ -143,8 +191,11 @@ G = {}
 def sd_index(sd_root):
     idx = {}
     for f in sorted(Path(sd_root).glob("sd_*.npz")):
-        for k, rel in enumerate(np.load(f)["rels"]):
+        z = np.load(f)
+        for k, rel in enumerate(z["rels"]):
             idx[str(rel)] = (str(f), f"i{k}")
+        for rel in z["crashed"]:
+            idx[str(rel)] = None
     return idx
 
 
@@ -152,6 +203,9 @@ _NPZ = {}
 
 
 def sd_labels(rel):
+    """StarDist labels, or None when StarDist aborted on the image"""
+    if G["sd_idx"][str(rel)] is None:
+        return None
     f, k = G["sd_idx"][str(rel)]
     if f not in _NPZ:
         _NPZ[f] = np.load(f)
@@ -207,9 +261,22 @@ def one(job):
     row = dict(kind=kind, mode=mode, tile=tile, cond=cond, ref=ref)
     sd_ref = sd_labels(f"real/{G['set']}/{ref}.png")
     pred = sd_labels(rel)
-    row["sd_pq"] = _compute_pq(sd_ref, pred)[2]
-    row["sd_dice"] = _compute_binary_segmentation_metrics(sd_ref, pred)[0]
-    cv = _cellvit_json_to_instance_mask(side, image_hw=pred.shape)
+    # coordinator rule (2026-11-20): a StarDist abort on a generated image = 0 detected nuclei, i.e. an EMPTY prediction
+    # fed to the unchanged PixCell metric code, so its own empty-mask convention applies (empty vs empty reference ->
+    # PQ 1, DICE 1; empty vs non-empty -> PQ 0, DICE 0), exactly as the primary CellViT scoring treats blank tiles. An
+    # abort on the real reference tile drops the tile from every variant (NaN). sd_crashed lets stats rerun with the
+    # aborted images excluded.
+    row["sd_crashed"] = int(pred is None)
+    row["sd_ref_crashed"] = int(sd_ref is None)
+    if sd_ref is None:
+        row["sd_pq"] = row["sd_dice"] = float("nan")
+    else:
+        if pred is None:
+            pred = np.zeros_like(sd_ref)
+        row["sd_pq"] = _compute_pq(sd_ref, pred)[2]
+        row["sd_dice"] = _compute_binary_segmentation_metrics(sd_ref, pred)[0]
+    row["sd_n_ref"] = -1 if sd_ref is None else int(len(np.unique(sd_ref)) - 1)
+    cv = _cellvit_json_to_instance_mask(side, image_hw=(256, 256))
     row.update(det_f1(centroids(cv), lin_points(ref)))
     return row
 
@@ -218,12 +285,17 @@ def real_row(t):
     from tools.compute_ablation_metrics import _cellvit_json_to_instance_mask, _compute_pq, \
         _compute_binary_segmentation_metrics
     sd = sd_labels(f"real/{G['set']}/{t}.png")
-    cv = _cellvit_json_to_instance_mask(G["realcv"] / f"{t}.json", image_hw=sd.shape)
+    cv = _cellvit_json_to_instance_mask(G["realcv"] / f"{t}.json", image_hw=(256, 256))
     lin = lin_points(t)
     a = det_f1(centroids(cv), lin)
-    b = det_f1(centroids(sd), lin)
-    return dict(tile=t, cv_f1=a["f1"], cv_count_ratio=a["count_ratio"], sd_f1=b["f1"], sd_count_ratio=b["count_ratio"],
-                n_lin=a["n_lin"], sd_vs_cv_pq=_compute_pq(cv, sd)[2], sd_vs_cv_dice=_compute_binary_segmentation_metrics(cv, sd)[0])
+    row = dict(tile=t, sd_crashed=int(sd is None), cv_f1=a["f1"], cv_count_ratio=a["count_ratio"], n_lin=a["n_lin"])
+    if sd is None:
+        row.update(sd_f1=float("nan"), sd_count_ratio=float("nan"), sd_vs_cv_pq=float("nan"), sd_vs_cv_dice=float("nan"))
+    else:
+        b = det_f1(centroids(sd), lin)
+        row.update(sd_f1=b["f1"], sd_count_ratio=b["count_ratio"], sd_vs_cv_pq=_compute_pq(cv, sd)[2],
+                   sd_vs_cv_dice=_compute_binary_segmentation_metrics(cv, sd)[0])
+    return row
 
 
 def metrics(set_, score_root, real_root, realcv, sd_root, lin_dir, out_dir, nproc):
@@ -279,18 +351,25 @@ def boot(arrs):
     return res
 
 
-def stats(out_dir):
+def nboot(arrs):
+    """boot() after dropping NaN per quantity (NaN = tile without a StarDist reference, or, in the sensitivity run, a
+    crashed image); quantities with no values left are omitted"""
+    arrs = {k: [x for x in v if not math.isnan(x)] for k, v in arrs.items()}
+    return boot({k: v for k, v in arrs.items() if v})
+
+
+def _stats(rows, real, exclude_crashed):
     from tools.ablation_report.data import summarize_added_group_effect_stats
-    out = Path(out_dir)
-    rows = list(csv.DictReader(open(out / "images.csv")))
-    real = list(csv.DictReader(open(out / "real.csv")))
     M = ("sd_pq", "sd_dice", "f1", "count_ratio")
-    val = lambda r, m: float(r[m])
-    res = dict(info=json.load(open(out / "info.json")))
-    res["real"] = boot({k: [float(r[k]) for r in real if not math.isnan(float(r[k]))]
-                        for k in ("cv_f1", "sd_f1", "sd_vs_cv_pq", "sd_vs_cv_dice")})
-    res["real"].update({k: boot({k: [float(r[k]) for r in real if not math.isnan(float(r[k]))]})[k]
-                        for k in ("cv_count_ratio", "sd_count_ratio")})
+
+    def val(r, m):
+        if m in ("sd_pq", "sd_dice") and exclude_crashed and r["sd_crashed"] == "1":
+            return float("nan")
+        return float(r[m])
+
+    res = {}
+    res["real"] = nboot({k: [float(r[k]) for r in real] for k in ("cv_f1", "sd_f1", "sd_vs_cv_pq", "sd_vs_cv_dice")})
+    res["real"].update({k: nboot({k: [float(r[k]) for r in real]})[k] for k in ("cv_count_ratio", "sd_count_ratio")})
     by = {}
     for r in rows:
         by.setdefault((r["kind"], r["mode"]), {}).setdefault(r["tile"], {})[r["cond"]] = r
@@ -298,9 +377,8 @@ def stats(out_dir):
         T = by[("fig2", "fig2")]
         tiles = sorted(T)
         f = dict(n_tiles=len(tiles), means={v: {m: float(np.nanmean([val(T[t][v], m) for t in tiles])) for m in M} for v in V5})
-        arr = {f"{v}/{m}": [val(T[t][v], m) - val(T[t]["a2_off_shelf"], m) for t in tiles] for v in V5[:4] for m in M
-               if m != "count_ratio" or all(not math.isnan(val(T[t][v], m)) for t in tiles)}
-        f["vs_vanilla"] = boot(arr)
+        f["vs_vanilla"] = nboot({f"{v}/{m}": [val(T[t][v], m) - val(T[t]["a2_off_shelf"], m) for t in tiles]
+                                 for v in V5[:4] for m in M})
         f["ranking"] = {m: sorted(V5, key=lambda v: -f["means"][v][m]) for m in M}
         res["fig2"] = f
     for mode in ("paired", "unpaired"):
@@ -309,31 +387,64 @@ def stats(out_dir):
         T = by[("abl", mode)]
         per = {}
         # PixCell's added-effect definition; its METRIC_SPEC table knows "pq" / "dice" (higher is better), so each readout
-        # is passed under that key (count ratio has no better direction and is not summarised here)
+        # is passed under that key (count ratio has no better direction and is not summarised here). A tile with a
+        # NaN condition is left out of that readout, so each added effect stays paired within the tile.
         for t, conds in T.items():
-            for out_key, src in (("sd_pq", "sd_pq"), ("sd_dice", "sd_dice"), ("f1", "f1")):
-                tm = {c: {"pq": val(r, src)} for c, r in conds.items() if not math.isnan(val(r, src))}
+            for key in ("sd_pq", "sd_dice", "f1"):
+                tm = {c: {"pq": val(r, key)} for c, r in conds.items()}
+                if any(math.isnan(x["pq"]) for x in tm.values()):
+                    continue
                 for g, mm in summarize_added_group_effect_stats(tm, ["pq"]).items():
-                    per.setdefault(f"{g}/{out_key}", []).append(mm["pq"][0])
-        res[f"abl_{mode}"] = dict(n_tiles=len(T), added_effect=boot(per))
+                    per.setdefault(f"{g}/{key}", []).append(mm["pq"][0])
+        res[f"abl_{mode}"] = dict(n_tiles=len(T), added_effect=nboot(per))
     if ("loo", "loo") in by:
         T = by[("loo", "loo")]
         subs = sorted({c for conds in T.values() for c in conds if c != "all_baseline"})
-        drop = {}
-        for s in subs:
-            for m in ("sd_pq", "f1"):
-                drop[f"{s}/{m}"] = [val(c["all_baseline"], m) - val(c[s], m) for c in T.values() if s in c]
-        res["loo"] = dict(n_tiles=len(T), drop=boot(drop))
+        res["loo"] = dict(n_tiles=len(T), drop=nboot({f"{s}/{m}": [val(c["all_baseline"], m) - val(c[s], m)
+                                                                   for c in T.values() if s in c]
+                                                      for s in subs for m in ("sd_pq", "f1")}))
     if ("decomp", "decomp") in by:
         T = by[("decomp", "decomp")]
         modes = ["uni_plus_tme", "uni_only", "tme_only", "neither"]
         tl = [t for t, c in T.items() if all(m in c for m in modes)]
         res["decomp"] = dict(n_tiles=len(tl),
-                             modes=boot({f"{md}/{m}": [val(T[t][md], m) for t in tl] for md in modes for m in ("sd_pq", "f1")}),
-                             vs_full=boot({f"{md}/{m}": [val(T[t][md], m) - val(T[t]["uni_plus_tme"], m) for t in tl]
-                                           for md in modes[1:] for m in ("sd_pq", "f1")}))
+                             modes=nboot({f"{md}/{m}": [val(T[t][md], m) for t in tl] for md in modes for m in ("sd_pq", "f1")}),
+                             vs_full=nboot({f"{md}/{m}": [val(T[t][md], m) - val(T[t]["uni_plus_tme"], m) for t in tl]
+                                            for md in modes[1:] for m in ("sd_pq", "f1")}))
+    return res
+
+
+def stats(out_dir):
+    out = Path(out_dir)
+    rows = list(csv.DictReader(open(out / "images.csv")))
+    real = list(csv.DictReader(open(out / "real.csv")))
+    res = dict(info=json.load(open(out / "info.json")))
+    # crash accounting (coordinator rule 2026-11-20): per readout group and condition, images on which StarDist aborted
+    # (scored 0 in the main analysis) and the real reference tiles that aborted (dropped from every variant)
+    cnt = {}
+    for r in rows:
+        k = f"{r['kind']}/{r['mode']}/{r['cond']}"
+        c = cnt.setdefault(k, dict(n=0, crashed=0))
+        c["n"] += 1
+        c["crashed"] += int(r["sd_crashed"]) * (1 - int(r["sd_ref_crashed"]))
+    for c in cnt.values():
+        c["frac"] = c["crashed"] / c["n"]
+    res["crashes"] = dict(convention="StarDist abort on a generated image = empty prediction mask passed to the unchanged "
+                          "PixCell _compute_pq / _compute_binary_segmentation_metrics (empty vs empty reference -> PQ 1, "
+                          "DICE 1; empty vs non-empty -> 0), the same convention the primary CellViT scoring applies to "
+                          "blank tiles; abort on the real reference tile -> tile dropped from every variant; "
+                          "sensitivity_crashed_excluded leaves the aborted images out instead",
+                          crashed_images_ref_nuclei={f"{r['kind']}/{r['mode']}/{r['tile']}/{r['cond']}": int(r["sd_n_ref"])
+                                                     for r in rows if r["sd_crashed"] == "1"},
+                          dropped_ref_tiles=sorted(r["tile"] for r in real if r["sd_crashed"] == "1"),
+                          crashed_images=sorted(f"{r['kind']}/{r['mode']}/{r['tile']}/{r['cond']}" for r in rows
+                                                if r["sd_crashed"] == "1"),
+                          by_condition=cnt, max_frac=max((c["frac"] for c in cnt.values()), default=0.0))
+    res["main"] = _stats(rows, real, exclude_crashed=False)
+    res["sensitivity_crashed_excluded"] = _stats(rows, real, exclude_crashed=True)
     json.dump(res, open(out / "stats_robust.json", "w"), indent=1)
-    print(f"wrote {out / 'stats_robust.json'}")
+    print(f"wrote {out / 'stats_robust.json'}; crashed images {len(res['crashes']['crashed_images'])}, dropped ref tiles "
+          f"{res['crashes']['dropped_ref_tiles']}, max crash fraction {res['crashes']['max_frac']:.4f}")
 
 
 if __name__ == "__main__":
