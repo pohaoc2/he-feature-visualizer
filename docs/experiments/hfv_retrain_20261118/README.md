@@ -253,6 +253,13 @@
     - 消融「四組全開」的圖和它們**不同**（3/3 張 md5 不同）。消融腳本走另一條路徑 `generate_group_combination_ablation_images`：15 個條件共用同一個起始雜訊，分批一起去噪（`denoise_batched`）；`generate_from_ctrl` 則在去噪前重設 seed，一次只畫一張。兩條路徑都是 PixCell 原本的寫法，論文的消融和 LOO 也是這樣分開生成的。
     - 評分本身一致：用 PixCell 的 `run_cellvit`、`_compute_pq` 和同一張輸入細胞遮罩，逐張重算三組圖的 PQ，結果和評分輸出完全相同（消融 0.4287 / 0 / 0.1706，對應 `metrics.json`；LOO 和分解都是 0.3282 / 0 / 0，平均就是 0.109403）。
     - 所以：消融「四組全開」的 PQ 和 LOO 基準、分解 `uni_plus_tme` 的 PQ 本來就不必相同，三者不能互相代替；報告時各自引用自己那一組。這 3 張 tile 都在切片邊緣，每張只有 2–17 個真實細胞，只用來檢查程式，不代表任何結果。
+  - **評分改在 Colab L4（偏離規則第 5 點「評分集中在 Hyak A100」；協調者 2026-11-20 08:29 交辦，在任何正式分數出現之前寫入）**
+    - 原因：Hyak checkpoint 分區的 A100 評分作業從 00:04 排到 08:29 都還在排隊（原因 Priority；ckpt-cheme 的 fair-share 是 0.10，A100 大多被同一位使用者的作業占用），預計開始時間每過 1 小時就往後延約 1 小時。Colab L4 新 session 的準備時間有實測值：這次兩個 CRC34 生成 session 是 203 s 和 633 s。
+    - 做法：`eval/boot_score.sh`（加上 `eval/presign_score.py`）在 Colab L4 上跑和 `eval/score_hyak.slurm` 相同的步驟。程式是同一份 `evalscore.py`、`pxscore.py`、`fig2tiles.py`（md5 和 Hyak 部署的那份相同），一樣關閉 TF32（`NVIDIA_TF32_OVERRIDE=0`），只用 presigned 連結。
+    - 軟體版本和 Hyak 評分環境相同：torch 2.10.0+cu128、numpy 2.0.2、scipy 1.17.1、scikit-image 0.26.0、numba 0.68.0，lpips 0.1.4 和 pandas 2.2.3（以及 python-dateutil、pytz、tzdata、six，版本照 Hyak pylib）。
+    - CellViT 的版本也和 Hyak 相同：runner `run_cellvit_local.py` 的 md5 是 7e67da08，CellViT repo 是 05097e1，`CellViT-256.pth` 的 md5 是 b3634bd5，和 Hyak 那份一樣。boot 會檢查這兩個 md5，不符就停止。LPIPS 的 AlexNet 權重在 Colab 上下載，sha256 開頭必須是 7be5be79。
+    - 範圍：所有評分組都在 Colab L4 上做，讓全部評分維持同一種 GPU。包括 CRC36 保留區和 CRC33 次要組的 fig2、abl、loo、decomp，以及 CRC34 的 fig2、abl、凍結推論和 LOO。各組的 `score_gpu.txt` 會記下 GPU 型號。搬到 L4 的 Hyak 作業取消，沒有搬的才留在佇列。
+    - 結果的物件位置不變（S3 `outputs/score_<group>.tar`）。小檔案另外放在 `outputs/scoreres_<group>.tar`；Hyak 版本是放在 `res/<group>/`。
   - **兩條生成路徑的逐項比較（協調者 2026-11-20 要求；結果出現前的說明，只讀程式和論文既有數字，沒有新的 GPU 執行，生成和評分程式都不改）**
     - 先更正數字：3 張試跑 tile 上，消融「四組全開」的逐張 PQ 是 0.4287 / 0 / 0.1706，平均 **0.200**；LOO 基準（＝分解 `uni_plus_tme`）是 0.3282 / 0 / 0，平均 **0.109**。之前說的「0.43」只是第一張 tile 的值，不是平均，所以並沒有 4 倍的差距。
     - 「消融路徑」是 `generate_ablation_subset_cache.py` → `generate_ablation_images_with_context` → `denoise_batched`。「單張路徑」是 `run_subchannel_loo.py` 和 `src.a2_decomposition.main` → `generate_from_ctrl` → `denoise`。下表逐項比較兩者（PixCell cb62fa7）：
