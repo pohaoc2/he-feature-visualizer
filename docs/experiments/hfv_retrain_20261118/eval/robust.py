@@ -108,7 +108,12 @@ def stardist(lst, sd_root, task, ntask):
     task, ntask = int(task), int(ntask)
     rows = [l.rstrip("\n").split("\t") for l in open(lst) if l.strip()]
     mine = rows[task::ntask]
-    model = StarDist2D.from_pretrained("2D_versatile_he")
+    import fcntl
+    # serialise the first-use download / unpack of the pretrained weights across parallel processes and jobs
+    with open(os.path.join(os.environ.get("KERAS_HOME", str(Path.home())), "sd_load.lock"), "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        model = StarDist2D.from_pretrained("2D_versatile_he")
+        fcntl.flock(lk, fcntl.LOCK_UN)
     th = dict(prob=float(model.thresholds.prob), nms=float(model.thresholds.nms))
     sd_root = Path(sd_root)
     if task == 0 and not (sd_root / "sd_model.json").exists():
