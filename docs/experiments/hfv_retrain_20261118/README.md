@@ -239,6 +239,14 @@
 
 - **血管、氧、葡萄糖通道：重現原本的 CRC33_01 檔案時有 6 張 tile 的 vasculature 不完全相同（協調者 2026-11-18 決定接受）**：CRC36 和 CRC34 的這三個通道是用 `crc36_render_20261118/mx/` 的流程產生的，參數是 hfv 的程式預設值：ds 4、O2 Krogh 長度 200 µm、glucose 120 µm、不做 SMA 修正。這組參數是從訓練資料本身推出來的；論文 `_methods.tex` 和 PixCell 文件寫的是 160/450 µm、ds 8，但這組數值重現不了訓練資料。用這組參數重算 CRC33_01 全部 10,379 張 tile：oxygen 和 glucose 都是 10,379/10,379 張逐位元組相同；vasculature 是 10,373/10,379 張相同。不同的 6 張每張差 64–1,502 個像素（IoU 0.99998），差異都落在 Otsu 門檻上，也就是門檻差了 1 個灰階。可能是函式庫版本或浮點捨入造成，原本執行時的版本沒有紀錄，無法確認。CRC33_01 的訓練仍然用原本的通道檔案。
 
+- **評分的執行方式（2026-11-20，在任何分數出現之前寫入）**：評分照規則第 5 點在 Hyak checkpoint 分區的 A100 上做，TF32 關閉。程式是 `eval/evalscore.py`（加上 `eval/score_hyak.slurm`），每一步都直接執行 PixCell cb62fa7 自己的評分腳本，順序照 PixCell 文件寫的流程。下面幾點是執行上需要另外處理的地方：
+  - **UNI-2h 前處理（套用上面「UNI-2h 前處理」規則，不是新的規則）**：PixCell 的 `pipeline/extract_features.py` `UNI2hExtractor` 用 timm 內建的設定建立前處理，重現不了已存的真實 tile 特徵（最小 cosine 0.588）。如果照用，FUD 和 UNI cosine 會拿兩種前處理做出的特徵互相比較。`eval/pxscore.py` 在執行時只替換這個類別的 `transform`，改成 `uni-2h/config.json` 的設定（和 `colab/feat_uni.py` 的 hub 寫法相同），PixCell 檔案不改。替換是用 import hook 做的，所以 PixCell 用多個 process 平行計算時也一樣有效。
+  - **CellViT**：用 he-feature-visualizer `stages/run_cellvit_local.py`（CellViT-256），和 CRC34 閘門用的是同一支程式、同一個 Hyak 環境。
+  - **套件**：那個 Hyak 環境沒有 `lpips` 和 `pandas`，另外用 `pip install --no-deps --target` 裝在新資料夾 `/gscratch/cheme/chiu/hfv_score_20261119/pylib`：lpips 0.1.4、pandas 2.2.3，以及 pandas 需要的 python-dateutil、pytz、tzdata、six。LPIPS 用的 AlexNet 權重先下載到 `torch_home`，sha256 開頭 7be5be79，和 torchvision 檔名裡的雜湊一致。
+  - **每張 tile 的 Fig 2 指標**：PixCell 的 `metrics_io.py compute` 只在 `cache.json` 存平均和標準差。正文定義的 ΔLPIPS 和它的信賴區間需要每張 tile 的數值，所以 `eval/fig2tiles.py` 用同樣的 PixCell 函式、同一批 tile 再算一次並保留每張 tile 的值，和 `cache.json` 的平均之間的差也一起記錄。
+  - **信賴區間**：`eval/evalstats.py` 在 CPU 上讀評分結果，不重新評分。區間是 95 % 的 percentile bootstrap，以 tile 為單位重抽（10,000 次，seed 42）。同一批 tile 上兩個模型或兩個條件的差，用同一組重抽。消融的效果量照 PixCell `summarize_added_group_effect_stats` 的定義（Fig 2e/g 熱圖）。FUD 是整組圖片一個數字（兩個特徵分佈之間的距離），不是每張 tile 一個值，所以沒有逐 tile 的區間。
+  - 作業一律不自動重排（`--no-requeue`）。被搶占或失敗都視為停止，記錄後回報。
+
 ## 結果
 
 （訓練和評估完成後填入）
