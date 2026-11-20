@@ -3,6 +3,8 @@
   PYTHONPATH=<PixCell cb62fa7> python evalstats.py OUT.json fig2:NAME:DIR abl:NAME:DIR ...
 fig2 DIR   scored Fig 2 group (cache.json from metrics_io compute + sensitivity_eval score, fig2_per_tile.csv)
 abl DIR    scored ablation group (DIR/{paired,unpaired}_ablation/ablation_results/<tile>/metrics.json, fud_scores.json)
+loo DIR:ROOT  scored sub-channel LOO group; ROOT = the orion root whose exp_channels/cell_masks is the PQ reference
+           (the Lin pack masks, or a realref.py masks root for the real-H&E reference)
 All intervals are 95 % percentile bootstrap intervals over tiles (tiles resampled with replacement, the same resample for
 every quantity that is a difference between models or conditions on the same tiles; numpy default_rng(42), 10,000
 resamples). An interval that contains 0 reads "cannot distinguish" (README ablation rule 2). FUD is one number per image
@@ -20,6 +22,14 @@ Ablation (per mode paired / unpaired):
                    over every context subset S of the other groups of metric(S + g) - metric(S), sign so that positive =
                    better. Per tile the same mean of differences is taken, so the PixCell value is the mean over tiles,
                    and the interval is the bootstrap over tiles of that per-tile value. FUD: PixCell value only.
+Sub-channel LOO:
+  pq_drop          per sub-channel: per tile PQ(all_baseline) - PQ(sub-channel left out), the quantity of PixCell's
+                   tools/stage3/aggregate_subchannel_layout_metrics.py (same run_cellvit / _load_gt_instance_mask /
+                   _compute_pq calls, same tile and sub-channel skipping), mean with interval; positive = leaving the
+                   sub-channel out lowers PQ
+  pixel            per sub-channel: the per-tile subchannel_loo_diff_stats.json measures that PixCell's
+                   aggregate_subchannel_loo.py averages (mean_diff, delta_e_mean, delta_e_p99, pct_pixels_above_10),
+                   mean with interval
 """
 import csv
 import json
@@ -110,9 +120,57 @@ def abl(d):
     return out
 
 
+def loo(d, root):
+    from tools.compute_ablation_metrics import _compute_pq, _load_gt_instance_mask, run_cellvit
+    from tools.stage3.aggregate_subchannel_layout_metrics import SUBCHANNELS
+    drop = {s: [] for s in SUBCHANNELS}
+    pix = {}
+    n_tiles = 0
+    for td in sorted(p for p in d.iterdir() if p.is_dir() and not p.name.startswith("_")):
+        base = td / "all_baseline.png"
+        if not base.is_file():
+            continue
+        try:
+            bp = run_cellvit(base)
+            gt = _load_gt_instance_mask(root, td.name, shape=bp.shape)
+            bpq = _compute_pq(gt, bp)[2]
+        except (FileNotFoundError, RuntimeError, ValueError):
+            continue
+        used = False
+        for s in SUBCHANNELS:
+            ip = td / s / "generated_he.png"
+            if not ip.is_file():
+                continue
+            try:
+                lpq = _compute_pq(gt, run_cellvit(ip))[2]
+            except (FileNotFoundError, RuntimeError, ValueError):
+                continue
+            drop[s].append(float(bpq - lpq))
+            used = True
+        n_tiles += used
+        st = td / "subchannel_loo_diff_stats.json"
+        if st.is_file():
+            for s, mm in json.load(open(st)).items():
+                for m in ("mean_diff", "delta_e_mean", "delta_e_p99", "pct_pixels_above_10"):
+                    if mm.get(m) is not None:
+                        pix.setdefault(f"{s}/{m}", []).append(float(mm[m]))
+    lens = {len(x) for x in drop.values()}
+    if len(lens) != 1:
+        sys.exit(f"STOP {d.name}: sub-channels have different tile counts {[(s, len(x)) for s, x in drop.items()]}")
+    plens = {len(x) for x in pix.values()}
+    out = dict(n_tiles=n_tiles, reference_root=str(root), pq_drop=boot(drop))
+    out["pixel"] = {} if not pix else (boot(pix) if len(plens) == 1 else
+                                        {k: boot({k: x})[k] for k, x in pix.items()})
+    return out
+
+
 res = {}
 for task in sys.argv[2:]:
     kind, name, d = task.split(":", 2)
-    res[name] = dict(kind=kind, dir=d, **(fig2(Path(d)) if kind == "fig2" else abl(Path(d))))
+    if kind == "loo":
+        d, root = d.split(":", 1)
+        res[name] = dict(kind=kind, dir=d, **loo(Path(d), Path(root)))
+    else:
+        res[name] = dict(kind=kind, dir=d, **(fig2(Path(d)) if kind == "fig2" else abl(Path(d))))
 json.dump(res, open(sys.argv[1], "w"), indent=1)
 print(f"wrote {sys.argv[1]}")
