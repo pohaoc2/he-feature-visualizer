@@ -1,0 +1,22 @@
+{
+ "pack": "crc33sec",
+ "ids": "<scratch>/hfv_diag/ids100.txt",
+ "n_tiles": 100,
+ "what": "CellViT-256 on the real H&E vs the Lin cell_masks (reference line for the Lin-mask PQ axis)",
+ "pq": {
+  "mean": 0.1714786171735546,
+  "std": 0.11472692431307993,
+  "ci95": [
+   0.14919401640071359,
+   0.1941094650642661
+  ]
+ },
+ "dice": {
+  "mean": 0.5242373740383459,
+  "std": 0.17594713623163752,
+  "ci95": [
+   0.48806135633603537,
+   0.5573336819707951
+  ]
+ }
+}

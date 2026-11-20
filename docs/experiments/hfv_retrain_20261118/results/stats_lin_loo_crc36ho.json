@@ -1,0 +1,417 @@
+{
+ "loo_crc36ho": {
+  "kind": "loo",
+  "dir": "<scratch>/hfv_res/loo_crc36ho/loo_crc36ho",
+  "n_tiles": 300,
+  "reference_root": "<scratch>/hfv_res/linroot/orion-crc36ho",
+  "pq_drop": {
+   "cell_type_healthy": {
+    "mean": 0.011351462761158079,
+    "ci95": [
+     0.008639783634054769,
+     0.014184993069479079
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_cancer": {
+    "mean": 0.011388902202797417,
+    "ci95": [
+     0.008551960049731768,
+     0.014306663914999643
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_immune": {
+    "mean": 0.02427414929834125,
+    "ci95": [
+     0.021031248999219626,
+     0.02762236566006904
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_prolif": {
+    "mean": 0.004514972784628543,
+    "ci95": [
+     0.002106110602869541,
+     0.007012542717423163
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_nonprolif": {
+    "mean": 0.04761136290873541,
+    "ci95": [
+     0.043809716112140566,
+     0.05142420044704393
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_dead": {
+    "mean": -3.902402980784462e-06,
+    "ci95": [
+     -1.1529611561464001e-05,
+     0.0
+    ],
+    "n": 300,
+    "excludes_0": false
+   },
+   "vasculature": {
+    "mean": -0.03103105809601613,
+    "ci95": [
+     -0.0370404615626562,
+     -0.02529159644936749
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "oxygen": {
+    "mean": 0.020457598892835247,
+    "ci95": [
+     0.016839874712276836,
+     0.02414290902364209
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "glucose": {
+    "mean": 0.036345679355901266,
+    "ci95": [
+     0.03202494147590779,
+     0.04078341788361894
+    ],
+    "n": 300,
+    "excludes_0": true
+   }
+  },
+  "pixel": {
+   "cell_type_healthy/mean_diff": {
+    "mean": 1.3975366666666666,
+    "ci95": [
+     1.2834448499999997,
+     1.5123147000000001
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_healthy/delta_e_mean": {
+    "mean": 0.7808226666666667,
+    "ci95": [
+     0.7246716333333333,
+     0.8368409666666666
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_healthy/delta_e_p99": {
+    "mean": 5.176014333333334,
+    "ci95": [
+     4.8402441666666665,
+     5.528564683333333
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_healthy/pct_pixels_above_10": {
+    "mean": 1.9118999999999997,
+    "ci95": [
+     1.7024275,
+     2.1288424999999997
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_cancer/mean_diff": {
+    "mean": 2.0550500000000005,
+    "ci95": [
+     1.8820459166666665,
+     2.225829366666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_cancer/delta_e_mean": {
+    "mean": 1.0684593333333332,
+    "ci95": [
+     0.9823526583333332,
+     1.1535778583333334
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_cancer/delta_e_p99": {
+    "mean": 6.2772103333333344,
+    "ci95": [
+     5.793919725,
+     6.7671321749999995
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_cancer/pct_pixels_above_10": {
+    "mean": 3.5877666666666665,
+    "ci95": [
+     3.219991666666667,
+     3.963239166666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_immune/mean_diff": {
+    "mean": 2.784898,
+    "ci95": [
+     2.630662458333333,
+     2.940156941666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_immune/delta_e_mean": {
+    "mean": 1.482915,
+    "ci95": [
+     1.409599375,
+     1.5573261333333333
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_immune/delta_e_p99": {
+    "mean": 8.154893333333332,
+    "ci95": [
+     7.795521600000001,
+     8.522390600000001
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_type_immune/pct_pixels_above_10": {
+    "mean": 5.047066666666666,
+    "ci95": [
+     4.606350833333333,
+     5.511071666666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_prolif/mean_diff": {
+    "mean": 1.8717846666666667,
+    "ci95": [
+     1.7162225416666665,
+     2.0297200500000003
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_prolif/delta_e_mean": {
+    "mean": 1.0204413333333333,
+    "ci95": [
+     0.944024225,
+     1.0983485833333335
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_prolif/delta_e_p99": {
+    "mean": 6.349832,
+    "ci95": [
+     5.904920925,
+     6.795325366666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_prolif/pct_pixels_above_10": {
+    "mean": 3.1031666666666666,
+    "ci95": [
+     2.7459616666666666,
+     3.4815675
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_nonprolif/mean_diff": {
+    "mean": 3.0427373333333336,
+    "ci95": [
+     2.956542158333334,
+     3.1289839583333334
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_nonprolif/delta_e_mean": {
+    "mean": 1.564312,
+    "ci95": [
+     1.5243138666666665,
+     1.6042463916666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_nonprolif/delta_e_p99": {
+    "mean": 8.473683666666668,
+    "ci95": [
+     8.177118174999999,
+     8.786214616666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_nonprolif/pct_pixels_above_10": {
+    "mean": 4.957366666666667,
+    "ci95": [
+     4.671963333333334,
+     5.248041666666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "cell_state_dead/mean_diff": {
+    "mean": 0.0006583333333333334,
+    "ci95": [
+     0.0,
+     0.0017963333333333336
+    ],
+    "n": 300,
+    "excludes_0": false
+   },
+   "cell_state_dead/delta_e_mean": {
+    "mean": 0.0007746666666666667,
+    "ci95": [
+     0.0,
+     0.0020636666666666668
+    ],
+    "n": 300,
+    "excludes_0": false
+   },
+   "cell_state_dead/delta_e_p99": {
+    "mean": 0.004978,
+    "ci95": [
+     0.0,
+     0.012558333333333333
+    ],
+    "n": 300,
+    "excludes_0": false
+   },
+   "cell_state_dead/pct_pixels_above_10": {
+    "mean": 0.00036666666666666667,
+    "ci95": [
+     0.0,
+     0.0011
+    ],
+    "n": 300,
+    "excludes_0": false
+   },
+   "vasculature/mean_diff": {
+    "mean": 7.236874666666666,
+    "ci95": [
+     6.608368808333332,
+     7.8782025
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "vasculature/delta_e_mean": {
+    "mean": 3.564281333333333,
+    "ci95": [
+     3.266637975,
+     3.866629525
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "vasculature/delta_e_p99": {
+    "mean": 15.843111000000002,
+    "ci95": [
+     14.798364925000001,
+     16.897136649999997
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "vasculature/pct_pixels_above_10": {
+    "mean": 23.770766666666667,
+    "ci95": [
+     21.36222833333333,
+     26.25669833333333
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "oxygen/mean_diff": {
+    "mean": 3.6225773333333326,
+    "ci95": [
+     3.5070405000000004,
+     3.7440404166666665
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "oxygen/delta_e_mean": {
+    "mean": 1.8692476666666669,
+    "ci95": [
+     1.81227865,
+     1.9294411
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "oxygen/delta_e_p99": {
+    "mean": 9.681858666666665,
+    "ci95": [
+     9.279501833333333,
+     10.117674325
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "oxygen/pct_pixels_above_10": {
+    "mean": 6.523766666666667,
+    "ci95": [
+     6.0592175,
+     7.005836666666666
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "glucose/mean_diff": {
+    "mean": 5.333124333333333,
+    "ci95": [
+     5.189784641666666,
+     5.481813183333333
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "glucose/delta_e_mean": {
+    "mean": 2.6697283333333335,
+    "ci95": [
+     2.5994842499999997,
+     2.743385508333333
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "glucose/delta_e_p99": {
+    "mean": 13.098026333333332,
+    "ci95": [
+     12.648363533333333,
+     13.576183216666667
+    ],
+    "n": 300,
+    "excludes_0": true
+   },
+   "glucose/pct_pixels_above_10": {
+    "mean": 13.354533333333332,
+    "ci95": [
+     12.730591666666667,
+     13.995355000000002
+    ],
+    "n": 300,
+    "excludes_0": true
+   }
+  }
+ }
+}

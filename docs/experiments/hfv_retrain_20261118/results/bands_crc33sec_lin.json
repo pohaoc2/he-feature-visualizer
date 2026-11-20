@@ -1,0 +1,17 @@
+{
+ "source": "<scratch>/hfv_res/../hfv_diag/new33/fig2_crc33sec/cache.json",
+ "n_tiles": 100,
+ "bands": {
+  "fud": {
+   "mean": 254.46014692164627
+  },
+  "pq": {
+   "mean": 0.6243280492873048,
+   "std": 0.129744472542012
+  },
+  "dice": {
+   "mean": 0.8504257528925631,
+   "std": 0.05494879464084877
+  }
+ }
+}

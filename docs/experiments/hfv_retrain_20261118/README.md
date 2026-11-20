@@ -229,8 +229,8 @@
   | 參考帶 | 論文（寫死在 `shared.py`） | 這次，參考 = Lin 輸入遮罩（次要結果，次要組 100 張） | 這次，參考 = 真實 H&E 的 CellViT（主要結果，次要組 100 張） |
   |---|---|---|---|
   | Vanilla ControlNet FUD | 198.376（平均） | 254.46（FUD 不需要參考遮罩，兩欄相同） | 254.46 |
-  | Vanilla ControlNet PQ | 0.7035 ± 0.1185 | 0.6243 ± 0.1297 | 真實 H&E 的 CellViT 跑完後填入 |
-  | Vanilla ControlNet DICE | 0.8588 ± 0.1061 | 0.8504 ± 0.0549 | 真實 H&E 的 CellViT 跑完後填入 |
+  | Vanilla ControlNet PQ | 0.7035 ± 0.1185 | 0.6243 ± 0.1297 | 0.1903 ± 0.1210 |
+  | Vanilla ControlNet DICE | 0.8588 ± 0.1061 | 0.8504 ± 0.0549 | 0.5247 ± 0.1762 |
   | ORION H&E LPIPS | 0.5463 ± 0.0792 | 不變 | 不變 |
   | ORION H&E HED | 0.2930 ± 0.2129 | 不變 | 不變 |
 
@@ -335,4 +335,61 @@
 
 ## 結果
 
-（訓練和評估完成後填入）
+（2026-11-20 中間版：CRC36 保留區和 CRC33 次要組的評分和統計已完成；CRC34 評分還在跑；論文 figure 還沒重繪。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
+
+- **讀法**：
+  - PQ/DICE 有兩種參考（見偏離紀錄「PQ 參考遮罩」）。「主要」= 生成圖的細胞核是否落在真實 H&E 上 CellViT 找到細胞核的位置（論文 PQ 的定義）；「次要」= 生成圖是否照著輸入的 Lin 細胞遮罩畫。
+  - LPIPS 是生成圖和真實 H&E 的感知距離（越小越像）；style_hed 是 H 和 E 兩個染色通道的平均和標準差差多少（越小越像）；FUD 是生成圖整批和真實圖整批在 UNI 特徵空間的距離（越小越像，一批只有一個數，沒有區間）。
+  - 「文字定義的 ΔLPIPS」= LPIPS(Vanilla, 真實) − LPIPS(變體, 真實)，正值 = 變體比 Vanilla 更像真實 H&E。「程式定義的 ΔLPIPS」= 拿掉一組通道後圖改變多少（PixCell `sensitivity_eval`），衡量模型有多依賴這些通道。
+- **真實 H&E 的 CellViT（主要參考的來源）**：L4、TF32 關閉，三組全部完成（CRC36 1,092、CRC33 1,033、CRC34 1,290 張，每張都有輸出）。和較早的輸出比：CRC36 和 `cellvit_crc36` 的 300 張 PQ 全部 1.0（完全相同）；CRC33 和論文的 `processed_crc33/cellvit` 那 100 張平均 PQ 0.9993（54 張完全相同）。
+- **次要參考線（真實 H&E 自己對 Lin 遮罩的 PQ）**：CRC36 300 張 0.122 [0.116, 0.130]（DICE 0.61）；CRC33 Fig 2 那 100 張 0.172 [0.149, 0.194]（DICE 0.52）。
+
+### Fig 2：四個訓練變體和 Vanilla（CRC36 保留區 300 張為主，CRC33 次要組 100 張為輔）
+
+| 變體 | FUD（36 / 33） | LPIPS 36 | style_hed 36 | PQ 主要（36 / 33） | DICE 主要 36 | PQ 次要（36 / 33） |
+|---|---|---|---|---|---|---|
+| Vanilla | 210.6 / 254.5 | 0.363 | 0.315 | 0.142 / 0.190 | 0.606 | 0.518 / 0.624 |
+| Grouped（production） | 168.0 / 192.3 | 0.347 | 0.040 | 0.149 / 0.204 | 0.596 | 0.220 / 0.309 |
+| Concat | 154.4 / 171.6 | 0.327 | 0.036 | 0.189 / 0.216 | 0.629 | 0.211 / 0.282 |
+| Grouped + bypass | 168.8 / 192.0 | 0.347 | 0.040 | 0.148 / 0.201 | 0.597 | 0.219 / 0.314 |
+| Per-channel | 165.3 / 228.8 | 0.411 | 0.055 | 0.006 / 0.002 | 0.233 | 0.003 / 0.001 |
+
+- **主要 PQ（和論文同定義）**：
+  - 所有模型都很低（0.14–0.22），連 Vanilla 也是。原因是輸入遮罩換成 Lin 分割後，輸入的細胞核位置本身就和真實 H&E 的細胞核對不太上（參考線 0.12 / 0.17）；模型照輸入畫，所以也對不上。論文的 Vanilla 0.70 是在「輸入遮罩 = 真實 H&E 的 CellViT」時量的，兩者不能直接比。
+  - 和 Vanilla 比（CRC36）：Concat +0.047 [+0.038, +0.058]（較好）；Grouped +0.007 [−0.001, +0.017]、Grouped + bypass +0.007 [−0.001, +0.016]（分不出）；Per-channel −0.135 [−0.142, −0.129]。CRC33 方向相同：Concat +0.026 [+0.008, +0.044]，Grouped 和 bypass 分不出。
+  - 主要 DICE（CRC36）：Concat +0.023 [+0.014, +0.033]；Grouped −0.010 [−0.017, −0.001]；bypass 分不出。CRC33 除 Per-channel 外都分不出。
+- **次要 PQ（照輸入遮罩畫的程度）**：Vanilla 最高（CRC36 0.518），三個訓練變體 0.21–0.22，比 Vanilla 低約 0.30（Grouped −0.297 [−0.305, −0.289]）。但三個訓練變體都高於參考線：每張 tile 比真實 H&E 自己高 +0.09 到 +0.10（Grouped +0.098 [+0.090, +0.106]，94 % 的 tile 高於真實 H&E）。
+- **外觀**：
+  - style_hed：四個訓練變體 0.036–0.055，Vanilla 0.315（CRC36；和 Vanilla 的差，Grouped −0.275 [−0.283, −0.267]）。CRC33 相同。
+  - 文字定義的 ΔLPIPS（CRC36）：Concat +0.036 [+0.032, +0.039]、Grouped +0.016 [+0.013, +0.019]、bypass +0.016 [+0.013, +0.019]、Per-channel −0.049 [−0.052, −0.045]。CRC33：Concat +0.055 [+0.044, +0.067]、Grouped +0.012 [+0.006, +0.018]。
+  - 程式定義的 ΔLPIPS（CRC36）：Concat 0.054 [0.051, 0.056]、Grouped 0.032 [0.031, 0.034]、Per-channel 0.014 [0.013, 0.014]、bypass 0.007 [0.007, 0.008]。
+  - FUD：四個訓練變體都比 Vanilla 低（CRC36 154–169 vs 211；CRC33 172–229 vs 254）。
+
+### Fig 2e/g：消融，加入一組通道的平均效果（CRC36 300 張；CRC33 299 張）
+
+- 定義照 PixCell `summarize_added_group_effect_stats`：對其他組的每一種組合，比較「加入這組」和「不加」的差，再平均；正值 = 加入這組讓指標變好。
+- 主要 PQ：四組加入後都讓 PQ 變好，區間都不含 0。CRC36 paired：cell_types +0.033 [+0.030, +0.036]、cell_state +0.033 [+0.030, +0.036]、microenv +0.036 [+0.030, +0.041]、vasculature +0.038 [+0.031, +0.045]；unpaired 0.028–0.032。CRC33 paired：microenv +0.086 最大、vasculature +0.017 [+0.009, +0.026] 最小；unpaired 的 vasculature +0.004 [+0.000, +0.008]。
+- 次要 PQ：cell_types、cell_state、microenv 加入後變好（CRC36 paired +0.064 到 +0.074），vasculature 加入後變差（CRC36 paired −0.021 [−0.024, −0.018]；CRC33 −0.031 [−0.036, −0.025]）。也就是 vasculature 讓圖較不照 Lin 遮罩畫，但較接近真實 H&E 的細胞核位置。
+- LPIPS 和 style_hed 的效果量都很小（|效果| ≤ 0.035）；完整數字在 `results/stats_lin_abl_*.json`（LPIPS、HED、FUD 不受參考遮罩影響）和 `results/stats_realref.json`。
+
+### Fig 3：UNI / TME 分解（CRC36 300 張；CRC33 500 張）
+
+- 四種條件：UNI + TME（全部）、只有 UNI、只有 TME、都沒有。表中是和「全部」的差。
+- 只有 TME：LPIPS 變差 +0.200 [+0.194, +0.207]、style_hed 變差 +0.529（CRC36）；主要 PQ −0.010 [−0.017, −0.004]（CRC36）、−0.084 [−0.098, −0.071]（CRC33）。
+- 只有 UNI：主要 PQ −0.148 [−0.158, −0.137]（CRC36）、−0.152（CRC33）；LPIPS +0.049 [+0.045, +0.052]。
+- FUD（CRC36）：全部 131.5、只有 UNI 167.2、只有 TME 278.9、都沒有 321.0；CRC33 是 116.7 / 149.9 / 258.2 / 308.6。
+- 讀法：外觀（LPIPS、HED、FUD）主要來自 UNI；細胞核位置（PQ）主要來自 TME 通道。
+
+### Fig 4（PQ 部分）：拿掉一個子通道（LOO，CRC36 300 張；CRC33 299 張）
+
+- 數字是 PQ(全部) − PQ(拿掉該子通道)，正值 = 拿掉後 PQ 下降。
+- 主要 PQ，CRC36：vasculature +0.037 [+0.030, +0.044] 最大，其次 glucose +0.022、nonprolif +0.011、immune +0.011、oxygen +0.008、healthy +0.006、cancer +0.005；prolif 和 dead 分不出。CRC33：glucose +0.053、oxygen +0.031、nonprolif +0.019、vasculature +0.018、healthy +0.011；cancer、immune、prolif、dead 分不出。
+- 次要 PQ 的方向和主要相同，只有 vasculature 相反（CRC36 −0.031 [−0.037, −0.025]）。
+- dead 通道拿掉後圖幾乎不變（CRC36 平均像素差 0.0007），和論文相同。
+- Fig 4 的 R² 沒有重做（見上面的 figure 表）。
+
+### 尚未完成
+
+- CRC34（sc34、sc34loo 在 Colab L4 上跑）的評分和兩種參考的統計。
+- 論文 figure 重繪（`figs_hyak.slurm`，Hyak 恢復連線後送出）和本機比較頁。
+- 規則 6 的可解碼性：沒有重做（舊通道的輸入）。`si_threshold_sensitivity`、`si_patient_generalization`：待定（原檔只在論文 repo）。
