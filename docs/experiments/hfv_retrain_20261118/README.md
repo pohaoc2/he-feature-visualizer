@@ -351,7 +351,7 @@
 
 ## 結果
 
-（2026-11-20 中間版：CRC36 保留區和 CRC33 次要組的評分和統計已完成；CRC34 評分還在跑；論文 figure 還沒重繪。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
+（2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數還在算；論文 figure 還沒重繪。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
 
 - **讀法**：
   - PQ/DICE 有兩種參考（見偏離紀錄「PQ 參考遮罩」）。「主要」= 生成圖的細胞核是否落在真實 H&E 上 CellViT 找到細胞核的位置（論文 PQ 的定義）；「次要」= 生成圖是否照著輸入的 Lin 細胞遮罩畫。
@@ -404,8 +404,20 @@
 - dead 通道拿掉後圖幾乎不變（CRC36 平均像素差 0.0007），和論文相同。
 - Fig 4 的 R² 沒有重做（見上面的 figure 表）。
 
+### CRC34（病人 2，300 張；凍結推論 1,000 張）
+
+- 評分在 Colab L4 完成（sc34：消融、凍結推論、Fig 2；sc34loo：LOO；失敗的工作 0 個）。數字在 `results/stats_realref_crc34eval.json`（主要）、`results/stats_lin_crc34eval.json`（次要）、`results/line_realhe_vs_lin_crc34eval.json`、`results/crc34_all_only_both_refs.json`。
+- 次要參考線（真實 H&E 自己對 Lin 遮罩）：PQ 0.101 [0.089, 0.115]，DICE 0.53。
+- Fig 2，主要 PQ：Vanilla 0.116、Concat 0.142、Grouped 0.117、bypass 0.113、Per-channel 0.011。和 Vanilla 比：Concat +0.026 [+0.015, +0.038]（較好）；Grouped +0.001 [−0.009, +0.012]、bypass −0.003 [−0.010, +0.004]（分不出）；Per-channel −0.105 [−0.118, −0.091]。主要 DICE：Concat 分不出；Grouped −0.014 [−0.027, −0.001]、bypass −0.019 [−0.030, −0.008]。和 CRC36 的排名相同。
+- Fig 2，次要 PQ：Vanilla 0.487 最高，三個訓練變體 0.16–0.18（比 Vanilla 低 0.31–0.33），和 CRC36、CRC33 的樣子相同。
+- FUD：Concat 144.8、Grouped 159.5、bypass 158.4、Per-channel 173.7、Vanilla 204.9。
+- 消融，主要 PQ：四組加入後都讓 PQ 變好。paired：cell_types +0.025 [+0.021, +0.029]、cell_state +0.030、microenv +0.030、vasculature +0.036 [+0.028, +0.044]（最大）；unpaired +0.013 到 +0.018。次要 PQ：vasculature 加入後變差（paired −0.007 [−0.014, −0.001]），其他三組變好（+0.046 到 +0.067）。
+- LOO，主要 PQ：vasculature +0.034 [+0.022, +0.047] 最大，其次 glucose +0.020、oxygen +0.014、nonprolif +0.013、healthy +0.007、cancer、immune、prolif +0.003；dead 分不出。次要 PQ 的 vasculature −0.010 [−0.022, +0.002]（分不出），其他方向和主要相同。
+- 凍結推論（全部通道，1,000 張；PixCell `aggregate_all_only_metrics`）：主要 PQ paired 0.162 ± 0.147、unpaired 0.072 ± 0.078；次要 PQ paired 0.199、unpaired 0.119；FUD paired 102.7、unpaired 127.7；LPIPS paired 0.329、unpaired 0.419。
+- 讀法：CRC34 的結果和 CRC36 一致——主要 PQ 下只有 Concat 比 Vanilla 好，Grouped 分不出；vasculature 在主要 PQ 下效果最大，在次要 PQ 下方向相反。
+
 ### 尚未完成
 
-- CRC34（sc34、sc34loo 在 Colab L4 上跑）的評分和兩種參考的統計。
+- PQ 穩健性檢查的兩個讀數（StarDist、對 Lin 的檢測 F1）。
 - 論文 figure 重繪（`figs_hyak.slurm`，Hyak 恢復連線後送出）和本機比較頁。
 - 規則 6 的可解碼性：沒有重做（舊通道的輸入）。`si_threshold_sensitivity`、`si_patient_generalization`：待定（原檔只在論文 repo）。
