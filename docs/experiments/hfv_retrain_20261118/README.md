@@ -343,6 +343,12 @@
     - 真實 H&E 的 CellViT 對 Lin 的 F1 當作參考線。
   - 兩個讀數都只在 CPU 上算（Hyak cheme），不重新生成圖，也不重跑生成圖的 CellViT。統計和其他指標相同：對 tile 的 95 % bootstrap 區間（10,000 次，seed 42），比較組內用同一組重抽。
   - 論文 figure 要等主要 PQ 和這兩個讀數都算完才重繪。
+  - **執行環境（2026-11-20，協調者核准；只改安裝位置和底層 Python，套件和版本不變）**：
+    - 套件：tensorflow-cpu 2.15.1、stardist 0.9.1、numpy < 2、scipy、pillow、scikit-image（完整版本在 Hyak `hfv_robust_20261120/env2/pip_freeze.txt`）。
+    - 第一次在登入節點往 gscratch 裝 venv：小檔案寫入太慢（40 分鐘只寫了 529 MB），停掉並刪除。
+    - 改法 B：在 cheme 計算節點的本機 /tmp 建環境，打包成一個 tar 放回 gscratch（`eval/robust_env.slurm`），之後每個作業在節點上解開到同一路徑 /tmp/rob_sdenv（`eval/robust_envsetup.sh`）。
+    - 第一次改法 B（作業 43427059）失敗：底層 Python 用 Hyak 模組 coenv/python/3.11.9，這個 Python 編譯時沒有 `_ctypes`，TensorFlow（protobuf）匯入失敗。沒有重試；經協調者核准後，底層 Python 改用 conda-forge 的 python 3.11（Miniforge3-25.9.1-0 模組），放到新資料夾 `env2`。TensorFlow 2.15 只支援 Python 3.9–3.11，所以不用 3.13。
+    - StarDist 的模型權重在建環境時下載一次（`hfv_robust_20261120/keras_home`），計算作業都從這裡讀。
 
 - **S3 物件誤覆寫，已還原（2026-11-20 09:12）**：
   - 一個打錯的指令（`aws s3 cp -` 方向寫反）把 S3 `inputs/eval/evalpack_crc34eval.tar.json`（打包摘要，342 bytes）覆寫成空檔案。
