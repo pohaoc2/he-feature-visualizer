@@ -379,7 +379,7 @@
 
 ## 結果
 
-（2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數（StarDist、對 Lin 的檢測 F1）已完成；論文 figure 已重繪，但 Fig 3 因缺少輸入沒有重繪（見「尚未完成」）。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
+（2026-11-20 中間版：CRC36 保留區、CRC33 次要組和 CRC34 的評分和兩種參考的統計已完成；PQ 穩健性讀數（StarDist、對 Lin 的檢測 F1）已完成；論文 figure 已重繪；Fig 3 在追加 1 用新模型重跑 a4 掃描後重繪，Fig 2 另有兩種參考的版本（見「追加 1、2」）。數字都在 `results/`，區間都是 95 % bootstrap 區間（對 tile 重抽 10,000 次，seed 42）；區間不含 0 才說「有差別」。）
 
 - **讀法**：
   - PQ/DICE 有兩種參考（見偏離紀錄「PQ 參考遮罩」）。「主要」= 生成圖的細胞核是否落在真實 H&E 上 CellViT 找到細胞核的位置（論文 PQ 的定義）；「次要」= 生成圖是否照著輸入的 Lin 細胞遮罩畫。
@@ -476,6 +476,33 @@
   - CellViT 合併相鄰細胞核的問題，看起來沒有造成主要 PQ 的方向錯誤：用不會那樣合併的 StarDist 算，消融和 LOO 的效果大小幾乎一樣。
   - 對 Lin 的 F1 量的是另一件事（對條件遮罩的忠實度），在這個讀數下 Vanilla 最好、vasculature 是負的，和次要 PQ 的結論一致。
 
+### 追加 1（2026-11-20）：Fig 3 的 a4 掃描（D–F）用新的 Concat 重跑
+
+- 做了什麼：沿著 UNI 空間裡「預測某個屬性的方向」（探針方向）把 UNI 向量推大或推小（alpha = −1、0、+1，推的長度 = alpha × 原 UNI 的長度），用新訓練的 Concat 生成，量生成圖上各屬性怎麼變。同樣的步驟用隨機方向再做一次當對照。Fig 3e 每一格是「alpha」和「某個量到的屬性」之間的 Pearson r（只用探針方向那一半）。
+- 設定和論文的共用 tile 那次相同（PixCell cb62fa7 `run_sweep`，20 步，guidance 2.5，seed 42，`specificity` 未改），只換模型（新 Concat，第 20 epoch）和輸入通道（新通道的評估包 `evalpack_crc33a4`）。偏離見「偏離紀錄」：28 張 tile、6 個屬性固定。
+- 執行：
+  - 生成 + CellViT：Colab L4 兩個 session（a4s1、a4s2，各 14 張 tile、504 張圖）。生成各 1,250 s、1,256 s（含載入模型，約 2.5 s/張），整個 session 1,516 s、1,421 s。CellViT 每張圖都有輸出（504/504 × 2）。
+  - 合併、重算指標、特異度、畫圖：Hyak cheme CPU。第 1 次（作業 43430803）被我自己寫的檢查擋下：檢查要求「每列都有細胞核型態值」，但 CellViT 在 36 張圖上找到 0 顆細胞核，PixCell 對這種圖的型態值本來就是空值（NaN），計算 r 時會略過。這 36 張都有 CellViT 輸出，只是是空的。檢查改成「每張圖都有 CellViT 輸出，空值只能來自 0 顆細胞核」，0 顆的清單存成 `zero_cell_rows.json`（論文那次 1,080 列裡有 13 列是這種情況；這次 1,008 列裡 36 列，大多是探針方向 alpha = ±1 的極端圖）。第 2 次（作業 43430940）完成，但 D 用的 `probe_results.csv` 取自 S3 舊結果資料夾，那是較舊的版本，沒有外觀屬性，所以 D 少了論文有的 E/H mean、紋理那些點。第 3 次（作業 43431102，8 分鐘）改用論文共用 tile 那次的 `probe_results.csv`（也是掃描讀的那份），D 和論文相同。三次都在新資料夾（`hfv_a4post_20261120`、`…b`、`…c`）。第 2、3 次的 `specificity_full.csv` 逐位元相同。
+- 檔案：S3 `a4_rerun/`（掃描、`specificity_full.csv`、`specificity_morphology_summary.csv`、28 張真實 H&E、`zero_cell_rows.json`），圖在 S3 `figures_rerender/fig3_a4_rerun/fig3_uni_decomposition_v2.png`；本機 `results/a4_rerun/`（含 `a4_compare.json` 和論文掃描重算的 `specificity_full_paper_recomputed.csv`），`compare/fig3a4/`。
+- 和論文比較（只描述，沒有檢定；`eval/a4compare.py`）。對角線 = 推某屬性的方向時，該屬性自己的 r：
+
+| 推的方向 | 對角線 r（論文 → 新） | 探針斜率 / 隨機斜率（論文 → 新） |
+|---|---|---|
+| eccentricity | +0.67 → +0.75 | 15.5 → 6.8 |
+| nuclear area | +0.37 → +0.39 | 3.6 → 106 |
+| nuclei density | +0.36 → +0.14 | 845 → 5.1 |
+| E contrast | +0.75 → +0.71 | 16.9 → 11.7 |
+| H contrast | +0.55 → +0.52 | 8.3 → 7.0 |
+| H energy | +0.61 → +0.60 | 18.9 → 12.2 |
+
+  - 6 個對角線都還是正的；5 個大小接近論文，nuclei density 從 +0.36 降到 +0.14。
+  - 「探針斜率 / 隨機斜率」的分母（隨機方向的斜率）接近 0 時比值會很大，所以這一欄只看方向，不比大小。
+  - 非對角線：紋理三個方向彼此相關的樣子（E/H contrast 一起上升、H energy 一起下降）和論文相同。推 nuclei density 時，紋理 E/H contrast 的 r（+0.79、+0.68）比它自己的 r（+0.14）大，論文也是這樣（+0.81、+0.71 對 +0.36）。推 H contrast 時 nuclei density 的 r 是 −0.81（論文 −0.50）。
+  - 論文的方陣裡，6 個對角線沒有一個是該列 |r| 最大的；新模型只有 eccentricity 是。
+- 讀法：換成新模型後，UNI 探針方向仍然能把各屬性往預期方向推，外觀（紋理）方向的效果和論文幾乎一樣；細胞核密度方向變弱，而且推它時主要改變的是紋理。
+- F 的 3 張 tile：PixCell 取每個屬性資料夾排序後的前 3 張（10240_11520、11264_16640、12544_29952），和論文相同（拿掉的 2 張不在前 3 名）。
+- 字型：節點上沒有 Nimbus Sans，用 matplotlib 預設字型（和前面重繪的圖相同）。
+
 ### 追加 2（2026-11-20）：Fig 2 的 D、E、G 用兩種參考各畫一版
 
 - 程式：`eval/fig2_refvariant.py`（PixCell cb62fa7 `fig_combined_method_perf.py` 的複本，只加了參考標籤和可指定的輸入路徑），`eval/fig2ref_hyak.slurm`（作業 43430179）。
@@ -490,10 +517,10 @@
 ### 尚未完成
 
 - 論文 figure 重繪（作業 43427989，2026-11-20 12:00–12:59）：6 個步驟中 5 個成功，重繪的檔案在 S3 `figures_rerender/`（清單 `rendered.txt`）：Fig 2（`concat/fig2_architecture_performance.png`）、`si/ablation_grids_combined.png`、`si/si_performance_ranking.png`、`si/si_qualitative_variants.png`、`si/si_training_stability.png`、`individual/ablation_analysis/05_paired_ablation_grid.png`。
-  - **Fig 3 失敗（沒有重試）**：`fig_combined_uni_decomp_v2` 的右欄要讀 `results/a4_uni_probe/specificity_full.csv`，但 S3 的舊結果 `share_space/05_results/results/a4_uni_probe` 裡沒有這個檔案（只有 probe_results、features、labels、sweep 等），所以 Fig 3 沒有重繪。要補這個檔案得先決定是從論文 repo 取原檔，還是重跑 a4 的特異度分析，這需要協調者決定。
+  - Fig 3 在這次（作業 43427989）失敗：右欄要讀的 `results/a4_uni_probe/specificity_full.csv` 不在 S3 的舊結果裡。已在追加 1 用新模型重跑 a4 掃描後重繪（見「追加 1」）。
   - `SI_A1_A2_unified.png` 這個步驟（`fig_si_a1_a2_unified`）跑完沒有錯誤，但沒有寫出這個檔名，只寫了 `si_training_stability.png` 和 `si_qualitative_variants.png`。
   - 節點上沒有 `Nimbus Sans` 字型，matplotlib 改用預設字型（字體和論文原圖不同，內容不受影響）。
   - Fig 2b 四條訓練 loss 曲線幾乎重疊：四次訓練用同一個 seed 和同樣的批次順序，每 50 步記錄的是單一批次的 loss，所以批次之間的起伏主導曲線。各次的數值確實不同（例如第 6500 步：Concat 0.0901、Per-channel 0.0917、Grouped 和 bypass 都是 0.0930），不是同一個檔案讀了四次。
-  - Fig 2 的 D、E、G 是 PixCell 原本的計分（參考 = Lin 輸入遮罩，也就是本文的次要 PQ），程式沒有改。
+  - Fig 2 的 D、E、G 是 PixCell 原本的計分（參考 = Lin 輸入遮罩，也就是本文的次要 PQ），程式沒有改。用主要參考的版本見「追加 2」。
 - 本機比較頁：`compare/index.html`（原圖在 `compare/old/`，重繪在 `compare/new/`；只在本機，不發佈）。
 - 規則 6 的可解碼性：沒有重做（舊通道的輸入）。`si_threshold_sensitivity`、`si_patient_generalization`：待定（原檔只在論文 repo）。

@@ -1,0 +1,49 @@
+{
+ "eccentricity_mean": [
+  "9984_18176/targeted/1.0",
+  "10240_11520/targeted/1.0",
+  "12544_29952/targeted/1.0",
+  "16128_20736/targeted/1.0",
+  "17408_15104/targeted/1.0",
+  "18432_26624/targeted/1.0",
+  "18688_22016/targeted/1.0",
+  "18944_20736/targeted/1.0",
+  "22528_20480/targeted/1.0",
+  "23296_37632/targeted/1.0",
+  "23808_31744/targeted/1.0",
+  "25088_29696/targeted/1.0",
+  "30208_40960/targeted/1.0"
+ ],
+ "nuclear_area_mean": [
+  "9984_18176/targeted/-1.0",
+  "10240_11520/targeted/-1.0",
+  "11264_16640/targeted/-1.0",
+  "12544_29952/targeted/-1.0",
+  "16128_20736/targeted/-1.0",
+  "17152_37376/targeted/-1.0",
+  "17408_29952/targeted/-1.0",
+  "18432_26624/targeted/-1.0",
+  "19200_36352/targeted/-1.0",
+  "22528_20480/targeted/-1.0",
+  "23296_37632/targeted/-1.0",
+  "23808_46592/targeted/-1.0",
+  "30208_40960/targeted/-1.0"
+ ],
+ "nuclei_density": [
+  "10240_11520/targeted/-1.0",
+  "22528_20480/targeted/-1.0",
+  "23296_37632/random/1.0"
+ ],
+ "texture_e_contrast": [],
+ "texture_h_contrast": [
+  "9984_18176/targeted/1.0",
+  "11264_16640/targeted/1.0",
+  "16128_20736/targeted/1.0",
+  "23296_37632/random/1.0"
+ ],
+ "texture_h_energy": [
+  "10240_11520/targeted/1.0",
+  "22528_20480/targeted/1.0",
+  "23296_37632/random/-1.0"
+ ]
+}

@@ -13,17 +13,23 @@
 #   2. postprocess refresh-metrics (CellViT sidecars -> morpho.*, appearance recomputed, slope_summary.json), cwd = a dir
 #      whose a4out -> the merged group, because the image paths in metrics.csv are relative (a4out/a4_uni_probe/...);
 #   3. new results folder N = W/a4_rerun: sweep/ (merged), he/<tile>.png (the pack's real H&E of the 28 tiles, for the
-#      Ref H&E row of panel F), probe_results.csv / .json + probe_directions/ copied from the folder the unchanged Fig 3
-#      render was pointed at (F/inputs/old/results/a4_uni_probe = S3 share_space/05_results/results/a4_uni_probe), so
-#      panel D is the same as before; then main.py specificity --out-dir N (specificity_full.csv,
+#      Ref H&E row of panel F), probe_results.csv / .json + probe_directions/ of the paper's shared-tile run (zip
+#      a1_concat/a4_uni_probe, the files the sweep read), so panel D (real-H&E UNI probes, no generator) is the paper's.
+#      Run 2 (job 43430940) took them from F/inputs/old/results/a4_uni_probe (S3 share_space/05_results, the folder the
+#      failed figs job pointed at); that probe_results.csv is an older one without the appearance attributes, so D lost
+#      the E/H mean and texture points the paper shows -> run 3 in a new folder. Then main.py specificity --out-dir N (specificity_full.csv,
 #      specificity_morphology_summary.csv);
 #   4. Fig 3: copy of the figs checkout F/PixCell (36 MB, its links kept) in W/fig3 with results/a4_uni_probe -> N and a
 #      plain share-space-paper stand-in, then figrender.py run ... fig_combined_uni_decomp_v2 (as figs_hyak.slurm);
 #   5. upload N -> S3 a4_rerun/, the PNG -> figures_rerender/fig3_a4_rerun/.
 # Checks (STOP on failure): 1,008 PNG and 1,008 sidecars, 168 rows per attribute (28 tiles x 2 directions x 3 alphas),
-# every row's sidecar found by refresh (no NaN morpho.nuclei_density). F and the shard tars are only read; new dir W.
+# every row's image has its CellViT sidecar. Rows whose sidecar has 0 cells get NaN morphology (PixCell's own rule;
+# run_specificity drops non-finite values) and are counted, not stopped on: the paper's sweep had 13 such rows of 1,080.
+# Run 1 (job 43430803) stopped on an earlier gate "no NaN morpho", which wrongly treated 0-cell images as missing
+# sidecars (36 rows, every one with a sidecar holding 0 cells); gate replaced, rerun in a new folder via A4POST_W.
+# F and the shard tars are only read; new dir W.
 set -uo pipefail
-W=/gscratch/cheme/chiu/hfv_a4post_20261120; F=/gscratch/cheme/chiu/hfv_figs_20261118; I=$F/inputs
+W=${A4POST_W:-/gscratch/cheme/chiu/hfv_a4post_20261120}; F=/gscratch/cheme/chiu/hfv_figs_20261118; I=$F/inputs
 PY=/gscratch/cheme/chiu/crc16-20261024/cellvit/env/bin/python; S=s3://bagherilab-working/pohao/hfv_retrain_20261118
 export MPLBACKEND=Agg XDG_CACHE_HOME=$W/cache MPLCONFIGDIR=$W/cache/mpl OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load coenv/aws/2.17.32
@@ -62,21 +68,32 @@ for d in sorted((O / "sweep").iterdir()):
 EOF
 $PY -u -m src.a4_uni_probe.postprocess refresh-metrics --out-dir a4out/a4_uni_probe || stop refresh-metrics
 $PY - $O <<'EOF' || stop "refresh check"
-import sys, csv, math
+import sys, csv, math, json
 from pathlib import Path
-bad = 0
-for m in sorted(Path(sys.argv[1]).glob("sweep/*/metrics.csv")):
-    rows = list(csv.DictReader(open(m)))
-    nan = sum(1 for r in rows if not r.get("morpho.nuclei_density") or math.isnan(float(r["morpho.nuclei_density"])))
-    print(m.parent.name, len(rows), "rows, NaN morpho", nan, "| image_path e.g.", rows[0]["image_path"])
-    bad += nan
-sys.exit(1 if bad else 0)
+O = Path(sys.argv[1]); missing = 0; zero = {}
+for m in sorted(O.glob("sweep/*/metrics.csv")):
+    rows = list(csv.DictReader(open(m))); z = []
+    for r in rows:
+        sc = O.parent / (r["image_path"].replace("a4out/", "", 1) + ".json")
+        if not sc.is_file():
+            missing += 1; continue
+        v = r.get("morpho.nuclei_density")
+        if not v or math.isnan(float(v)):
+            if len(json.load(open(sc)).get("cells", [])) != 0:
+                missing += 1   # NaN morphology although CellViT found cells
+            z.append(f'{r["tile_id"]}/{r["direction"]}/{r["alpha"]}')
+    zero[m.parent.name] = z
+    print(m.parent.name, len(rows), "rows, 0-cell images (NaN morphology)", len(z), "| image_path e.g.", rows[0]["image_path"])
+json.dump(zero, open(O / "zero_cell_rows.json", "w"), indent=1)
+print("rows without a usable sidecar:", missing)
+sys.exit(1 if missing else 0)
 EOF
 N=$W/a4_rerun; rm -rf $N; mkdir -p $N/he
-cp -a $O/sweep $N/
+cp -a $O/sweep $O/zero_cell_rows.json $N/
 OLD=$I/old/results/a4_uni_probe
-cp -a $OLD/probe_results.csv $OLD/probe_results.json $OLD/probe_directions $N/
-md5sum $OLD/probe_results.csv $O/probe_results.csv
+cp -a $O/probe_results.csv $O/probe_directions $N/ && cp -a $W/merge/s1/a4_crc33a4/a4_uni_probe/probe_results.csv $N/probe_results.csv.check || stop "probe files"
+cmp $N/probe_results.csv $N/probe_results.csv.check && rm $N/probe_results.csv.check || stop "probe_results differs between shard folders"
+md5sum $OLD/probe_results.csv $N/probe_results.csv
 for f in $O/probe_directions/*.npy; do cmp -s $f $OLD/probe_directions/$(basename $f) || echo "probe direction differs from the D folder: $(basename $f)"; done
 ids=$(ls $O/sweep/eccentricity_mean | grep -v '\.' )
 [ $(echo "$ids" | wc -l) = 28 ] || stop "tile list"
