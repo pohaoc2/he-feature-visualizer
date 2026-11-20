@@ -13,7 +13,8 @@
 set -uo pipefail
 SETS=$1
 R=/gscratch/cheme/chiu/hfv_robust_20261120; S=s3://bagherilab-working/pohao/hfv_retrain_20261118
-PY=$R/sdenv/bin/python; Wd=/tmp/rob_stage_$SLURM_JOB_ID
+Wd=/tmp/rob_stage_$SLURM_JOB_ID
+source $R/scripts/robust_envsetup.sh
 module load coenv/aws/2.17.32
 mkdir -p $Wd $R/lists; trap 'rm -rf $Wd' EXIT
 stop() { echo "STOP $*"; exit 1; }
@@ -38,7 +39,7 @@ for s in $SETS; do
   mkdir -p $R/realcv
   aws s3 cp --only-show-errors $S/outputs/realcv_$s.tar - | tar -x -C $R/realcv || stop "realcv $s"
   echo "### $(date -Is) real $s $(ls $R/real/$s | wc -l) png, realcv $(ls $R/realcv/realcv_$s | grep -c json) json"
-  (cd $R/PixCell && PYTHONPATH=$R/PixCell MPLBACKEND=Agg $PY -u $R/scripts/robust.py sdlist $s $R/score $R/real $R/lists/$s.tsv) \
+  (cd $R/PixCell && PYTHONPATH=$R/PixCell $PY -u $R/scripts/robust.py sdlist $s $R/score $R/real $R/lists/$s.tsv) \
     || stop "sdlist $s"
 done
 echo "### $(date -Is) DONE"

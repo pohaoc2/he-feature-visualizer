@@ -12,7 +12,8 @@
 set -uo pipefail
 LIST=$1; SD=$2; N=$3
 R=/gscratch/cheme/chiu/hfv_robust_20261120
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK TF_CPP_MIN_LOG_LEVEL=2 MPLBACKEND=Agg KERAS_HOME=$R/keras_home
+source $R/scripts/robust_envsetup.sh
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 echo "### $(date -Is) job $SLURM_JOB_ID task $SLURM_ARRAY_TASK_ID $(hostname)"
-cd $R/scripts && $R/sdenv/bin/python -u robust.py stardist $LIST $SD $SLURM_ARRAY_TASK_ID $N || { echo "STOP stardist rc $?"; exit 1; }
+cd $R/scripts && $PY -u robust.py stardist $LIST $SD $SLURM_ARRAY_TASK_ID $N || { echo "STOP stardist rc $?"; exit 1; }
 echo "### $(date -Is) DONE"

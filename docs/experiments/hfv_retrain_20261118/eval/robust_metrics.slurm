@@ -11,8 +11,9 @@
 #   sbatch --job-name=rob-met-SET eval/robust_metrics.slurm SET LIN_DIR SD OUT
 set -uo pipefail
 SET=$1; LIN=$2; SD=$3; OUT=$4
-R=/gscratch/cheme/chiu/hfv_robust_20261120; PY=$R/sdenv/bin/python
-export OMP_NUM_THREADS=1 MPLBACKEND=Agg PYTHONPATH=$R/PixCell
+R=/gscratch/cheme/chiu/hfv_robust_20261120
+source $R/scripts/robust_envsetup.sh
+export OMP_NUM_THREADS=1 PYTHONPATH=$R/PixCell
 echo "### $(date -Is) job $SLURM_JOB_ID $(hostname) $SET"
 cd $R/PixCell || exit 1
 $PY -u $R/scripts/robust.py metrics $SET $R/score $R/real $R/realcv/realcv_$SET $SD $LIN $OUT $SLURM_CPUS_PER_TASK || { echo "STOP metrics"; exit 1; }
