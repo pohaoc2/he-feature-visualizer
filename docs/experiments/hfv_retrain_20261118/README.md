@@ -288,6 +288,44 @@
     - 對結果的影響：Fig 2（消融）和 Fig 3/4（分解、LOO）的全通道 PQ，各自來自自己那條路徑的樣本。比較時，兩者的差應該落在取樣變異的範圍內；正式結果出來後，用 299 張上的數字確認。每個比較組（例如 LOO 的基準和拿掉一個子通道的圖）都在同一條路徑、同一次執行裡生成，所以組內的差（ΔPQ、效果量）不受這個影響。
     - 不需要修改任何程式。
 
+- **PQ 參考遮罩（偏離論文 PQ 的實作方式；協調者 2026-11-20 決定。寫在主要 PQ 數字出現之前；已經看過的只有下面診斷裡、以 Lin 輸入遮罩為參考的數字）**
+  - **PQ 和 DICE 在算什麼**：
+    - 先用 CellViT 在生成圖上找出細胞核，再和「參考遮罩」裡的細胞核一顆一顆配對（IoU 至少 0.5 才算配對成功）。
+    - PQ（panoptic quality）同時看兩件事：配對成功的比例，以及配上的細胞核形狀重疊多少。
+    - DICE 不分個別細胞核，只看「細胞核像素」和參考遮罩的像素重疊多少。
+    - 所以這兩個指標問的是：「生成圖上的細胞核，是否落在參考遮罩說有細胞核的位置」。答案完全取決於參考遮罩是什麼。
+  - **發現（診斷，2026-11-20，CPU，只讀已存的輸出，沒有重新生成；程式在 `eval/diag/`，commit 40ff314）**：
+    - 評分程式沒有變。
+      - 用論文的 Fig 2 那 100 張 CRC33 tile，以 PixCell 自己的函式重算 PQ，和論文的 `cache.json` 完全相同（Vanilla 0.6987、Concat 0.7817、Grouped+bypass 0.7943）。
+      - 用 L4 的新圖重算，也和 L4 的 `cache.json` 相同（Vanilla 0.6243）。
+    - 參考遮罩變了。
+      - 論文的舊 `cell_masks` 就是 CellViT 在**真實 H&E** 上的輸出（`processed_crc33/cellvit`）。真實 H&E 的 CellViT 結果對舊遮罩的 PQ 是 1.0000，兩者完全相同。所以論文的 PQ 實際上在問：「生成圖的細胞核，是否在真實組織有細胞核的位置」。
+      - 這次的 `cell_masks` 改用 Lin 分割（多重螢光影像的細胞核分割，loose nuclei 繪製）。以它為參考時，連真實 H&E 本身的 PQ 都只有 0.1715（CRC33，100 張；DICE 0.524）和 0.122 [0.116, 0.130]（CRC36 保留區，300 張）。
+      - 這不是座標錯誤：新遮罩對真實 H&E 細胞核的 DICE 在位移 0 到 −1 px 時最高，每張 tile 的最佳位移中位數是 0；上下翻、左右翻或轉置後，DICE 降到 0.16–0.34。新遮罩是對齊的，只是另一種分割，個別細胞核很少和 CellViT 找到的細胞核重疊到 IoU 0.5。
+    - 新舊模型對新遮罩都一樣低：論文的舊圖對新遮罩的 PQ 是 0.16–0.18；新圖對舊遮罩是 0.19–0.22。
+    - 訓練和評估的輸入沒有不一致：
+      - 100/100 張 CRC33 tile 的 7 個細胞通道和遮罩 latent，在訓練用的 tar 和評估包之間逐位元組相同；
+      - PNG 格式相同（L 模式，0/255），設定檔就是 PixCell cb62fa7 自己的。
+    - Per-channel 的 PQ 接近 0，論文本來就是這樣（論文 cache：PQ 0.0106、DICE 0.054）：它的 `zero_mask_latent = True`，細胞遮罩只經過小的逐通道編碼器，所以學到忽略細胞核位置。
+    - Vanilla ControlNet 對 Lin 遮罩的 PQ 高（CRC36 0.518），是因為現成的 Cell-ControlNet 會在遮罩的每一塊上畫出深色、清楚的細胞核。代價是染色風格偏離真實 H&E：style_hed 0.31，四個訓練過的變體是 0.04。
+  - **決定：PQ 和 DICE 用兩種參考，兩種都放進統計和報告。**
+    1. **主要結果（可和論文比較）**：參考是同一張 tile 的真實 H&E 上跑 CellViT 的結果。
+       - 這就是論文 PQ 的實際定義。
+       - 真實 H&E 的 CellViT 用和評分相同的設定重跑三組評估 tile：L4、TF32 關閉、同一個 runner（md5 7e67da08）、同一個 CellViT commit（05097e1）和 checkpoint（md5 b3634bd5）、batch 32。三組是 CRC36 保留區、CRC33 次要組、CRC34（`eval/boot_realcv.sh`、`eval/presign_realcv.py`）。
+       - `cellvit_crc36` 那次（死細胞判定用）的 TF32 設定沒有紀錄，所以不沿用。
+       - 參考遮罩的做法照論文：把真實 H&E 的 CellViT 輪廓填成二值遮罩，再取連通區塊（和 PixCell `_load_gt_instance_mask` 讀 `cell_masks` 的方式相同）。
+       - 生成圖的 CellViT 結果已經存在（`*_cellvit_instances.json`），所以只在 CPU 上重算 PQ/DICE，用 PixCell 的 `_compute_pq` 和 `_compute_binary_segmentation_metrics`，不重新生成，也不重跑生成圖的 CellViT。
+    2. **次要結果**：參考是 Lin 輸入遮罩，也就是模型實際拿到的條件，問的是「模型多忠實地照著輸入遮罩畫」。
+       - 圖上另外畫一條參考線：真實 H&E 對同一個 Lin 遮罩的 PQ（真實組織本身能達到的程度）。
+       - 診斷時的值是 CRC33 0.17、CRC36 0.12，用的是較早的 CellViT 結果；正式的參考線改用上面重跑的真實 H&E CellViT。
+  - Fig 2d 的 Vanilla 參考帶（FUD 不受影響；PQ、DICE）兩種參考都記錄在下面的參考帶表，圖上用和該圖 PQ 軸相同的參考。
+  - 論文 figure 的重繪要等主要 PQ 算完才做（`figs_hyak.slurm` 暫停）。
+
+- **S3 物件誤覆寫，已還原（2026-11-20 09:12）**：
+  - 一個打錯的指令（`aws s3 cp -` 方向寫反）把 S3 `inputs/eval/evalpack_crc34eval.tar.json`（打包摘要，342 bytes）覆寫成空檔案。
+  - 已從 Hyak 的原始檔（`/gscratch/cheme/chiu/hfv_eval_20261118/packs/`）放回，md5 494fb4d3 和原檔相同。
+  - 沒有任何 boot 或腳本讀這個檔案（`presign_eval.py` 排除 `*.tar.json`），評估包的 tar 本身沒有被動到。
+
 ## 結果
 
 （訓練和評估完成後填入）
