@@ -349,9 +349,20 @@
     - 改法 B：在 cheme 計算節點的本機 /tmp 建環境，打包成一個 tar 放回 gscratch（`eval/robust_env.slurm`），之後每個作業在節點上解開到同一路徑 /tmp/rob_sdenv（`eval/robust_envsetup.sh`）。
     - 第一次改法 B（作業 43427059）失敗：底層 Python 用 Hyak 模組 coenv/python/3.11.9，這個 Python 編譯時沒有 `_ctypes`，TensorFlow（protobuf）匯入失敗。沒有重試；經協調者核准後，底層 Python 改用 conda-forge 的 python 3.11（Miniforge3-25.9.1-0 模組），放到新資料夾 `env2`。TensorFlow 2.15 只支援 Python 3.9–3.11，所以不用 3.13。
     - 第二次（作業 43427175，env2）也失敗：stardist 0.9.1 匯入時要用 `pkg_resources`，conda 環境沒有 setuptools（setuptools 81 以後也不再附 `pkg_resources`）。經協調者核准，安裝清單加上 `setuptools<81`，放到新資料夾 `env3`。其餘套件和版本不變。之後這類純環境、打包的修正（缺少的建置或執行依賴，目標套件版本不變）協調者已預先核准：照做、記在這裡、繼續。
-    - 計算改成每個評估集一個作業（`eval/robust_set.slurm`），全部在節點本機 /tmp 做（從 S3 取評分結果、跑 StarDist、算指標），只把結果（csv、json、StarDist 標記 npz、影像清單、log）放回 gscratch `hfv_robust_20261120/res/<評估集>/`。原因同上：gscratch 建立大量小檔案很慢。方法不變。
+    - 計算改成每個評估集一個作業（`eval/robust_set.slurm`），全部在節點本機 /tmp 做（從 S3 取評分結果、跑 StarDist、算指標），只把結果（csv、json、StarDist 標記 npz、影像清單、log）放回 gscratch `hfv_robust_20261120/res2/<評估集>/`。原因同上：gscratch 建立大量小檔案很慢。方法不變。
     - 送出前在本機用假輸入試跑整條程式：把 CellViT 的細胞核當成「StarDist 結果」餵進去，算出的 Fig 2 PQ/DICE 平均、消融、LOO、分解的值和主要 PQ 完全相同，確認 PQ/DICE 的計算路徑和主要 PQ 一致。
     - StarDist 的模型權重在建環境時下載一次（`hfv_robust_20261120/keras_home`），計算作業都從這裡讀。
+  - **StarDist 在純白生成圖上當掉（2026-11-20；處理方式由協調者決定，寫在任何 StarDist 數字之前）**：
+    - 第一次正式執行（作業 43427318，CRC34）裡，8 個 StarDist 程序都在約 60 秒時中止，訊息是 `ClipperLib::clipperException`（StarDist 在 NMS 步驟做多邊形運算的 C++ 函式庫丟出例外，整個 Python 程序跟著結束）。CRC36、CRC33 的作業（43427384、43427385）也一併取消。
+    - 診斷（作業 43427427、43427548、43427594，只做診斷、沒有結果）：真實 H&E 和全部 Fig 2 圖都沒有當掉；當掉的都是 CRC34 兩張 tile 的生成圖。55552_58880 是空白 tile：真實 H&E 幾乎全白，CellViT 找到 0 顆，Lin 遮罩也是 0。這張 tile 的配對消融、LOO 生成圖，以及 52992_54272 的非配對消融生成圖都是純白（1 和 99.8 百分位都是 255）。百分位數正規化的分母因此接近 0，多邊形運算就丟出例外。在本機掃描，CRC34 這三組共有 39 張這種圖（消融 29 張、LOO 10 張），每個條件最多 300 張 tile 裡的 2 張。
+    - 原因在資料本身（評估集裡真的有空白 tile），不是我們餵入的方式（資料型別、透明通道、軸順序、補邊），所以不改輸入、不改門檻、不修改預測。
+    - 處理方式：
+      - 每個 StarDist 程序把圖交給一個子程序預測，子程序當掉就把那張圖記成「當掉」、重開子程序繼續。當掉的圖列在 npz 的 `crashed` 和 log 的 `CRASH` 行。測試作業 43427793 在這兩張 tile 的 71 張消融圖上當掉 29 張，正好是本機找到的 29 張純白圖，其餘圖正常。
+      - 計分：生成圖當掉 = 偵測到 0 顆細胞核，也就是把一張空的預測遮罩送進原本的 PixCell 函式，沿用 PixCell 自己對空遮罩的規則：參考也是空的 → PQ 1、DICE 1；參考不是空的 → PQ 0、DICE 0。主要的 CellViT 計分對空白 tile 也是這個規則（例如 55552_58880 的 Fig 2 五個變體、配對消融各條件都是 PQ 1、DICE 1），所以不會懲罰「空白 tile 生成純白圖」。
+      - 真實 H&E 的參考 tile 如果當掉，就從所有變體一起拿掉，比較仍然成對，並列出拿掉的 tile。
+      - 敏感度分析：把當掉的圖排除（不當成 0 顆）再算一次主要比較。
+      - 每組評估集、每個條件的當掉張數和比例都記在 `stats_robust.json` 的 `crashes`。如果某個變體當掉的比例超過幾個百分點，就停下來回報，那個變體不用 StarDist 讀數。
+    - 結果放到新資料夾 `hfv_robust_20261120/res2/<評估集>/`。`res/crc34eval` 是中止那次留下的清單和 log。
 
 - **S3 物件誤覆寫，已還原（2026-11-20 09:12）**：
   - 一個打錯的指令（`aws s3 cp -` 方向寫反）把 S3 `inputs/eval/evalpack_crc34eval.tar.json`（打包摘要，342 bytes）覆寫成空檔案。
