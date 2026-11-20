@@ -3,6 +3,7 @@
   PYTHONPATH=<PixCell cb62fa7> python evalstats.py OUT.json fig2:NAME:DIR abl:NAME:DIR ...
 fig2 DIR   scored Fig 2 group (cache.json from metrics_io compute + sensitivity_eval score, fig2_per_tile.csv)
 abl DIR    scored ablation group (DIR/{paired,unpaired}_ablation/ablation_results/<tile>/metrics.json, fud_scores.json)
+decomp DIR scored UNI / TME decomposition group (DIR/decomposition_metrics/<tile>/metrics.json, fud_scores.json)
 loo DIR:ROOT  scored sub-channel LOO group; ROOT = the orion root whose exp_channels/cell_masks is the PQ reference
            (the Lin pack masks, or a realref.py masks root for the real-H&E reference)
 All intervals are 95 % percentile bootstrap intervals over tiles (tiles resampled with replacement, the same resample for
@@ -22,6 +23,10 @@ Ablation (per mode paired / unpaired):
                    over every context subset S of the other groups of metric(S + g) - metric(S), sign so that positive =
                    better. Per tile the same mean of differences is taken, so the PixCell value is the mean over tiles,
                    and the interval is the bootstrap over tiles of that per-tile value. FUD: PixCell value only.
+Decomposition:
+  modes            per mode (uni_plus_tme, uni_only, tme_only, neither): mean of LPIPS / PQ / DICE / HED with interval,
+                   FUD from fud_scores.json (PixCell value only)
+  vs_full          per mode, per metric: mean over tiles of (mode - uni_plus_tme) with interval
 Sub-channel LOO:
   pq_drop          per sub-channel: per tile PQ(all_baseline) - PQ(sub-channel left out), the quantity of PixCell's
                    tools/stage3/aggregate_subchannel_layout_metrics.py (same run_cellvit / _load_gt_instance_mask /
@@ -164,12 +169,29 @@ def loo(d, root):
     return out
 
 
+def decomp(d):
+    modes = ["uni_plus_tme", "uni_only", "tme_only", "neither"]
+    per = {}
+    for p in sorted((d / "decomposition_metrics").glob("*/metrics.json")):
+        pc = json.load(open(p)).get("per_condition") or {}
+        if all(m in pc and all(pc[m].get(k) is not None for k in M4) for m in modes):
+            for m in modes:
+                for k in M4:
+                    per.setdefault(f"{m}/{k}", []).append(float(pc[m][k]))
+    n = len(per[f"{modes[0]}/pq"])
+    diffs = {f"{m}/{k}": list(np.subtract(per[f"{m}/{k}"], per[f"uni_plus_tme/{k}"])) for m in modes[1:] for k in M4}
+    fud = json.load(open(d / "fud_scores.json"))
+    return dict(n_tiles=n, fud=fud, modes=boot(per), vs_full=boot(diffs))
+
+
 res = {}
 for task in sys.argv[2:]:
     kind, name, d = task.split(":", 2)
     if kind == "loo":
         d, root = d.split(":", 1)
         res[name] = dict(kind=kind, dir=d, **loo(Path(d), Path(root)))
+    elif kind == "decomp":
+        res[name] = dict(kind=kind, dir=d, **decomp(Path(d)))
     else:
         res[name] = dict(kind=kind, dir=d, **(fig2(Path(d)) if kind == "fig2" else abl(Path(d))))
 json.dump(res, open(sys.argv[1], "w"), indent=1)
