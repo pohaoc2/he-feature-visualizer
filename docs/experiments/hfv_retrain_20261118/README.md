@@ -246,6 +246,13 @@
   - **每張 tile 的 Fig 2 指標**：PixCell 的 `metrics_io.py compute` 只在 `cache.json` 存平均和標準差。正文定義的 ΔLPIPS 和它的信賴區間需要每張 tile 的數值，所以 `eval/fig2tiles.py` 用同樣的 PixCell 函式、同一批 tile 再算一次並保留每張 tile 的值，和 `cache.json` 的平均之間的差也一起記錄。
   - **信賴區間**：`eval/evalstats.py` 在 CPU 上讀評分結果，不重新評分。區間是 95 % 的 percentile bootstrap，以 tile 為單位重抽（10,000 次，seed 42）。同一批 tile 上兩個模型或兩個條件的差，用同一組重抽。消融的效果量照 PixCell `summarize_added_group_effect_stats` 的定義（Fig 2e/g 熱圖）。FUD 是整組圖片一個數字（兩個特徵分佈之間的距離），不是每張 tile 一個值，所以沒有逐 tile 的區間。
   - 作業一律不自動重排（`--no-requeue`）。被搶占或失敗都視為停止，記錄後回報。
+  - **PQ 檢查（CPU 試跑 43416299，2026-11-20，在任何正式分數出現之前；結論：不是評分錯誤，正式作業 43415409–11 不動）**：
+    - 起因：前一次 CPU 試跑（43415428，每組 3 張 tile）裡，LOO 的基準圖和分解的 `uni_plus_tme` 平均 PQ 到小數第 6 位都相同（0.109403），消融「四組全開」的 PQ 卻明顯不同。原本猜是三組挑到不同的 tile。
+    - 查證結果：三組挑到的是**同一批 3 張 tile**（`0_10752`、`0_11008`、`0_6400`），所以「挑到不同 tile」的猜測不成立。
+    - LOO 基準圖和分解 `uni_plus_tme` 是**逐位元組相同的圖**（3/3 張 md5 相同），所以兩者 PQ 相同是必然的：兩支腳本都走 PixCell 的 `generate_from_ctrl`，模型、條件、seed 都一樣。
+    - 消融「四組全開」的圖和它們**不同**（3/3 張 md5 不同）。消融腳本走另一條路徑 `generate_group_combination_ablation_images`：15 個條件共用同一個起始雜訊，分批一起去噪（`denoise_batched`）；`generate_from_ctrl` 則在去噪前重設 seed，一次只畫一張。兩條路徑都是 PixCell 原本的寫法，論文的消融和 LOO 也是這樣分開生成的。
+    - 評分本身一致：用 PixCell 的 `run_cellvit`、`_compute_pq` 和同一張輸入細胞遮罩，逐張重算三組圖的 PQ，結果和評分輸出完全相同（消融 0.4287 / 0 / 0.1706，對應 `metrics.json`；LOO 和分解都是 0.3282 / 0 / 0，平均就是 0.109403）。
+    - 所以：消融「四組全開」的 PQ 和 LOO 基準、分解 `uni_plus_tme` 的 PQ 本來就不必相同，三者不能互相代替；報告時各自引用自己那一組。這 3 張 tile 都在切片邊緣，每張只有 2–17 個真實細胞，只用來檢查程式，不代表任何結果。
 
 ## 結果
 
