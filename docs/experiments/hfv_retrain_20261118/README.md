@@ -514,6 +514,52 @@
 - 檢查：三張都是 3641 × 3442。次要版和原圖只差第 1319–1358 列（標籤那一條）；主要版的差別在第 1319–3519 列（D、E、G）。A–C、F、H 和 FUD/LPIPS/HED 欄相同。
 - 看得出的差別：主要參考下，vasculature 在配對消融的 PQ/DICE 效果從 −0.03 變成 +0.02 / +0.00，和上面「Fig 2e/g」的結果一致。
 
+### 追加 3：剩餘未重做項目盤點（2026-11-20；協調者交辦，在執行任何作業之前寫入並 commit）
+
+**盤點結果**
+
+| 項目 | 需要的輸入 | 新通道／新模型的輸入在不在 | 計算 | 結論 |
+|---|---|---|---|---|
+| Fig 4 的 ΔE/ΔPQ（b）和跨世代比較（c–f）；a6 重算 | 三個世代的 LOO CSV（`per_subchannel_{,layout_}summary.csv`）、三個世代的 R² CSV；a6 從這些算出 `cohort_invariance_metrics.json` | C33：S3 `outputs/scoreres_loo_crc33sec.tar`（次要參考）、`realref_loo_crc33sec.tar`（主要參考），兩個都有這兩個 CSV。C34：`scoreres_loo_crc34eval.tar`（次要）有；**主要參考的 LOO 樹沒有產生**（README 的 C34 主要 PQ 數字只存在統計檔 `stats_realref_crc34eval.json`），可以用 `eval/realref.py tree loo` 在 CPU 補（輸入 `score_loo_crc34eval.tar` 328 MB、`realcv_crc34eval.tar` 20 MB）。C10：只有舊的（`04_inference/subchannel_loo_n300_crc10/`） | CPU | **可做**。作業 43427989 的步驟裡根本沒有 Fig 4、a6、`si_threshold_sensitivity`、`si_patient_generalization`，所以這四項不只是 R² 沒重做，整張圖都還沒畫過 |
+| Fig 4 和 a6 的 R²：C33，UNI | 論文 800 張 tile 的 UNI patch tokens（每張 256 × 1536，真實 H&E）；新通道算出的每塊目標值 | **UNI patch tokens 哪裡都沒有**：`orion-crc33.zip` 只有 CLS 特徵（`*_uni.npy`）；Hyak（`hfv_*`、`crc34`、`crc16`、`covuni`、`sev-uni`）和 S3 `outputs/uni_crc3{4,6}_hub` 也都只有 CLS；論文的 `features_patches/` 快取不在 S3。唯一的論文 tokens 是 `05_results/bundles_202607/decodability_cpu_bundle.tgz` 裡的 250 張（其中 16 張在 800 張內）。新通道：`new_exp_channels_crc33_01.tar` 的 7 個細胞通道，加上 `orion-crc33.zip` 的 vasculature/oxygen/glucose（和 CRC33_01 訓練用的是同一組）。論文 800 張中 **715 張**有新通道 | 抽 tokens = 編碼器前向計算；探針 = CPU（論文用的就是 sklearn 的 MLP，見下面決定 1） | **可做**，要先重抽 tokens |
+| Fig 4 和 a6 的 R²：C34，UNI | 論文 10,000 張 tile 的 tokens；新 CRC34 通道 | tokens 沒有。新通道在 Hyak `hfv_crc34_20261118/data/`：`crc34_exp_channels.tar`（7 個細胞通道，45,101 張）、`crc34_mx_channels.tar`（vasculature/oxygen/glucose，45,100 張）；H&E 在 `crc34_he_tiles.tar`（45,292 張）。論文的 10,000 張 = PixCell 從 45,292 張的 tile 列表用 seed 42 抽出（我重算的 sha1 和論文 `cv_splits.json` 的 `74d9c553…` 相同），其中 **9,958 張**有新通道 | 同上（約 1 萬張 tokens） | **可做** |
+| R² 和 LOO：C10 | 重建的 C10 通道和評估包 | 不存在；重建要跑整條 Lin 分割 + CELESTA 流程 | — | **被擋（沒有資料）**，保留舊輸入 |
+| `si_channel_decodability_impact` a：Virchow2、CTransPath、ResNet-50 | 論文 tile 集合上的 patch 特徵（Virchow2 和 ResNet-50 200 張、CTransPath 800 張）；新目標（Virchow2 用 16 × 16 格，CTransPath 和 ResNet-50 用 7 × 7 格） | 特徵沒有。權重：Virchow2 在 Hyak `sev-channel-predicted-20261005/virchow_weights/`；CTransPath `msi_perturb_20261119/weights/ctranspath/ctranspath.pth`；ResNet-50 用 torchvision 的公開 ImageNet 權重。有新通道的 tile：200 → 184、800 → 715 | 抽特徵 + CPU 探針 | **可做** |
+| `si_channel_decodability_impact` b：raw MX（`t2_spatial`） | CODEX marker 強度（目標）、真實 H&E 的 UNI tokens（特徵） | 兩者都和新的細胞通道無關 | — | **發現**：輸入沒有受到這次改動影響，建議分類從「這次未重做（舊通道）」改成「不變」。需要協調者確認，我不能核准。不重跑 |
+| `si_threshold_sensitivity` | 同 Fig 4c–f 的 a6 JSON | 同第一列 | CPU | **可做**。原圖在 S3 `05_results/results/paper_figures/si_threshold_sensitivity.png`，所以原本「待定（原檔只在論文 repo）」的理由不成立 |
+| `si_patient_generalization` | patient JSON（重建）、CRC33 和 CRC34 各 2 張示例 | CRC33：`score_abl_crc33sec.tar`（生成圖）、`scoreres_abl_crc33sec.tar`（次要）、`realref_abl_crc33sec.tar`（主要）。CRC34：凍結推論 1,000 張，`score_crc34_crc34eval.tar` 的資料夾結構就是腳本要的 `CRC34_paired/<tid>/{paired,unpaired}/generated_he.png`；`scoreres_crc34_crc34eval.tar`（次要）、`realref_crc34_crc34eval.tar`（主要）有每張的 `metrics.json`、`fud_scores.json` 和 `style_mapping.json`。真實 H&E 和 cell_masks：`evalpack_crc33sec`、`evalpack_crc34eval`。原本的 JSON 在 S3 `05_results/results/a6_cohort_invariance/patient_generalization_metrics.json`，寫明 CRC34 來自 `CRC34_metrics` 的 1,000 張、CRC33 來自 `concat_ablation_1000`；這次 CRC33 是次要組 299 張 | CPU | **可做**。原圖也在 S3 `paper_figures/` |
+| `SI_A1_A2_unified.png` | — | — | — | **不是失敗，是改名**。PixCell 20d542e（2026-06-29，「Update figure variant labels」）把 `fig_si_a1_a2_unified` 的預設輸出從 `figures/pngs/SI_A1_A2_unified.png` 改成 `figures/pngs_updated/si/si_training_stability.png`，同時把原本的合併圖拆成 `si_training_stability.png` 和 `si_qualitative_variants.png`。`compare/old/SI_A1_A2_unified.png` 是拆開前的舊合併圖。改法：比較頁改成把舊的 `si_training_stability.png`（S3 `05_results/figures_pngs_updated/si/`）和新的並排，註明 `SI_A1_A2_unified` 已被取代。PixCell 不用改 |
+
+**計畫（2026-11-20 到 11-21）**
+
+- 全部在 Hyak cheme CPU 上做，用新資料夾 `/gscratch/cheme/chiu/hfv_a3_20261120/`，保留 cheme 至少 120 核空閒。出錯就停，不原樣重送。
+- A. 繪圖第一輪（R² 仍是舊的，圖上標註）：
+  - 先用 `realref.py tree loo` 補出 C34 主要參考的 LOO CSV；
+  - 再畫兩版（主要／次要 PQ 參考，和追加 2 一樣）：a6 → Fig 4 和 `si_channel_decodability_impact` → `si_threshold_sensitivity`；`figrender.py patient` 重建 JSON → `si_patient_generalization`。
+- B. tokens 檢查和計時：在 250 張論文 tokens 的 tile 上，用兩種 UNI 前處理重抽，量 CPU 速度。
+- C. 抽特徵 → 建目標 → 跑探針（四個編碼器的 C33、UNI 的 C34）。
+- D. 繪圖第二輪：換成新的 R² 再畫一次兩版。
+- 抽特徵本身不一定要 GPU。先用 B 量到的速度估總時間：一個 cheme CPU 作業放得下就在 Hyak CPU 上做；放不下才準備 Colab L4 套件（`boot_a4.sh` / `presign_a4.py` 的寫法）。
+
+**在任何結果出來之前定下的決定**（需要協調者追認的標「待確認」）
+
+1. **探針和目標用 PixCell d1fc8a5 的程式（待確認）**：論文的 R² 檔是 d1fc8a5（2026-05-22）的 sklearn MLP 產生的。證據是 manifest 裡的路徑 `src/a1_probe_mlp_spatial/out/…`，這個路徑在 3ea65fd（2026-07-09）搬家前才存在。cb62fa7 的預設已經改成 torch CUDA（b093884，2026-07-16），而且 sklearn 那條路徑和目標建立程式也都改過。所以照論文程序就是用 d1fc8a5。抽特徵的程式（`pipeline/extract_features.py --encoder`、`patch_extractors.py`、`a1_probe_encoders` 的載入函式）在 d1fc8a5 和 cb62fa7 之間沒有任何差別，照用 cb62fa7。
+2. **tile 和交叉驗證的折**：
+   - 用論文的 tile 集合，拿掉沒有新通道的 tile：C33 UNI 和 CTransPath 715 張、Virchow2 和 ResNet-50 184 張、C34 9,958 張。論文的集合是用 PixCell 的抽樣（seed 42）重算出來的，三個集合的 sha1 都和論文 `cv_splits.json` 相同。
+   - 折沿用論文的 `cv_splits.json`，只刪掉缺新通道的 tile，其他 tile 留在原本的折裡，存成同格式的新檔。
+   - 折數照論文各自那次：C33 UNI 和 CTransPath 5 折（規則 6），C34、Virchow2、ResNet-50 3 折；只有 C34 算打亂基準（shuffle baseline），和論文相同。
+3. **探針設定照論文各自那次**：
+   - UNI 和 CTransPath：d1fc8a5 預設（隱藏層 128,32，最多 75 輪，批次 2048）。論文沒有記錄每次最多用幾列訓練：可能是程式預設 500,000，也可能是 `run_multi_encoder.py` 的 50,000。兩個都跑一次，看第 4 點的重現檢查哪個比較接近論文。
+   - Virchow2 和 ResNet-50：handover 寫的縮減設定（200 張、3 折、最多 10,000 列、50 輪）。
+   - C34：計畫文件裡的指令（500,000 列、打亂基準）。
+4. **先驗證，再看新結果**：
+   - (a) 用 d1fc8a5 的程式，從 `orion-crc33.zip` 的舊通道重建舊目標，逐 tile 和 S3 的 `mask_targets_T1_spatial.npy` 比對，報告最大差異。
+   - (b) 在 250 張論文 tokens 上比對兩種前處理（timm 的預設，以及 `uni-2h/config.json`）重抽的 tokens，報告 cosine，用比較接近論文的那一種。CLS 特徵已知是 config.json 那種；tokens 是 4bf85d7 之後才加的，用哪一種沒有紀錄。
+   - (c) 用舊目標和重抽的特徵，在論文完整的 tile 集合上重跑每個編碼器，逐目標和論文的 CSV 比較。只描述差異，沒有通過門檻。
+   - (d) 舊目標和新目標都在同一批 715 / 184 張上跑，所以「舊 → 新」只差目標本身。C34 沒有舊通道的同批對照（舊的 `orion-CRC34.tar` 有 39 GB，這次不讀），只能和論文的數字比。
+5. **PQ 參考**：Fig 4、`si_threshold_sensitivity`、`si_patient_generalization` 都畫主要和次要兩版。C10 沒有新的 LOO，所以兩版都用舊的 C10 輸入（論文的 cell_masks）。
+6. **檔案**：輸出只寫在新資料夾和替身 `share-space-paper/` 裡。比較頁的新圖放 `compare/a3/`。
+
 ### 尚未完成
 
 - 論文 figure 重繪（作業 43427989，2026-11-20 12:00–12:59）：6 個步驟中 5 個成功，重繪的檔案在 S3 `figures_rerender/`（清單 `rendered.txt`）：Fig 2（`concat/fig2_architecture_performance.png`）、`si/ablation_grids_combined.png`、`si/si_performance_ranking.png`、`si/si_qualitative_variants.png`、`si/si_training_stability.png`、`individual/ablation_analysis/05_paired_ablation_grid.png`。
