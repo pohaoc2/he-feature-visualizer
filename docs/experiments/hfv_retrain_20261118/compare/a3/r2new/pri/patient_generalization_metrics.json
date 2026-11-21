@@ -1,0 +1,97 @@
+{
+ "description": "RECONSTRUCTED for the hfv_retrain_20261118 re-render (original writer unknown). Frozen Concat retrained on the new CRC33_01 channels (tr_concat epoch 20), all-four condition, seed 42. CRC33_01 = training patient (secondary group, training tiles); CRC34 = held-out patient, inputs rebuilt (see README). FUD is distribution-level (no sd); LPIPS/PQ/DICE/HED are per-tile mean +/- population sd.",
+ "metric_order": [
+  "fud",
+  "lpips",
+  "pq",
+  "dice",
+  "style_hed"
+ ],
+ "metric_labels": {
+  "fud": "FUD",
+  "lpips": "LPIPS",
+  "pq": "PQ",
+  "dice": "DICE",
+  "style_hed": "HED"
+ },
+ "higher_is_better": {
+  "fud": false,
+  "lpips": false,
+  "pq": true,
+  "dice": true,
+  "style_hed": false
+ },
+ "error_is": "population sd over tiles (FUD has none: distribution-level metric)",
+ "data": {
+  "CRC33_01": {
+   "label": "in-distribution (training patient)",
+   "paired": {
+    "fud": 137.8,
+    "lpips": 0.353,
+    "pq": 0.247,
+    "dice": 0.537,
+    "style_hed": 0.04,
+    "n": 299,
+    "sd": {
+     "lpips": 0.08,
+     "pq": 0.1552,
+     "dice": 0.1924,
+     "style_hed": 0.0234
+    }
+   },
+   "unpaired": {
+    "fud": 156.4,
+    "lpips": 0.46,
+    "pq": 0.121,
+    "dice": 0.428,
+    "style_hed": 0.045,
+    "n": 299,
+    "sd": {
+     "lpips": 0.0661,
+     "pq": 0.094,
+     "dice": 0.1832,
+     "style_hed": 0.0235
+    }
+   }
+  },
+  "CRC34": {
+   "label": "cross-patient OOD",
+   "paired": {
+    "fud": 102.7,
+    "lpips": 0.329,
+    "pq": 0.162,
+    "dice": 0.541,
+    "style_hed": 0.07,
+    "n": 1000,
+    "sd": {
+     "lpips": 0.0803,
+     "pq": 0.1468,
+     "dice": 0.1832,
+     "style_hed": 0.0444
+    }
+   },
+   "unpaired": {
+    "fud": 127.7,
+    "lpips": 0.419,
+    "pq": 0.072,
+    "dice": 0.393,
+    "style_hed": 0.074,
+    "n": 1000,
+    "sd": {
+     "lpips": 0.0883,
+     "pq": 0.0776,
+     "dice": 0.1989,
+     "style_hed": 0.0403
+    }
+   }
+  }
+ },
+ "sources": {
+  "CRC33_01_paired": "/tmp/a3_43444703/inputs/realref/abl_crc33sec/paired_ablation/ablation_results",
+  "CRC33_01_unpaired": "/tmp/a3_43444703/inputs/realref/abl_crc33sec/unpaired_ablation/ablation_results",
+  "CRC34_paired": "/tmp/a3_43444703/inputs/realref/crc34_crc34eval/paired_cache",
+  "CRC34_unpaired": "/tmp/a3_43444703/inputs/realref/crc34_crc34eval/unpaired_cache",
+  "condition": "cell_state+cell_types+microenv+vasculature",
+  "writer": "hfv eval/figrender.py patient"
+ }
+}

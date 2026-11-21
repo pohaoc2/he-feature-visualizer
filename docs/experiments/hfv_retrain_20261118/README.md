@@ -192,17 +192,17 @@
 | | e 編輯專一性熱圖 | `specificity_full.csv`，來自 a4 掃描的生成圖 | 這次未重做（舊模型輸入） |
 | | f α 掃描示例 | `results/a4_uni_probe/sweep/*/targeted/alpha_*.png` | 這次未重做（舊模型輸入） |
 | Fig 4 | a 示意圖 | `stage_3_simple_svg.svg` | 不變 |
-| | b ΔE / ΔPQ 對 R² 的象限圖 | ΔE、ΔPQ 來自 `subchannel_loo_n300/per_subchannel_{,layout_}summary.csv`；R² 來自 `a1_probe_mlp_spatial/uni_16`（評估規則第 6 點，新通道） | ΔE/ΔPQ = 新模型重做；R² = 新通道重做 |
-| | c、d、e、f 跨世代比較（C33 / C34 / C10） | `results/a6_cohort_invariance/cohort_invariance_metrics.json`，由 a6 從三個世代的 LOO CSV 和 R² 算出 | LOO（ΔE、ΔPQ）：C33、C34 = 新模型重做（C34 見下面「CRC34 子通道 LOO」），C10 這次未重做（沒有重建的資料，舊模型輸入）。R²：C33 = 新通道重做，C34、C10 這次未重做（舊通道）。a6 用這些輸入重算 |
-| si_channel_decodability_impact | a 四個編碼器的 R² | `a1_probe_mlp_spatial/{uni_16,virchow2_16,ctranspath_07,resnet50_07}` | UNI = 新通道重做；其他三個編碼器這次未重做（舊通道） |
-| | b raw MX 的 R² | `a1_probe_mlp_spatial/t2_spatial` | 這次未重做（舊通道） |
+| | b ΔE / ΔPQ 對 R² 的象限圖 | ΔE、ΔPQ 來自 `subchannel_loo_n300/per_subchannel_{,layout_}summary.csv`；R² 來自 `a1_probe_mlp_spatial/uni_16`（評估規則第 6 點，新通道） | ΔE/ΔPQ = 新模型重做；R² = 新通道重做。**已完成（追加 3，作業 43444703）**：C33 UNI 715 張、最多 50,000 列訓練（事先定的規則選出） |
+| | c、d、e、f 跨世代比較（C33 / C34 / C10） | `results/a6_cohort_invariance/cohort_invariance_metrics.json`，由 a6 從三個世代的 LOO CSV 和 R² 算出 | LOO（ΔE、ΔPQ）：C33、C34 = 新模型重做（C34 見下面「CRC34 子通道 LOO」），C10 這次未重做（沒有重建的資料，舊模型輸入）。R²：C33 = 新通道重做，C34、C10 這次未重做（舊通道）。a6 用這些輸入重算。**追加 3 結果（作業 43444703）**：C34 的 R² 也用新通道重做了（9,958 張），C10 的 LOO 和 R² 仍是舊輸入 |
+| si_channel_decodability_impact | a 四個編碼器的 R² | `a1_probe_mlp_spatial/{uni_16,virchow2_16,ctranspath_07,resnet50_07}` | UNI = 新通道重做；其他三個編碼器這次未重做（舊通道）。**追加 3 結果（作業 43443943 / 43444703）**：四個編碼器都用新通道重做（715 / 184 / 715 / 184 張） |
+| | b raw MX 的 R² | `a1_probe_mlp_spatial/t2_spatial` | 這次未重做（舊通道）。追加 3 發現：目標（CODEX marker 強度）和特徵（UNI tokens）都和細胞通道無關，建議改成「不變」，待協調者確認 |
 | | c、d ΔE / ΔPQ 排名 | 同 Fig 4b 的 LOO CSV | 新模型重做 |
 | si_performance_ranking | 單 panel | 同 Fig 2d 的消融指標 | 新模型重做 |
 | ablation_grids_combined | a paired 網格，tile `10752_13824` | 消融生成圖和 metrics（這張 tile 在 299 張之內） | 新模型重做 |
 | | b unpaired 網格，tile `13056_27392`（風格 `12032_15104`） | 這張是論文 unpaired 清單的第 1,001 張，不在 299 張裡 | 協調者 2026-11-19 核准：把這張 tile 補進消融生成（1 張 × 15 條件，unpaired，風格 `12032_15104`），和次要組消融同一比較組、同一種 GPU。如果它在新的 CRC33_01 裡沒有新通道，就這次未重做（舊模型輸入）。**結果（packgrid33 43393902，2026-11-19）：這張 tile 在新的 CRC33_01 裡沒有新的細胞通道（NO_CHANNELS），所以 panel b 這次未重做，保留舊模型輸入。** |
 | si_qualitative_variants | 單 panel：10 張 tile × 五個模型 | `si_a1_a2/tiles/<variant>/<tile>.png`（`metric_tile_ids[:10]`） | 新模型重做 |
-| si_threshold_sensitivity | a、b | 同 Fig 4c 的 a6 JSON | 同 Fig 4c–f：ΔPQ 的 C33、C34 = 新模型重做，C10 這次未重做；R² 的 C33 = 新通道重做，C34、C10 這次未重做 |
-| si_patient_generalization | a CRC33 對 CRC34 指標 | `share-space-paper/figures/data/patient_generalization_metrics.json`。PixCell 裡沒有產生這個檔的程式，原本的 JSON 由哪支程式產生**不明** | 新模型重做。這次的 JSON 是**重建的**：由 `eval/` 的 wrapper 用同樣的鍵，從 CRC34 評估（規則第 4 點）和 CRC33 消融的全通道條件算出 |
+| si_threshold_sensitivity | a、b | 同 Fig 4c 的 a6 JSON | 同 Fig 4c–f：ΔPQ 的 C33、C34 = 新模型重做，C10 這次未重做；R² 的 C33 = 新通道重做，C34、C10 這次未重做。**追加 3 結果（作業 43444703）**：已重繪；R² 的 C34 也是新通道，C10 仍是舊輸入 |
+| si_patient_generalization | a CRC33 對 CRC34 指標 | `share-space-paper/figures/data/patient_generalization_metrics.json`。PixCell 裡沒有產生這個檔的程式，原本的 JSON 由哪支程式產生**不明** | 新模型重做。這次的 JSON 是**重建的**：由 `eval/` 的 wrapper 用同樣的鍵，從 CRC34 評估（規則第 4 點）和 CRC33 消融的全通道條件算出。**追加 3 結果（作業 43444018）**：已重繪兩版（主要／次要 PQ 參考） |
 | | b 每位病人 2 張示例 | CRC33 消融生成圖，CRC34 的 `CRC34_paired/<tid>/{paired,unpaired}/generated_he.png` | 新模型重做 |
 
 **寫入位置的保護**
@@ -560,13 +560,69 @@
 5. **PQ 參考**：Fig 4、`si_threshold_sensitivity`、`si_patient_generalization` 都畫主要和次要兩版。C10 沒有新的 LOO，所以兩版都用舊的 C10 輸入（論文的 cell_masks）。
 6. **檔案**：輸出只寫在新資料夾和替身 `share-space-paper/` 裡。比較頁的新圖放 `compare/a3/`。
 
+**執行結果（2026-11-21）**
+
+作業（全部在 Hyak cheme CPU；沒有用 GPU，所以不需要 Colab 套件；沒有用 Tillicum）：
+
+| 作業 | 內容 | 結果 |
+|---|---|---|
+| 43440886 / 43440941 | 第一版：繪圖第一輪 / tokens 檢查，工作資料夾在 cheme | 我取消。計算節點在 `/gscratch/cheme` 建一個檔要 0.25–1.4 秒（登入節點約 1–3 ms），程序卡在 GPFS 等待 |
+| 43441377 / 43441378 | 改到 `/gscratch/scrubbed` | 失敗：scrubbed 98 % 滿，`Disk quota exceeded` |
+| 43441634 / 43441635 | 回到 cheme 的新資料夾 `w1` | 3 小時後我取消，同樣卡在建檔 |
+| 43443941 | 繪圖第一輪（舊 R²），工作資料夾改成節點本機 `/tmp` | 部分失敗：Fig 4 找不到寫死的字型檔 `/usr/share/fonts/urw-base35/NimbusSans-Regular.otf`；`si_threshold_sensitivity` 的標籤重疊檢查停下（`'Cutoff from C33'` 和 `'Cutoff from C34'`） |
+| 43444018 | 繪圖第一輪重送（修正字型；`si_threshold_sensitivity` 加上 `A3_LAYOUT_LAX`） | 8 個步驟全部成功。裝了 Nimbus Sans 之後重疊檢查沒有觸發，原本的重疊來自替代字型 |
+| 43443943 | 步驟 B + C：tokens 檢查、計時、抽特徵、建目標、探針 | 成功，1 小時 36 分 |
+| 43444703 | 繪圖第二輪（新 R²），多畫 `si_cohort_invariance` | 10 個步驟全部成功，5 分鐘 |
+| 43444704 | 額外檢查（不在事先的決定裡）：UNI 和 CTransPath 用縮減設定（最多 10,000 列、50 輪） | 成功，4 分鐘 |
+
+**偏離紀錄（都要協調者確認，我不能核准）**
+
+1. 工作資料夾：計畫寫 cheme 的 `/gscratch/cheme/chiu/hfv_a3_20261120/`。因為上面的建檔延遲，實際工作都在節點本機 `/tmp/a3*_<job>`，輸出上傳 S3 `figures_rerender/a3/`，cheme 資料夾只放每個作業一個 tar（`out_r2old_b.tar`、`out_r2new.tar`、`dec_results.tar`、`dec_features.tar`、`dec_red_results.tar`）。cheme 的新資料夾規則沒有變。
+2. 字型：Nimbus Sans（URW base35，Regular / Bold / Italic / BoldItalic）從 `github.com/ArtifexSoftware/urw-base35-fonts` 下載到 cheme 資料夾的 `fonts/`。`eval/figrender.py` 的 `A3_FONT_DIR` 把它註冊給 matplotlib，並把 PIL 寫死的路徑轉到這裡。PixCell 程式沒有改。之前的重繪（作業 43427989、追加 1、追加 2）用的是 matplotlib 預設字型。
+3. `A3_LAYOUT_LAX=1`（只用在 `si_threshold_sensitivity`）：重疊檢查改成印出而不是停止。兩輪都沒有觸發。
+4. cb62fa7 的圖和 S3 原圖的設計不同：Fig 4 在 cb62fa7 有 A–F（排名圖拆成 ΔE 和 ΔPQ 兩張），S3 的 `paper_figures` 原圖是 A–E，`compare/old/` 是更早只有 A–B 的版本；`si_threshold_sensitivity` 在 cb62fa7 是 R/N（建議量／不建議）格子，S3 原圖是較早的百分位熱圖。S3 原圖的日期是 2026-09-11。所以比較頁上的差別有一部分來自程式版本，不只是資料。
+5. CPU 數：64 核的要求被拒絕（cheme 節點是 40 核），改成 40 核、170 GB，探針同時跑的數量減少。
+6. 繪圖第二輪多加一個步驟 `fig_si_cohort_invariance`（cb62fa7 有這支程式，讀同一個 a6 JSON），只有新 R² 的版本。
+7. 作業 43444704（縮減設定的 UNI / CTransPath）是看到結果之後才加的檢查，不改變事先選定的設定；見下面第 4(c) 點。
+
+**結果**
+
+- 4(b) tokens：timm 內建前處理（Resize 248 bicubic、CenterCrop 224、平均值和標準差 0.5）重抽的 tokens 和論文的 250 張完全一致：cosine 中位數／最小／最大都是 1.0，相對 L2 誤差中位數 4.2 × 10⁻⁵。`uni-2h/config.json` 的前處理 cosine 中位數只有 0.761。所以用 timm 內建。
+- 計時（40 執行緒，每張秒數）：UNI 0.168、Virchow2 0.141、CTransPath 0.014、ResNet-50 0.011。事先寫好的放置規則：推算抽特徵 0.51 小時 ≤ 剩餘時間 23.88 小時的一半，所以在 Hyak CPU 上做，不需要 Colab L4 套件。實際：C34 的 9,958 張 UNI 花 27 分鐘。
+- 4(a) 舊目標：用 d1fc8a5 從 `orion-crc33.zip` 重建 800 張的舊目標，10 個目標和 S3 的 `mask_targets_T1_spatial.npy` 逐 tile 比對，最大差異 0，NaN 位置完全一致。
+- 4(c) 重現論文的 R²（舊目標、重抽的特徵、論文完整 tile 集合和論文的折）。比較的量是「塊內 R²」（within-tile R²：每張 tile 內 256 塊的預測對真值的 R²，再平均），也就是 Fig 4 的橫軸。表中是 10 個目標和論文差值絕對值的中位數：
+
+  | 編碼器 | 最多 500,000 列 | 最多 50,000 列 | 縮減設定（10,000 列、50 輪；43444704） |
+  |---|---|---|---|
+  | UNI（800 張） | 0.316 | **0.115（規則選這個）** | 0.446 |
+  | CTransPath（800 張） | **0.500（規則選這個；和 50,000 列相同）** | 0.500 | 0.123 |
+  | Virchow2（200 張，縮減設定） | — | — | 0.007 |
+  | ResNet-50（200 張，縮減設定） | — | — | 273（論文本身的值在 −386 到 −20,089 之間，我的在 −343 到 −23,783 之間，同一個量級） |
+
+  - CTransPath 用 7 × 7 格，800 張的訓練列數約 31,000，少於 50,000，所以兩種設定完全一樣；同分時規則選 500,000。
+  - 結論：目標相同（4a）、特徵相同（4b）、折相同（論文的 `cv_splits.json`）、程式是同一個 commit，Virchow2 也幾乎完全重現，但 UNI 和 CTransPath 都沒有重現。唯一沒記錄的是每次最多用幾列訓練。UNI 的論文值落在 50,000 列和 10,000 列之間（例如細胞密度：論文 0.096，50,000 列 0.221，10,000 列 −0.426）；CTransPath 的論文值比較接近 10,000 列。塊內 R² 對訓練列數非常敏感（UNI 的 dead_frac：500,000 列 −0.87，50,000 列 −26.5，10,000 列 −177）。所以 Fig 4 上 R² 的絕對位置取決於一個論文沒有記錄的設定。
+  - 依事先的規則，繪圖第二輪用 UNI 50,000 列、CTransPath 500,000 列。如果協調者要 CTransPath 改用縮減設定（比較接近論文），只影響 `si_channel_decodability_impact` 的 a；結果已經在 S3 `figures_rerender/a3/dec_red/`，沒有拿去重繪。
+- 4(d) 同一批 tile、同一個探針設定，只換目標（舊通道 → 新通道），UNI 715 張、50,000 列：
+  - cancer +0.11 → −1.52，proliferative +0.34 → −0.91（變差）；healthy −0.01 → +0.22，immune −0.36 → −0.08（變好）；cell density、nonproliferative 差不多；vasculature、oxygen、glucose 完全相同（新舊用同一份檔，這是一致性檢查）。
+  - CTransPath、Virchow2、ResNet-50 和縮減設定的 UNI 方向都一樣（cancer 和 proliferative 變差、healthy 和 immune 變好），所以這個方向不受訓練列數影響。
+  - 原因在目標本身：新的 CRC33 通道在這 715 張裡只有 9 % 的 tile 有 cancer 細胞（舊的 87 %），平均 cancer 比例 0.015（舊 0.177）；有 proliferative 細胞的 tile 是 28 %（舊 56 %）。目標在大多數 tile 裡全是 0，塊內 R² 就由少數 tile 決定，所以變得很負。
+- C34（新通道，9,958 張，500,000 列，和論文同一個指令）對論文（舊通道，10,000 張）：cell density 0.52 對 0.55、cancer 0.24 對 0.24、healthy 0.20 對 0.21、immune 0.30 對 0.17、proliferative 0.26 對 0.23、nonproliferative 0.33 對 0.31、oxygen −1.40 對 −1.66、glucose −1.08 對 −1.22。C34 的論文設定有寫在計畫文件裡，所以這裡差異小。
+- 圖上看得到的改變：
+  - Fig 4b（主要參考，新 R² 對舊 R²）：C33 的 cancer 和 proliferative 移到很負的 R²（cancer 在折斷軸的左段）。
+  - `si_threshold_sensitivity`（主要參考，新 R² 對舊 R²）：a 只剩 oxygen（healthy 消失）；b 的 vasculature 只在 C33 的門檻下建議量（30–60 百分位），原本 C33 和 C34 都建議。
+  - `si_cohort_invariance` 和 Fig 4e、f 的 ρ（三個世代之間 impact 排名的相關）只看 LOO，和 R² 無關。新模型的 ΔPQ 排名：C34 對 C33 是 0.88、C10 對 C33 是 0.58（論文原圖 0.97、0.83）。C10 仍是舊模型的 LOO，所以 C10 那一項是新舊模型混在一起比。
+  - `si_patient_generalization` 不用 R²，兩輪的圖逐位元相同。PQ 和 DICE 都比論文原圖低很多（CRC33 paired PQ：主要參考 0.25、次要參考 0.33，原圖 0.81）。原圖的 JSON 由哪支程式產生不明，所以它的計分方式查不到。
+- raw MX（`t2_spatial`）：輸入和細胞通道無關，建議分類改成「不變」，待協調者確認。
+- 從 S3 讀到 Hyak 的量（都是自己的 bucket，不需要核准）：`orion-crc33.zip` 5.19 GB × 最多 4 次（B 的四次嘗試）；`new_exp_channels_crc33_01.tar` 0.21 GB 和 `decodability_cpu_bundle.tgz` 0.18 GB，各最多 4 次；繪圖輸入（評估輸出 tar 3.52 GB + evalpack 2.24 GB）約 5.8 GB × 最多 6 次；小檔（CSV、折、程式）可忽略。總共最多約 60 GB。C34 的輸入從 Hyak 本地讀。
+- 輸出：S3 `hfv_retrain_20261118/figures_rerender/a3/{r2old_b,r2new,dec,dec_red}/`；比較頁的圖在 `compare/a3/{orig,r2old,r2new}/`。
+
 ### 尚未完成
 
 - 論文 figure 重繪（作業 43427989，2026-11-20 12:00–12:59）：6 個步驟中 5 個成功，重繪的檔案在 S3 `figures_rerender/`（清單 `rendered.txt`）：Fig 2（`concat/fig2_architecture_performance.png`）、`si/ablation_grids_combined.png`、`si/si_performance_ranking.png`、`si/si_qualitative_variants.png`、`si/si_training_stability.png`、`individual/ablation_analysis/05_paired_ablation_grid.png`。
   - Fig 3 在這次（作業 43427989）失敗：右欄要讀的 `results/a4_uni_probe/specificity_full.csv` 不在 S3 的舊結果裡。已在追加 1 用新模型重跑 a4 掃描後重繪（見「追加 1」）。
-  - `SI_A1_A2_unified.png` 這個步驟（`fig_si_a1_a2_unified`）跑完沒有錯誤，但沒有寫出這個檔名，只寫了 `si_training_stability.png` 和 `si_qualitative_variants.png`。
-  - 節點上沒有 `Nimbus Sans` 字型，matplotlib 改用預設字型（字體和論文原圖不同，內容不受影響）。
+  - `SI_A1_A2_unified.png` 這個步驟（`fig_si_a1_a2_unified`）跑完沒有錯誤，但沒有寫出這個檔名，只寫了 `si_training_stability.png` 和 `si_qualitative_variants.png`。追加 3 查明：這是 PixCell 20d542e 的改名和拆分，不是失敗；比較頁改成把論文的 `si_training_stability.png` 和這次的並排。
+  - 節點上沒有 `Nimbus Sans` 字型，matplotlib 改用預設字型（字體和論文原圖不同，內容不受影響）。追加 3 的圖已改用從 URW 下載的 Nimbus Sans（見追加 3 偏離紀錄第 2 點）；這一批沒有重畫。
   - Fig 2b 四條訓練 loss 曲線幾乎重疊：四次訓練用同一個 seed 和同樣的批次順序，每 50 步記錄的是單一批次的 loss，所以批次之間的起伏主導曲線。各次的數值確實不同（例如第 6500 步：Concat 0.0901、Per-channel 0.0917、Grouped 和 bypass 都是 0.0930），不是同一個檔案讀了四次。
   - Fig 2 的 D、E、G 是 PixCell 原本的計分（參考 = Lin 輸入遮罩，也就是本文的次要 PQ），程式沒有改。用主要參考的版本見「追加 2」。
-- 本機比較頁：`compare/index.html`（原圖在 `compare/old/`，重繪在 `compare/new/`；只在本機，不發佈）。
-- 規則 6 的可解碼性：沒有重做（舊通道的輸入）。`si_threshold_sensitivity`、`si_patient_generalization`：待定（原檔只在論文 repo）。
+- 本機比較頁：`compare/index.html`（原圖在 `compare/old/`，重繪在 `compare/new/`，追加 3 的圖在 `compare/a3/`；只在本機，不發佈）。
+- 規則 6 的可解碼性、Fig 4、a6、`si_channel_decodability_impact`、`si_threshold_sensitivity`、`si_patient_generalization`、`si_cohort_invariance`：追加 3 已完成（見「追加 3」執行結果）。仍是舊輸入的：C10 的 LOO 和 R²（沒有重建的資料）、raw MX 的 R²（建議改成「不變」，待確認）。待協調者決定：追加 3 偏離紀錄 1–7，以及 CTransPath 要不要改用縮減設定。

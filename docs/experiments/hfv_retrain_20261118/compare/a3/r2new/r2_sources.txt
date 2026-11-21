@@ -1,0 +1,7 @@
+uni_16 new /tmp/a3_43444703/r2/uni_16
+virchow2_16 new /tmp/a3_43444703/r2/virchow2_16
+ctranspath_07 new /tmp/a3_43444703/r2/ctranspath_07
+resnet50_07 new /tmp/a3_43444703/r2/resnet50_07
+t2_spatial old /tmp/a3_43444703/inputs/old/results/a1_probe_mlp_spatial/t2_spatial
+uni_16_crc34 new /tmp/a3_43444703/r2/uni_16_crc34
+uni_16_crc10 old /tmp/a3_43444703/inputs/old/results/a1_probe_mlp_spatial/uni_16_crc10

@@ -96,6 +96,9 @@ for ref in pri sec; do
   ln -sfn $T/loo_crc34eval $R/inference_output/subchannel_loo_n300_crc34
   stamp=$O/.stamp_$ref; touch $stamp; sleep 1
   step a6_$ref src.a6_cohort_invariance && cp $P/figures/data/cohort_invariance_metrics.json $R/results/a6_cohort_invariance/
+  # si_cohort_invariance (reads results/a6_cohort_invariance/cohort_invariance_metrics.json); added after stage 1, so r2old
+  # has no coh step
+  step coh_$ref src.paper_figures.fig_si_cohort_invariance
   step fig4_$ref src.paper_figures.fig_combined_per_channel
   A3_LAYOUT_LAX=1 step thr_$ref src.paper_figures.fig_si_threshold_sensitivity   # label-overlap guard stopped r2old (43443941)
   if [ $ref = pri ]; then A=$I/realref/abl_crc33sec; Z=$I/realref/crc34_crc34eval; else A=$I/scoreres/abl_crc33sec; Z=$I/scoreres/crc34_crc34eval; fi
