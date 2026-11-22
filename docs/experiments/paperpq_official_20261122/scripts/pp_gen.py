@@ -25,6 +25,7 @@ a = argparse.ArgumentParser()
 for k in ("pixcell", "work", "root", "ids", "d"):
     a.add_argument(f"--{k}", required=True)
 a.add_argument("--family", required=True, choices=["P", "R"])
+a.add_argument("--ck", default=None, help="checkpoint folder (Colab): P -> CK/<variant>/step_0002600 (+ CK/a1_per_channel/config.py); R -> CK/<tr_run>/step_*")
 A = a.parse_args()
 P, W, ROOT, IDS, D = (Path(getattr(A, k)).resolve() for k in ("pixcell", "work", "root", "ids", "d"))
 PY = sys.executable
@@ -35,11 +36,12 @@ REL = {  # build_cache.py INFERENCE_VARIANTS ckpt_dir per variant
     "a2_bypass_full_tme": "checkpoints/a2_a3/a2_bypass/full_seed_42/checkpoint/step_0002600",
 }
 if A.family == "P":
-    CK = {v: D / "in/ck" / v / "step_0002600" for v in REL}
-    PERCH_CFG = D / "in/ck/a1_per_channel/config.py"
+    CKD = Path(A.ck) if A.ck else D / "in/ck"
+    CK = {v: CKD / v / "step_0002600" for v in REL}
+    PERCH_CFG = CKD / "a1_per_channel/config.py"
     VARIANTS = ["a1_concat", "production", "a2_bypass_full_tme", "a1_per_channel", "a2_off_shelf"]
 else:
-    E = Path("/gscratch/cheme/chiu/hfv_eval_20261118/ck/infer_e20")
+    E = Path(A.ck) if A.ck else Path("/gscratch/cheme/chiu/hfv_eval_20261118/ck/infer_e20")
     run = {"a1_concat": "tr_concat", "production": "tr_grouped", "a1_per_channel": "tr_perch", "a2_bypass_full_tme": "tr_bypass"}
     CK = {}
     for v, r in run.items():
