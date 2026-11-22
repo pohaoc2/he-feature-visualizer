@@ -1,7 +1,9 @@
 """hfv_retrain2 stage 3 (PREREG §9.3, arm ND): copy of sim-exp-validation scripts/analysis/sim2real_apps/app8_gen_k.py
 (app 8 / 9 / 10 generation path, unchanged) with two edits only: the row count comes from the design file (app8_gen_k.py
 requires exactly 1152 rows) and each row names its reference tensor (ref_key) instead of the app-8 root -> __k / __e
-rule. Design file: KIN/design.json. Everything else (models, scheduler, guidance 2.5, 20 steps, seeds, mask latent from
+rule. Third edit (2026-11-21, ch6 ablation, sim-exp-validation prereg_ch6_ablation.md): design.json may set
+"loader": "sim" (PixCell load_sim_channels, no mirror padding of the non-binary channels, the PixCell loader for
+simulation inputs); default and every retrain-2 / app row = load_exp_channels as before. Design file: KIN/design.json. Everything else (models, scheduler, guidance 2.5, 20 steps, seeds, mask latent from
 ctrl, gates, outputs) is app8_gen_k.py's.
 
   python r2_gen.py PIXCELL CK KIN OUT
@@ -53,7 +55,7 @@ import torch  # noqa: E402
 from PIL import Image  # noqa: E402
 from diffusion.utils.misc import read_config  # noqa: E402
 from tools.stage3.common import make_inference_scheduler  # noqa: E402
-from tools.stage3.tile_pipeline import generate_from_ctrl, load_all_models, load_exp_channels  # noqa: E402
+from tools.stage3.tile_pipeline import generate_from_ctrl, load_all_models, load_exp_channels, load_sim_channels  # noqa: E402
 
 config = read_config(CFG)
 config._filename = CFG
@@ -62,6 +64,8 @@ if getattr(config, "tme_input_mode", None) != "all_channels" or list(config.data
 design = json.loads((KIN / "design.json").read_text())
 rows = design["rows"]
 NR = int(design["n_rows"])
+LOAD = {"exp": load_exp_channels, "sim": load_sim_channels}[design.get("loader", "exp")]
+print(f"loader {LOAD.__name__}", flush=True)
 if len(rows) != NR or len({r["id"] for r in rows}) != NR:
     stop("design rows")
 ref = np.load(KIN / "ref.npz")
@@ -71,7 +75,7 @@ for r in rows:
     key = (r["root"], r["tile"])
     if key in ctrl:
         continue
-    c = load_exp_channels(r["tile"], config.data.active_channels, config.image_size,
+    c = LOAD(r["tile"], config.data.active_channels, config.image_size,
                           KIN / "roots" / r["root"] / "exp_channels")
     want = torch.from_numpy(ref[r["ref_key"]])
     if c.dtype != want.dtype or not torch.equal(c, want):

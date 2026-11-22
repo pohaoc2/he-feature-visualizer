@@ -1,5 +1,5 @@
 """hfv_retrain2 stage 3 (PREREG §9.1, §9.3) Colab L4: one-day presigned links for the model-N jobs that are not app 10
-(r2A: arm ND, 384 images; r2B: Fig 2 Concat on crc36ho 300 + crc33sec 100). Each session normally runs right after an
+(c6A / r2B: the ch6 ablation halves; r2B also arm ND, 384 images, and Fig 2 Concat on crc36ho 300 + crc33sec 100). Each session normally runs right after an
 app-10 session in the same runtime (r2_boot.sh reuses /content/hfvk2). Needs boto3 and this machine's AWS login; links
 are never committed or printed (written mode 600 into OUT, outside git). Link helpers = sim-exp-validation
 scripts/colab/app7_presign.py (bucket, 2026-11-11 bundle prefix BP).
@@ -32,7 +32,11 @@ assert A7.RP == RP
 HP = "pohao/hfv_retrain_20261118/"
 IP = "pohao/hfv_retrain2_20261121/stage3/inputs/"
 K2 = "pohao/sim-exp-validation/colab/sim2real-app10-20261121/infer_tr_concat2_e20.tar"
-SESS = {"r2A": ["r2gen:r2ND"], "r2B": ["fig2c:crc36ho", "fig2c:crc33sec"]}
+# 2026-11-21 ch6 ablation first (sim-exp-validation prereg_ch6_ablation.md): each session runs one half of it; session B
+# then runs the retrain-2 stage-3 jobs (independent of the ablation). App 10 waits for the ablation's rule.
+SESS = {"c6A": ["r2gen:ch6a"], "r2B": ["r2gen:ch6b", "r2gen:r2ND", "fig2c:crc36ho", "fig2c:crc33sec"]}
+KINP = {"r2ND": IP, "ch6a": "pohao/sim-exp-validation/colab/sim2real-ch6-20261121/inputs/",
+        "ch6b": "pohao/sim-exp-validation/colab/sim2real-ch6-20261121/inputs/"}
 LISTS = {"crc36ho": "crc36ho_p300_ids.txt", "crc33sec": "crc33sec_fig2_ids.txt"}
 
 
@@ -67,7 +71,7 @@ def main():
         for j in SESS[tag]:
             kind, name = j.split(":")
             if kind == "r2gen":
-                keys[f"kin_{name}.tar"] = IP + f"kin_{name}.tar"
+                keys[f"kin_{name}.tar"] = KINP[name] + f"kin_{name}.tar"
             else:
                 keys[f"evalpackN_{name}.tar"] = IP + f"evalpackN_{name}.tar"
                 keys[f"list_{name}.txt"] = IP + LISTS[name]
