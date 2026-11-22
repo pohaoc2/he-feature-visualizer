@@ -9,7 +9,9 @@ Readouts (mask_truenuc_20261122 truenuc.py pix(), copied): hod = rgb2hed hematox
   t16 = 0.02243768021416608 (rule t); tS = stage-1 Youden t of the slide (crc36ho / crc33sec, sensitivity)
   descriptive: auc = compare.nucleus_auc(hod, fg); hmean = mean(hod); frac = |fg| / size
 Gates: zip sha256 == cellvit_official zips_manifest.json; tile ids equal across the five zips and retgt_<set>;
-R0 cell_masks == evalpack_<set>.tar cell_masks (pixels); truenuc real-H&E-vs-L1 a/b/c (t16) reproduced on 8 CRC16 tiles.
+R0 cell_masks == evalpack_<set>.tar cell_masks (pixels); truenuc real-H&E-vs-L1 a/b/c (t16) reproduced on 8 CRC16 tiles
+(float32 hematoxylin as truenuc part A; readouts here use float64 as truenuc part B; job 43466429 STOPPED on a float64
+comparison, max diff 2.6e-9).
 """
 import csv
 import hashlib
@@ -152,18 +154,26 @@ def main(out, nproc):
     # gate 4: hematoxylin code path reproduces truenuc (real H&E vs L1, t16) on 8 CRC16 tiles
     cfg = json.load(open(TN / "cfg.json"))
     rows = list(csv.DictReader(open(TN / "tiles.csv")))[:8]
-    md = 0.0
+    # truenuc part A evaluated pix() on hod.astype(float32) (tile_one returns float32); its part B (generated images)
+    # and this script use float64. The gate replicates part A exactly (float32); the float64 difference is reported.
+    md, md64 = 0.0, 0.0
     for r in rows:
         t = r["tile"]
         he = np.asarray(Image.open(Path(cfg["he"]) / f"{t}.png").convert("RGB"))
         fg = png_bin(np.asarray(Image.open(Path(cfg["l1"]) / f"{t}.png")))
-        got = pix(hema(he), fg, T16)
-        for x, key in zip(got, ("a", "b", "c")):
-            md = max(md, abs(x - float(r[f"L1_{key}_t16"])))
+        h64 = hema(he)
+        for got, acc in ((pix(h64.astype(np.float32), fg, T16), "32"), (pix(h64, fg, T16), "64")):
+            for x, key in zip(got, ("a", "b", "c")):
+                d = abs(x - float(r[f"L1_{key}_t16"]))
+                if acc == "32":
+                    md = max(md, d)
+                else:
+                    md64 = max(md64, d)
     if not md <= 1e-9:
-        stop(f"truenuc reproduction max diff {md}")
-    info["gates"]["truenuc_repro_maxdiff"] = md
-    print("gate truenuc reproduction ok", md, flush=True)
+        stop(f"truenuc reproduction (float32, as truenuc part A) max diff {md}; float64 {md64}")
+    info["gates"]["truenuc_repro_maxdiff_float32"] = md
+    info["gates"]["truenuc_repro_maxdiff_float64"] = md64
+    print("gate truenuc reproduction ok", md, "float64 diff", md64, flush=True)
     # readouts
     for k, s in SETS.items():
         with mp.get_context("fork").Pool(int(nproc)) as p:
