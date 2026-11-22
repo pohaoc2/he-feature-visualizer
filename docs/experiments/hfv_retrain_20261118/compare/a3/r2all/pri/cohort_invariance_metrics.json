@@ -1,0 +1,424 @@
+{
+  "cohorts": {
+    "C10": {
+      "cell_state_dead": {
+        "delta_e": 0.002,
+        "delta_pq": 1e-05,
+        "delta_pq_sem": 1e-05,
+        "r2": -0.1708785145444441,
+        "r2_sd": 0.0151611414935552
+      },
+      "cell_state_nonprolif": {
+        "delta_e": 1.6241,
+        "delta_pq": 0.045043,
+        "delta_pq_sem": 0.002364,
+        "r2": 0.2620544715948091,
+        "r2_sd": 0.0170414721487843
+      },
+      "cell_state_prolif": {
+        "delta_e": 0.6117,
+        "delta_pq": 0.006179,
+        "delta_pq_sem": 0.001193,
+        "r2": 0.1580758886901396,
+        "r2_sd": 0.0224775145429896
+      },
+      "cell_type_cancer": {
+        "delta_e": 0.131,
+        "delta_pq": 0.002133,
+        "delta_pq_sem": 0.000803,
+        "r2": 0.3394562780041983,
+        "r2_sd": 0.0231583943985166
+      },
+      "cell_type_healthy": {
+        "delta_e": 0.9901,
+        "delta_pq": 0.026437,
+        "delta_pq_sem": 0.002034,
+        "r2": 0.248706916606579,
+        "r2_sd": 0.0019062228862724
+      },
+      "cell_type_immune": {
+        "delta_e": 1.4844,
+        "delta_pq": 0.019565,
+        "delta_pq_sem": 0.001871,
+        "r2": 0.1643170078183699,
+        "r2_sd": 0.0060723093589909
+      },
+      "glucose": {
+        "delta_e": 3.4412,
+        "delta_pq": 0.026173,
+        "delta_pq_sem": 0.001714,
+        "r2": -1.080663911855007,
+        "r2_sd": 0.1136698849207578
+      },
+      "oxygen": {
+        "delta_e": 1.4565,
+        "delta_pq": 0.015935,
+        "delta_pq_sem": 0.00134,
+        "r2": -1.4694389001835866,
+        "r2_sd": 0.1521109825330479
+      },
+      "vasculature": {
+        "delta_e": 1.6285,
+        "delta_pq": 9.6e-05,
+        "delta_pq_sem": 0.001388,
+        "r2": -1.2827385636135489,
+        "r2_sd": 0.0046343841449671
+      }
+    },
+    "C33": {
+      "cell_state_dead": {
+        "delta_e": 0.003,
+        "delta_pq": 1.8e-05,
+        "delta_pq_sem": 3.4e-05,
+        "r2": -0.6423900640490834,
+        "r2_sd": 0.5320386610051746
+      },
+      "cell_state_nonprolif": {
+        "delta_e": 0.8908,
+        "delta_pq": 0.018559,
+        "delta_pq_sem": 0.003109,
+        "r2": 0.3680448696739801,
+        "r2_sd": 0.0315204892825893
+      },
+      "cell_state_prolif": {
+        "delta_e": 0.0328,
+        "delta_pq": 7e-05,
+        "delta_pq_sem": 0.000246,
+        "r2": -0.2568201685655025,
+        "r2_sd": 0.0986508341638817
+      },
+      "cell_type_cancer": {
+        "delta_e": 0.0188,
+        "delta_pq": 0.000135,
+        "delta_pq_sem": 0.00027,
+        "r2": -0.4043478697157209,
+        "r2_sd": 0.1983196166177983
+      },
+      "cell_type_healthy": {
+        "delta_e": 0.8139,
+        "delta_pq": 0.011325,
+        "delta_pq_sem": 0.004439,
+        "r2": 0.2870582810033403,
+        "r2_sd": 0.0278163028963909
+      },
+      "cell_type_immune": {
+        "delta_e": 0.2724,
+        "delta_pq": 0.002561,
+        "delta_pq_sem": 0.001332,
+        "r2": 0.110986825922216,
+        "r2_sd": 0.0601160059599795
+      },
+      "glucose": {
+        "delta_e": 3.6161,
+        "delta_pq": 0.052985,
+        "delta_pq_sem": 0.007566,
+        "r2": 0.071604519369415,
+        "r2_sd": 0.1457738151844093
+      },
+      "oxygen": {
+        "delta_e": 2.6695,
+        "delta_pq": 0.031081,
+        "delta_pq_sem": 0.003282,
+        "r2": -0.044151620323284,
+        "r2_sd": 0.1502079142886249
+      },
+      "vasculature": {
+        "delta_e": 4.1805,
+        "delta_pq": 0.017905,
+        "delta_pq_sem": 0.004947,
+        "r2": -0.2758873446560352,
+        "r2_sd": 0.0941806511804877
+      }
+    },
+    "C34": {
+      "cell_state_dead": {
+        "delta_e": 0.0163,
+        "delta_pq": 6.2e-05,
+        "delta_pq_sem": 7.2e-05,
+        "r2": -0.089903071556278,
+        "r2_sd": 0.0278854513975465
+      },
+      "cell_state_nonprolif": {
+        "delta_e": 1.2264,
+        "delta_pq": 0.013214,
+        "delta_pq_sem": 0.002291,
+        "r2": 0.3621400473327918,
+        "r2_sd": 0.0045066178574399
+      },
+      "cell_state_prolif": {
+        "delta_e": 0.534,
+        "delta_pq": 0.002952,
+        "delta_pq_sem": 0.001122,
+        "r2": 0.263105769151731,
+        "r2_sd": 0.0178025897542056
+      },
+      "cell_type_cancer": {
+        "delta_e": 0.4238,
+        "delta_pq": 0.003412,
+        "delta_pq_sem": 0.001336,
+        "r2": 0.2422200018686068,
+        "r2_sd": 0.028385048865206
+      },
+      "cell_type_healthy": {
+        "delta_e": 0.739,
+        "delta_pq": 0.007135,
+        "delta_pq_sem": 0.001764,
+        "r2": 0.1965787876317113,
+        "r2_sd": 0.0096123560091662
+      },
+      "cell_type_immune": {
+        "delta_e": 1.1098,
+        "delta_pq": 0.003333,
+        "delta_pq_sem": 0.001543,
+        "r2": 0.3088081678125088,
+        "r2_sd": 0.0065192136983828
+      },
+      "glucose": {
+        "delta_e": 2.7421,
+        "delta_pq": 0.019949,
+        "delta_pq_sem": 0.004267,
+        "r2": -1.0397995347283455,
+        "r2_sd": 0.0328227732744147
+      },
+      "oxygen": {
+        "delta_e": 2.0078,
+        "delta_pq": 0.013789,
+        "delta_pq_sem": 0.003954,
+        "r2": -1.33051381376258,
+        "r2_sd": 0.0109585930290278
+      },
+      "vasculature": {
+        "delta_e": 3.8865,
+        "delta_pq": 0.034147,
+        "delta_pq_sem": 0.006452,
+        "r2": -0.0255119852917612,
+        "r2_sd": 0.0418322590263877
+      }
+    }
+  },
+  "impact_thresholds": {
+    "C10": 0.015935,
+    "C33": 0.011325,
+    "C34": 0.007135
+  },
+  "quadrants": {
+    "C10": {
+      "cell_state_dead": "uninformative",
+      "cell_state_nonprolif": "redundant",
+      "cell_state_prolif": "dispensable",
+      "cell_type_cancer": "dispensable",
+      "cell_type_healthy": "redundant",
+      "cell_type_immune": "redundant",
+      "glucose": "measure",
+      "oxygen": "uninformative",
+      "vasculature": "uninformative"
+    },
+    "C33": {
+      "cell_state_dead": "uninformative",
+      "cell_state_nonprolif": "redundant",
+      "cell_state_prolif": "uninformative",
+      "cell_type_cancer": "uninformative",
+      "cell_type_healthy": "dispensable",
+      "cell_type_immune": "dispensable",
+      "glucose": "redundant",
+      "oxygen": "measure",
+      "vasculature": "measure"
+    },
+    "C34": {
+      "cell_state_dead": "uninformative",
+      "cell_state_nonprolif": "redundant",
+      "cell_state_prolif": "dispensable",
+      "cell_type_cancer": "dispensable",
+      "cell_type_healthy": "dispensable",
+      "cell_type_immune": "dispensable",
+      "glucose": "measure",
+      "oxygen": "measure",
+      "vasculature": "measure"
+    }
+  },
+  "rank_stability_delta_e": {
+    "C10": 0.9,
+    "C34": 0.9833333333333333
+  },
+  "rank_stability_delta_pq": {
+    "C10": 0.5833333333333334,
+    "C34": 0.8833333333333333
+  },
+  "table": {
+    "cell_state_dead": {
+      "C10_delta_e": 0.002,
+      "C10_delta_pq": 1e-05,
+      "C10_delta_pq_sem": 1e-05,
+      "C10_r2": -0.1708785145,
+      "C10_r2_sd": 0.0151611415,
+      "C33_delta_e": 0.003,
+      "C33_delta_pq": 1.8e-05,
+      "C33_delta_pq_sem": 3.4e-05,
+      "C33_r2": -0.642390064,
+      "C33_r2_sd": 0.532038661,
+      "C34_delta_e": 0.0163,
+      "C34_delta_pq": 6.2e-05,
+      "C34_delta_pq_sem": 7.2e-05,
+      "C34_r2": -0.0899030716,
+      "C34_r2_sd": 0.0278854514,
+      "decod_spread": 0.5524869925,
+      "impact_spread": 5.2e-05
+    },
+    "cell_state_nonprolif": {
+      "C10_delta_e": 1.6241,
+      "C10_delta_pq": 0.045043,
+      "C10_delta_pq_sem": 0.002364,
+      "C10_r2": 0.2620544716,
+      "C10_r2_sd": 0.0170414721,
+      "C33_delta_e": 0.8908,
+      "C33_delta_pq": 0.018559,
+      "C33_delta_pq_sem": 0.003109,
+      "C33_r2": 0.3680448697,
+      "C33_r2_sd": 0.0315204893,
+      "C34_delta_e": 1.2264,
+      "C34_delta_pq": 0.013214,
+      "C34_delta_pq_sem": 0.002291,
+      "C34_r2": 0.3621400473,
+      "C34_r2_sd": 0.0045066179,
+      "decod_spread": 0.1059903981,
+      "impact_spread": 0.031829
+    },
+    "cell_state_prolif": {
+      "C10_delta_e": 0.6117,
+      "C10_delta_pq": 0.006179,
+      "C10_delta_pq_sem": 0.001193,
+      "C10_r2": 0.1580758887,
+      "C10_r2_sd": 0.0224775145,
+      "C33_delta_e": 0.0328,
+      "C33_delta_pq": 7e-05,
+      "C33_delta_pq_sem": 0.000246,
+      "C33_r2": -0.2568201686,
+      "C33_r2_sd": 0.0986508342,
+      "C34_delta_e": 0.534,
+      "C34_delta_pq": 0.002952,
+      "C34_delta_pq_sem": 0.001122,
+      "C34_r2": 0.2631057692,
+      "C34_r2_sd": 0.0178025898,
+      "decod_spread": 0.5199259377,
+      "impact_spread": 0.006109
+    },
+    "cell_type_cancer": {
+      "C10_delta_e": 0.131,
+      "C10_delta_pq": 0.002133,
+      "C10_delta_pq_sem": 0.000803,
+      "C10_r2": 0.339456278,
+      "C10_r2_sd": 0.0231583944,
+      "C33_delta_e": 0.0188,
+      "C33_delta_pq": 0.000135,
+      "C33_delta_pq_sem": 0.00027,
+      "C33_r2": -0.4043478697,
+      "C33_r2_sd": 0.1983196166,
+      "C34_delta_e": 0.4238,
+      "C34_delta_pq": 0.003412,
+      "C34_delta_pq_sem": 0.001336,
+      "C34_r2": 0.2422200019,
+      "C34_r2_sd": 0.0283850489,
+      "decod_spread": 0.7438041477,
+      "impact_spread": 0.003277
+    },
+    "cell_type_healthy": {
+      "C10_delta_e": 0.9901,
+      "C10_delta_pq": 0.026437,
+      "C10_delta_pq_sem": 0.002034,
+      "C10_r2": 0.2487069166,
+      "C10_r2_sd": 0.0019062229,
+      "C33_delta_e": 0.8139,
+      "C33_delta_pq": 0.011325,
+      "C33_delta_pq_sem": 0.004439,
+      "C33_r2": 0.287058281,
+      "C33_r2_sd": 0.0278163029,
+      "C34_delta_e": 0.739,
+      "C34_delta_pq": 0.007135,
+      "C34_delta_pq_sem": 0.001764,
+      "C34_r2": 0.1965787876,
+      "C34_r2_sd": 0.009612356,
+      "decod_spread": 0.0904794934,
+      "impact_spread": 0.019302
+    },
+    "cell_type_immune": {
+      "C10_delta_e": 1.4844,
+      "C10_delta_pq": 0.019565,
+      "C10_delta_pq_sem": 0.001871,
+      "C10_r2": 0.1643170078,
+      "C10_r2_sd": 0.0060723094,
+      "C33_delta_e": 0.2724,
+      "C33_delta_pq": 0.002561,
+      "C33_delta_pq_sem": 0.001332,
+      "C33_r2": 0.1109868259,
+      "C33_r2_sd": 0.060116006,
+      "C34_delta_e": 1.1098,
+      "C34_delta_pq": 0.003333,
+      "C34_delta_pq_sem": 0.001543,
+      "C34_r2": 0.3088081678,
+      "C34_r2_sd": 0.0065192137,
+      "decod_spread": 0.1978213419,
+      "impact_spread": 0.017004
+    },
+    "glucose": {
+      "C10_delta_e": 3.4412,
+      "C10_delta_pq": 0.026173,
+      "C10_delta_pq_sem": 0.001714,
+      "C10_r2": -1.0806639119,
+      "C10_r2_sd": 0.1136698849,
+      "C33_delta_e": 3.6161,
+      "C33_delta_pq": 0.052985,
+      "C33_delta_pq_sem": 0.007566,
+      "C33_r2": 0.0716045194,
+      "C33_r2_sd": 0.1457738152,
+      "C34_delta_e": 2.7421,
+      "C34_delta_pq": 0.019949,
+      "C34_delta_pq_sem": 0.004267,
+      "C34_r2": -1.0397995347,
+      "C34_r2_sd": 0.0328227733,
+      "decod_spread": 1.1522684312,
+      "impact_spread": 0.033036
+    },
+    "oxygen": {
+      "C10_delta_e": 1.4565,
+      "C10_delta_pq": 0.015935,
+      "C10_delta_pq_sem": 0.00134,
+      "C10_r2": -1.4694389002,
+      "C10_r2_sd": 0.1521109825,
+      "C33_delta_e": 2.6695,
+      "C33_delta_pq": 0.031081,
+      "C33_delta_pq_sem": 0.003282,
+      "C33_r2": -0.0441516203,
+      "C33_r2_sd": 0.1502079143,
+      "C34_delta_e": 2.0078,
+      "C34_delta_pq": 0.013789,
+      "C34_delta_pq_sem": 0.003954,
+      "C34_r2": -1.3305138138,
+      "C34_r2_sd": 0.010958593,
+      "decod_spread": 1.4252872799,
+      "impact_spread": 0.017292
+    },
+    "vasculature": {
+      "C10_delta_e": 1.6285,
+      "C10_delta_pq": 9.6e-05,
+      "C10_delta_pq_sem": 0.001388,
+      "C10_r2": -1.2827385636,
+      "C10_r2_sd": 0.0046343841,
+      "C33_delta_e": 4.1805,
+      "C33_delta_pq": 0.017905,
+      "C33_delta_pq_sem": 0.004947,
+      "C33_r2": -0.2758873447,
+      "C33_r2_sd": 0.0941806512,
+      "C34_delta_e": 3.8865,
+      "C34_delta_pq": 0.034147,
+      "C34_delta_pq_sem": 0.006452,
+      "C34_r2": -0.0255119853,
+      "C34_r2_sd": 0.041832259,
+      "decod_spread": 1.2572265783,
+      "impact_spread": 0.034051
+    }
+  },
+  "thresholds": {
+    "impact": null,
+    "r2": 0.0
+  }
+}

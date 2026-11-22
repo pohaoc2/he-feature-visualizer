@@ -1,0 +1,1074 @@
+{
+ "rows": {
+  "probe/uni_new715_r500000": {
+   "targets": "new16_715",
+   "cv": "cv/cv_uni_16_kept.json",
+   "cap": 500000,
+   "n_patches": 256,
+   "max_finite_train_rows": 149504,
+   "min_finite_train_rows": 143616,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 146944,
+     "cancer_frac": 146944,
+     "healthy_frac": 146944,
+     "immune_frac": 146944,
+     "prolif_frac": 146944,
+     "nonprolif_frac": 146944,
+     "dead_frac": 146944,
+     "vasculature_frac": 146944,
+     "oxygen_mean": 146944,
+     "glucose_mean": 146944
+    },
+    {
+     "cell_density": 143616,
+     "cancer_frac": 143616,
+     "healthy_frac": 143616,
+     "immune_frac": 143616,
+     "prolif_frac": 143616,
+     "nonprolif_frac": 143616,
+     "dead_frac": 143616,
+     "vasculature_frac": 143616,
+     "oxygen_mean": 143616,
+     "glucose_mean": 143616
+    },
+    {
+     "cell_density": 144640,
+     "cancer_frac": 144640,
+     "healthy_frac": 144640,
+     "immune_frac": 144640,
+     "prolif_frac": 144640,
+     "nonprolif_frac": 144640,
+     "dead_frac": 144640,
+     "vasculature_frac": 144640,
+     "oxygen_mean": 144640,
+     "glucose_mean": 144640
+    },
+    {
+     "cell_density": 149504,
+     "cancer_frac": 149504,
+     "healthy_frac": 149504,
+     "immune_frac": 149504,
+     "prolif_frac": 149504,
+     "nonprolif_frac": 149504,
+     "dead_frac": 149504,
+     "vasculature_frac": 149504,
+     "oxygen_mean": 149504,
+     "glucose_mean": 149504
+    },
+    {
+     "cell_density": 147456,
+     "cancer_frac": 147456,
+     "healthy_frac": 147456,
+     "immune_frac": 147456,
+     "prolif_frac": 147456,
+     "nonprolif_frac": 147456,
+     "dead_frac": 147456,
+     "vasculature_frac": 147456,
+     "oxygen_mean": 147456,
+     "glucose_mean": 147456
+    }
+   ]
+  },
+  "probe/ctp_new715_r500000": {
+   "targets": "new7_715",
+   "cv": "cv/cv_ctranspath_07_kept.json",
+   "cap": 500000,
+   "n_patches": 49,
+   "max_finite_train_rows": 28616,
+   "min_finite_train_rows": 27489,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 28126,
+     "cancer_frac": 28126,
+     "healthy_frac": 28126,
+     "immune_frac": 28126,
+     "prolif_frac": 28126,
+     "nonprolif_frac": 28126,
+     "dead_frac": 28126,
+     "vasculature_frac": 28126,
+     "oxygen_mean": 28126,
+     "glucose_mean": 28126
+    },
+    {
+     "cell_density": 27489,
+     "cancer_frac": 27489,
+     "healthy_frac": 27489,
+     "immune_frac": 27489,
+     "prolif_frac": 27489,
+     "nonprolif_frac": 27489,
+     "dead_frac": 27489,
+     "vasculature_frac": 27489,
+     "oxygen_mean": 27489,
+     "glucose_mean": 27489
+    },
+    {
+     "cell_density": 27685,
+     "cancer_frac": 27685,
+     "healthy_frac": 27685,
+     "immune_frac": 27685,
+     "prolif_frac": 27685,
+     "nonprolif_frac": 27685,
+     "dead_frac": 27685,
+     "vasculature_frac": 27685,
+     "oxygen_mean": 27685,
+     "glucose_mean": 27685
+    },
+    {
+     "cell_density": 28616,
+     "cancer_frac": 28616,
+     "healthy_frac": 28616,
+     "immune_frac": 28616,
+     "prolif_frac": 28616,
+     "nonprolif_frac": 28616,
+     "dead_frac": 28616,
+     "vasculature_frac": 28616,
+     "oxygen_mean": 28616,
+     "glucose_mean": 28616
+    },
+    {
+     "cell_density": 28224,
+     "cancer_frac": 28224,
+     "healthy_frac": 28224,
+     "immune_frac": 28224,
+     "prolif_frac": 28224,
+     "nonprolif_frac": 28224,
+     "dead_frac": 28224,
+     "vasculature_frac": 28224,
+     "oxygen_mean": 28224,
+     "glucose_mean": 28224
+    }
+   ]
+  },
+  "probe/res_new184": {
+   "targets": "new7_184",
+   "cv": "cv/cv_resnet50_07_kept.json",
+   "cap": 10000,
+   "n_patches": 49,
+   "max_finite_train_rows": 6076,
+   "min_finite_train_rows": 5929,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 6076,
+     "cancer_frac": 6076,
+     "healthy_frac": 6076,
+     "immune_frac": 6076,
+     "prolif_frac": 6076,
+     "nonprolif_frac": 6076,
+     "dead_frac": 6076,
+     "vasculature_frac": 6076,
+     "oxygen_mean": 6076,
+     "glucose_mean": 6076
+    },
+    {
+     "cell_density": 5929,
+     "cancer_frac": 5929,
+     "healthy_frac": 5929,
+     "immune_frac": 5929,
+     "prolif_frac": 5929,
+     "nonprolif_frac": 5929,
+     "dead_frac": 5929,
+     "vasculature_frac": 5929,
+     "oxygen_mean": 5929,
+     "glucose_mean": 5929
+    },
+    {
+     "cell_density": 6027,
+     "cancer_frac": 6027,
+     "healthy_frac": 6027,
+     "immune_frac": 6027,
+     "prolif_frac": 6027,
+     "nonprolif_frac": 6027,
+     "dead_frac": 6027,
+     "vasculature_frac": 6027,
+     "oxygen_mean": 6027,
+     "glucose_mean": 6027
+    }
+   ]
+  },
+  "probe/res_old200": {
+   "targets": "old7_200",
+   "cv": "paper/cv_resnet50_07.json",
+   "cap": 10000,
+   "n_patches": 49,
+   "max_finite_train_rows": 6566,
+   "min_finite_train_rows": 6517,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 6517,
+     "cancer_frac": 6517,
+     "healthy_frac": 6517,
+     "immune_frac": 6517,
+     "prolif_frac": 6517,
+     "nonprolif_frac": 6517,
+     "dead_frac": 6517,
+     "vasculature_frac": 6517,
+     "oxygen_mean": 6517,
+     "glucose_mean": 6517
+    },
+    {
+     "cell_density": 6517,
+     "cancer_frac": 6517,
+     "healthy_frac": 6517,
+     "immune_frac": 6517,
+     "prolif_frac": 6517,
+     "nonprolif_frac": 6517,
+     "dead_frac": 6517,
+     "vasculature_frac": 6517,
+     "oxygen_mean": 6517,
+     "glucose_mean": 6517
+    },
+    {
+     "cell_density": 6566,
+     "cancer_frac": 6566,
+     "healthy_frac": 6566,
+     "immune_frac": 6566,
+     "prolif_frac": 6566,
+     "nonprolif_frac": 6566,
+     "dead_frac": 6566,
+     "vasculature_frac": 6566,
+     "oxygen_mean": 6566,
+     "glucose_mean": 6566
+    }
+   ]
+  },
+  "probe/vir_new184": {
+   "targets": "new16_184",
+   "cv": "cv/cv_virchow2_16_kept.json",
+   "cap": 10000,
+   "n_patches": 256,
+   "max_finite_train_rows": 31744,
+   "min_finite_train_rows": 30976,
+   "cap_binds": true,
+   "per_fold": [
+    {
+     "cell_density": 31744,
+     "cancer_frac": 31744,
+     "healthy_frac": 31744,
+     "immune_frac": 31744,
+     "prolif_frac": 31744,
+     "nonprolif_frac": 31744,
+     "dead_frac": 31744,
+     "vasculature_frac": 31744,
+     "oxygen_mean": 31744,
+     "glucose_mean": 31744
+    },
+    {
+     "cell_density": 30976,
+     "cancer_frac": 30976,
+     "healthy_frac": 30976,
+     "immune_frac": 30976,
+     "prolif_frac": 30976,
+     "nonprolif_frac": 30976,
+     "dead_frac": 30976,
+     "vasculature_frac": 30976,
+     "oxygen_mean": 30976,
+     "glucose_mean": 30976
+    },
+    {
+     "cell_density": 31488,
+     "cancer_frac": 31488,
+     "healthy_frac": 31488,
+     "immune_frac": 31488,
+     "prolif_frac": 31488,
+     "nonprolif_frac": 31488,
+     "dead_frac": 31488,
+     "vasculature_frac": 31488,
+     "oxygen_mean": 31488,
+     "glucose_mean": 31488
+    }
+   ]
+  },
+  "probe/vir_old200": {
+   "targets": "old16_200",
+   "cv": "paper/cv_virchow2_16.json",
+   "cap": 10000,
+   "n_patches": 256,
+   "max_finite_train_rows": 34304,
+   "min_finite_train_rows": 34048,
+   "cap_binds": true,
+   "per_fold": [
+    {
+     "cell_density": 34048,
+     "cancer_frac": 34048,
+     "healthy_frac": 34048,
+     "immune_frac": 34048,
+     "prolif_frac": 34048,
+     "nonprolif_frac": 34048,
+     "dead_frac": 34048,
+     "vasculature_frac": 34048,
+     "oxygen_mean": 34048,
+     "glucose_mean": 34048
+    },
+    {
+     "cell_density": 34048,
+     "cancer_frac": 34048,
+     "healthy_frac": 34048,
+     "immune_frac": 34048,
+     "prolif_frac": 34048,
+     "nonprolif_frac": 34048,
+     "dead_frac": 34048,
+     "vasculature_frac": 34048,
+     "oxygen_mean": 34048,
+     "glucose_mean": 34048
+    },
+    {
+     "cell_density": 34304,
+     "cancer_frac": 34304,
+     "healthy_frac": 34304,
+     "immune_frac": 34304,
+     "prolif_frac": 34304,
+     "nonprolif_frac": 34304,
+     "dead_frac": 34304,
+     "vasculature_frac": 34304,
+     "oxygen_mean": 34304,
+     "glucose_mean": 34304
+    }
+   ]
+  },
+  "probe/c34_new_r500000": {
+   "targets": "new16_c34",
+   "cv": "cv/cv_uni_16_crc34_kept.json",
+   "cap": 500000,
+   "n_patches": 256,
+   "max_finite_train_rows": 1700352,
+   "min_finite_train_rows": 1698304,
+   "cap_binds": true,
+   "per_fold": [
+    {
+     "cell_density": 1699840,
+     "cancer_frac": 1699840,
+     "healthy_frac": 1699840,
+     "immune_frac": 1699840,
+     "prolif_frac": 1699840,
+     "nonprolif_frac": 1699840,
+     "dead_frac": 1699840,
+     "vasculature_frac": 1699840,
+     "oxygen_mean": 1699840,
+     "glucose_mean": 1699840
+    },
+    {
+     "cell_density": 1700352,
+     "cancer_frac": 1700352,
+     "healthy_frac": 1700352,
+     "immune_frac": 1700352,
+     "prolif_frac": 1700352,
+     "nonprolif_frac": 1700352,
+     "dead_frac": 1700352,
+     "vasculature_frac": 1700352,
+     "oxygen_mean": 1700352,
+     "glucose_mean": 1700352
+    },
+    {
+     "cell_density": 1698304,
+     "cancer_frac": 1698304,
+     "healthy_frac": 1698304,
+     "immune_frac": 1698304,
+     "prolif_frac": 1698304,
+     "nonprolif_frac": 1698304,
+     "dead_frac": 1698304,
+     "vasculature_frac": 1698304,
+     "oxygen_mean": 1698304,
+     "glucose_mean": 1698304
+    }
+   ]
+  },
+  "proball/vir_new184_all": {
+   "targets": "new16_184",
+   "cv": "cv/cv_virchow2_16_kept.json",
+   "cap": null,
+   "n_patches": 256,
+   "max_finite_train_rows": 31744,
+   "min_finite_train_rows": 30976,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 31744,
+     "cancer_frac": 31744,
+     "healthy_frac": 31744,
+     "immune_frac": 31744,
+     "prolif_frac": 31744,
+     "nonprolif_frac": 31744,
+     "dead_frac": 31744,
+     "vasculature_frac": 31744,
+     "oxygen_mean": 31744,
+     "glucose_mean": 31744
+    },
+    {
+     "cell_density": 30976,
+     "cancer_frac": 30976,
+     "healthy_frac": 30976,
+     "immune_frac": 30976,
+     "prolif_frac": 30976,
+     "nonprolif_frac": 30976,
+     "dead_frac": 30976,
+     "vasculature_frac": 30976,
+     "oxygen_mean": 30976,
+     "glucose_mean": 30976
+    },
+    {
+     "cell_density": 31488,
+     "cancer_frac": 31488,
+     "healthy_frac": 31488,
+     "immune_frac": 31488,
+     "prolif_frac": 31488,
+     "nonprolif_frac": 31488,
+     "dead_frac": 31488,
+     "vasculature_frac": 31488,
+     "oxygen_mean": 31488,
+     "glucose_mean": 31488
+    }
+   ]
+  },
+  "proball/vir_old184_all": {
+   "targets": "old16_184",
+   "cv": "cv/cv_virchow2_16_kept.json",
+   "cap": null,
+   "n_patches": 256,
+   "max_finite_train_rows": 31744,
+   "min_finite_train_rows": 30976,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 31744,
+     "cancer_frac": 31744,
+     "healthy_frac": 31744,
+     "immune_frac": 31744,
+     "prolif_frac": 31744,
+     "nonprolif_frac": 31744,
+     "dead_frac": 31744,
+     "vasculature_frac": 31744,
+     "oxygen_mean": 31744,
+     "glucose_mean": 31744
+    },
+    {
+     "cell_density": 30976,
+     "cancer_frac": 30976,
+     "healthy_frac": 30976,
+     "immune_frac": 30976,
+     "prolif_frac": 30976,
+     "nonprolif_frac": 30976,
+     "dead_frac": 30976,
+     "vasculature_frac": 30976,
+     "oxygen_mean": 30976,
+     "glucose_mean": 30976
+    },
+    {
+     "cell_density": 31488,
+     "cancer_frac": 31488,
+     "healthy_frac": 31488,
+     "immune_frac": 31488,
+     "prolif_frac": 31488,
+     "nonprolif_frac": 31488,
+     "dead_frac": 31488,
+     "vasculature_frac": 31488,
+     "oxygen_mean": 31488,
+     "glucose_mean": 31488
+    }
+   ]
+  },
+  "proball/vir_old200_all": {
+   "targets": "old16_200",
+   "cv": "paper/cv_virchow2_16.json",
+   "cap": null,
+   "n_patches": 256,
+   "max_finite_train_rows": 34304,
+   "min_finite_train_rows": 34048,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 34048,
+     "cancer_frac": 34048,
+     "healthy_frac": 34048,
+     "immune_frac": 34048,
+     "prolif_frac": 34048,
+     "nonprolif_frac": 34048,
+     "dead_frac": 34048,
+     "vasculature_frac": 34048,
+     "oxygen_mean": 34048,
+     "glucose_mean": 34048
+    },
+    {
+     "cell_density": 34048,
+     "cancer_frac": 34048,
+     "healthy_frac": 34048,
+     "immune_frac": 34048,
+     "prolif_frac": 34048,
+     "nonprolif_frac": 34048,
+     "dead_frac": 34048,
+     "vasculature_frac": 34048,
+     "oxygen_mean": 34048,
+     "glucose_mean": 34048
+    },
+    {
+     "cell_density": 34304,
+     "cancer_frac": 34304,
+     "healthy_frac": 34304,
+     "immune_frac": 34304,
+     "prolif_frac": 34304,
+     "nonprolif_frac": 34304,
+     "dead_frac": 34304,
+     "vasculature_frac": 34304,
+     "oxygen_mean": 34304,
+     "glucose_mean": 34304
+    }
+   ]
+  },
+  "proball/c34_new_all": {
+   "targets": "new16_c34",
+   "cv": "cv/cv_uni_16_crc34_kept.json",
+   "cap": null,
+   "n_patches": 256,
+   "max_finite_train_rows": 1700352,
+   "min_finite_train_rows": 1698304,
+   "cap_binds": false,
+   "per_fold": [
+    {
+     "cell_density": 1699840,
+     "cancer_frac": 1699840,
+     "healthy_frac": 1699840,
+     "immune_frac": 1699840,
+     "prolif_frac": 1699840,
+     "nonprolif_frac": 1699840,
+     "dead_frac": 1699840,
+     "vasculature_frac": 1699840,
+     "oxygen_mean": 1699840,
+     "glucose_mean": 1699840
+    },
+    {
+     "cell_density": 1700352,
+     "cancer_frac": 1700352,
+     "healthy_frac": 1700352,
+     "immune_frac": 1700352,
+     "prolif_frac": 1700352,
+     "nonprolif_frac": 1700352,
+     "dead_frac": 1700352,
+     "vasculature_frac": 1700352,
+     "oxygen_mean": 1700352,
+     "glucose_mean": 1700352
+    },
+    {
+     "cell_density": 1698304,
+     "cancer_frac": 1698304,
+     "healthy_frac": 1698304,
+     "immune_frac": 1698304,
+     "prolif_frac": 1698304,
+     "nonprolif_frac": 1698304,
+     "dead_frac": 1698304,
+     "vasculature_frac": 1698304,
+     "oxygen_mean": 1698304,
+     "glucose_mean": 1698304
+    }
+   ]
+  }
+ },
+ "c34": {
+  "all_run": "proball/c34_new_all",
+  "capped_run": "probe/c34_new_r500000",
+  "paper": "uni_16_crc34",
+  "per_target": {
+   "cell_density": {
+    "all": 0.5626582000954441,
+    "all_sd": 0.00424616195814337,
+    "capped": 0.523138583594186,
+    "capped_sd": 0.006777063861586057,
+    "paper": 0.5534743205208906,
+    "all_delta_shuffle": 0.342466950416565,
+    "capped_delta_shuffle": 0.319613258043925,
+    "paper_delta_shuffle": 0.4212942719459534
+   },
+   "cancer_frac": {
+    "all": 0.2422200018686068,
+    "all_sd": 0.028385048865206094,
+    "capped": 0.2445669128624239,
+    "capped_sd": 0.037857881518160275,
+    "paper": 0.2399580864874539,
+    "all_delta_shuffle": 0.15359930197397864,
+    "capped_delta_shuffle": 0.1664732893308003,
+    "paper_delta_shuffle": 0.2163750330607096
+   },
+   "healthy_frac": {
+    "all": 0.19657878763171133,
+    "all_sd": 0.009612356009166295,
+    "capped": 0.19958731698881552,
+    "capped_sd": 0.008741658061823605,
+    "paper": 0.21137487277071224,
+    "all_delta_shuffle": 0.20424866676330564,
+    "capped_delta_shuffle": 0.21494317054748532,
+    "paper_delta_shuffle": 0.20791316032409668
+   },
+   "immune_frac": {
+    "all": 0.3088081678125088,
+    "all_sd": 0.006519213698382869,
+    "capped": 0.2957760685463308,
+    "capped_sd": 0.006095912704939487,
+    "paper": 0.1655801735648147,
+    "all_delta_shuffle": 0.16333236296971643,
+    "capped_delta_shuffle": 0.15184321006139123,
+    "paper_delta_shuffle": 0.12943524122238154
+   },
+   "prolif_frac": {
+    "all": 0.26310576915173106,
+    "all_sd": 0.017802589754205605,
+    "capped": 0.26192022325817094,
+    "capped_sd": 0.005219126160102932,
+    "paper": 0.23184224737279113,
+    "all_delta_shuffle": 0.17516493797302246,
+    "capped_delta_shuffle": 0.1862366596857707,
+    "paper_delta_shuffle": 0.2053537170092265
+   },
+   "nonprolif_frac": {
+    "all": 0.36214004733279187,
+    "all_sd": 0.004506617857439946,
+    "capped": 0.3288293030418273,
+    "capped_sd": 0.006217731843152755,
+    "paper": 0.307832886528465,
+    "all_delta_shuffle": 0.2466752330462138,
+    "capped_delta_shuffle": 0.22147985299428302,
+    "paper_delta_shuffle": 0.2362642486890157
+   },
+   "dead_frac": {
+    "all": -0.08990307155627801,
+    "all_sd": 0.027885451397546505,
+    "capped": -0.11819674842870764,
+    "capped_sd": 0.0392811775283213,
+    "paper": -0.11416894922804317,
+    "all_delta_shuffle": -0.019293447335561115,
+    "capped_delta_shuffle": -0.030607104301452637,
+    "paper_delta_shuffle": 0.008725762367248532
+   },
+   "vasculature_frac": {
+    "all": -0.02551198529176128,
+    "all_sd": 0.041832259026387715,
+    "capped": 0.009826214203993544,
+    "capped_sd": 0.02972308399421304,
+    "paper": -0.0007509257413989371,
+    "all_delta_shuffle": 0.2036369244257609,
+    "capped_delta_shuffle": 0.23861294984817505,
+    "paper_delta_shuffle": 0.21832611163457233
+   },
+   "oxygen_mean": {
+    "all": -1.33051381376258,
+    "all_sd": 0.010958593029027899,
+    "capped": -1.4030719642321932,
+    "capped_sd": 0.019420427718075707,
+    "paper": -1.6634360463878977,
+    "all_delta_shuffle": 0.04505234956741333,
+    "capped_delta_shuffle": 0.029026885827382387,
+    "paper_delta_shuffle": 0.03297388553619385
+   },
+   "glucose_mean": {
+    "all": -1.0397995347283455,
+    "all_sd": 0.03282277327441477,
+    "capped": -1.0772315284093976,
+    "capped_sd": 0.019542811331573606,
+    "paper": -1.2211745484143512,
+    "all_delta_shuffle": 0.03936199347178143,
+    "capped_delta_shuffle": 0.036935706933339474,
+    "paper_delta_shuffle": 0.032620986302693666
+   }
+  }
+ },
+ "virchow2_new184": {
+  "all_run": "proball/vir_new184_all",
+  "capped_run": "probe/vir_new184",
+  "paper": null,
+  "per_target": {
+   "cell_density": {
+    "all": 0.02041377115282017,
+    "all_sd": 0.07255030843050389,
+    "capped": -0.698008273268479,
+    "capped_sd": 0.17396356065061402,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "cancer_frac": {
+    "all": -6.6219284617801835,
+    "all_sd": 4.272501177499925,
+    "capped": -14.848167470991996,
+    "capped_sd": 10.496768741757643,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "healthy_frac": {
+    "all": 0.13461356251780898,
+    "all_sd": 0.056457437239182146,
+    "capped": -0.07197089336034357,
+    "capped_sd": 0.0470151057759012,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "immune_frac": {
+    "all": -0.5813224680186531,
+    "all_sd": 0.0913093521046948,
+    "capped": -1.2934293616409271,
+    "capped_sd": 0.1518364444311249,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "prolif_frac": {
+    "all": -2.4213335161039953,
+    "all_sd": 0.9759064438812173,
+    "capped": -5.057944976475251,
+    "capped_sd": 2.0524505395842167,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "nonprolif_frac": {
+    "all": 0.20176452723706773,
+    "all_sd": 0.05021588975113771,
+    "capped": 0.010651079234473245,
+    "capped_sd": 0.08620022284475885,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "dead_frac": {
+    "all": -49.32468854416331,
+    "all_sd": 22.012346833378892,
+    "capped": -268.1891505359167,
+    "capped_sd": 162.66465551023057,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "vasculature_frac": {
+    "all": -0.6408313920514933,
+    "all_sd": 0.07795169351374545,
+    "capped": -1.2071593545462098,
+    "capped_sd": 0.17524992310694204,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "oxygen_mean": {
+    "all": -13.586219020721055,
+    "all_sd": 2.24572730109939,
+    "capped": -30.510604224499758,
+    "capped_sd": 2.926556256091701,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "glucose_mean": {
+    "all": -6.0504746948828805,
+    "all_sd": 1.691343345262977,
+    "capped": -14.163290133761953,
+    "capped_sd": 2.1237222846351385,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   }
+  }
+ },
+ "virchow2_old184": {
+  "all_run": "proball/vir_old184_all",
+  "capped_run": "probe/vir_old184",
+  "paper": null,
+  "per_target": {
+   "cell_density": {
+    "all": 0.1579444990670942,
+    "all_sd": 0.05906137930805389,
+    "capped": -0.6524068679730344,
+    "capped_sd": 0.18250921227600544,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "cancer_frac": {
+    "all": -0.11845332442439312,
+    "all_sd": 0.08683378238883209,
+    "capped": -0.43167744674132935,
+    "capped_sd": 0.1294929049456542,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "healthy_frac": {
+    "all": -0.18656285175641063,
+    "all_sd": 0.02735733077032021,
+    "capped": -0.5499338540208643,
+    "capped_sd": 0.05095831926976124,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "immune_frac": {
+    "all": -1.0433937073943778,
+    "all_sd": 0.09337975838909773,
+    "capped": -2.11501479791053,
+    "capped_sd": 0.15216173834987543,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "prolif_frac": {
+    "all": 0.03514640317787273,
+    "all_sd": 0.11816560624199614,
+    "capped": -0.35632380088970456,
+    "capped_sd": 0.19117068307274085,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "nonprolif_frac": {
+    "all": 0.20107049140939315,
+    "all_sd": 0.08906150006040446,
+    "capped": -0.012877713258556134,
+    "capped_sd": 0.11459384536033232,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "dead_frac": {
+    "all": -178.14648088236015,
+    "all_sd": 137.10530123927586,
+    "capped": -398.66569270930603,
+    "capped_sd": 252.56104419490836,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "vasculature_frac": {
+    "all": -0.6408313920514933,
+    "all_sd": 0.07795169351374545,
+    "capped": -1.2071593545462098,
+    "capped_sd": 0.17524992310694204,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "oxygen_mean": {
+    "all": -13.586219020721055,
+    "all_sd": 2.24572730109939,
+    "capped": -30.510604224499758,
+    "capped_sd": 2.926556256091701,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "glucose_mean": {
+    "all": -6.0504746948828805,
+    "all_sd": 1.691343345262977,
+    "capped": -14.163290133761953,
+    "capped_sd": 2.1237222846351385,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   }
+  }
+ },
+ "virchow2_old200": {
+  "all_run": "proball/vir_old200_all",
+  "capped_run": "probe/vir_old200",
+  "paper": "virchow2_16",
+  "per_target": {
+   "cell_density": {
+    "all": 0.23728105381963063,
+    "all_sd": 0.03597920862181849,
+    "capped": -0.5849637426588118,
+    "capped_sd": 0.11103859449978816,
+    "paper": -0.5935507960795633,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "cancer_frac": {
+    "all": -0.11282451155178992,
+    "all_sd": 0.04113281585098644,
+    "capped": -0.44847548160075373,
+    "capped_sd": 0.07260667697174146,
+    "paper": -0.4525907535337705,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "healthy_frac": {
+    "all": -0.1566693452509796,
+    "all_sd": 0.06147238833205323,
+    "capped": -0.5098387425815941,
+    "capped_sd": 0.06912583219121844,
+    "paper": -0.5099335562385129,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "immune_frac": {
+    "all": -0.854112994419407,
+    "all_sd": 0.2113433924026055,
+    "capped": -2.1249741916147316,
+    "capped_sd": 0.33435086480472526,
+    "paper": -2.1059158583092747,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "prolif_frac": {
+    "all": 0.04878744834985246,
+    "all_sd": 0.11302294071783867,
+    "capped": -0.4918742008925134,
+    "capped_sd": 0.1585893000605908,
+    "paper": -0.49709751259946383,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "nonprolif_frac": {
+    "all": 0.2534248424248053,
+    "all_sd": 0.054140137867980706,
+    "capped": 0.032368425751640784,
+    "capped_sd": 0.09440391634216606,
+    "paper": 0.03340469564884737,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "dead_frac": {
+    "all": -62.705755419911014,
+    "all_sd": 52.391533614020936,
+    "capped": -1185.2237119789997,
+    "capped_sd": 1322.6156393163121,
+    "paper": -1183.6925568415159,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "vasculature_frac": {
+    "all": -0.708938538704702,
+    "all_sd": 0.14463441311887937,
+    "capped": -1.2674704184805543,
+    "capped_sd": 0.11906343841966134,
+    "paper": -1.271530104076154,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "oxygen_mean": {
+    "all": -11.189669656323199,
+    "all_sd": 1.4259304066482454,
+    "capped": -30.40898308728548,
+    "capped_sd": 1.4898027848248305,
+    "paper": -30.463590762244518,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   },
+   "glucose_mean": {
+    "all": -4.947224575863431,
+    "all_sd": 1.1478498381848286,
+    "capped": -13.177327020488534,
+    "capped_sd": 1.4927507019604946,
+    "paper": -13.137765097125245,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN,
+    "paper_delta_shuffle": NaN
+   }
+  }
+ },
+ "uni_c33_new715": {
+  "all_run": "probe/uni_new715_r500000",
+  "capped_run": "probe/uni_new715_r50000",
+  "paper": null,
+  "per_target": {
+   "cell_density": {
+    "all": 0.44261930125737503,
+    "all_sd": 0.018112003903031648,
+    "capped": 0.26060047638187706,
+    "capped_sd": 0.026616628362565568,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "cancer_frac": {
+    "all": -0.4043478697157209,
+    "all_sd": 0.19831961661779834,
+    "capped": -1.5183394370470509,
+    "capped_sd": 0.6736358406037237,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "healthy_frac": {
+    "all": 0.2870582810033403,
+    "all_sd": 0.02781630289639098,
+    "capped": 0.21643071919050466,
+    "capped_sd": 0.031515486611048436,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "immune_frac": {
+    "all": 0.11098682592221601,
+    "all_sd": 0.06011600595997954,
+    "capped": -0.08337384541567609,
+    "capped_sd": 0.07224222957223114,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "prolif_frac": {
+    "all": -0.2568201685655025,
+    "all_sd": 0.09865083416388178,
+    "capped": -0.9139824950319035,
+    "capped_sd": 0.2776928278248942,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "nonprolif_frac": {
+    "all": 0.3680448696739801,
+    "all_sd": 0.03152048928258933,
+    "capped": 0.30168760004489376,
+    "capped_sd": 0.031075133402147088,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "dead_frac": {
+    "all": -0.6423900640490834,
+    "all_sd": 0.5320386610051746,
+    "capped": -23.705343890069116,
+    "capped_sd": 26.20839478363881,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "vasculature_frac": {
+    "all": -0.27588734465603526,
+    "all_sd": 0.09418065118048771,
+    "capped": -0.4632142188078161,
+    "capped_sd": 0.08803580077843653,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "oxygen_mean": {
+    "all": -0.04415162032328408,
+    "all_sd": 0.15020791428862498,
+    "capped": -1.7604101704551103,
+    "capped_sd": 0.3647090698485972,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   },
+   "glucose_mean": {
+    "all": 0.07160451936941506,
+    "all_sd": 0.14577381518440932,
+    "capped": -0.6997301635716051,
+    "capped_sd": 0.1386424219396436,
+    "paper": null,
+    "all_delta_shuffle": NaN,
+    "capped_delta_shuffle": NaN
+   }
+  }
+ }
+}

@@ -631,6 +631,43 @@
   - 時間估計：500,000 列那次（5 程序 × 4 執行緒）31 分鐘；全部的列是 3.4 倍，作業上限設 12 小時。
 - **繪圖**：用 `a3render_hyak.slurm`，`A3_R2` 指向 `dec_all/r2all/`，`A3_TAG=r2all`，兩版（主要／次要 PQ 參考）。`r2all/` 裡：uni_16 = `uni_new715_r500000`、ctranspath_07 = `ctp_new715_r500000`、resnet50_07 = `res_new184`（以上三個是追加 3 已有、等於全部列的那幾次；`a3all.py` 會先確認每折的有限列數不超過那次的上限，否則停止），virchow2_16 和 uni_16_crc34 是這次的新結果。`r2new` 的圖保留，不覆蓋。
 
+**追加 3b 結果（2026-11-21）**
+
+| 作業 | 內容 | 結果 |
+|---|---|---|
+| 43456707 | 列數檢查 + Virchow2 三次 + C34 UNI（全部的列） | 成功，2 小時 43 分（C34 探針 9,295 s；Virchow2 每次 2–3 分鐘）。sacct MaxRSS 150 GB（申請 170 GB）；每分鐘取樣的節點用量最高 152 GB，比事先估的 110 GB 多 |
+| 43456708 | 繪圖 `A3_TAG=r2all`（兩版 PQ 參考，10 個步驟） | 10 個步驟全部成功，5 分鐘 |
+
+- **列數檢查（`results/a3all/rows.json`）**：沿用的三次都沒有被上限截到，確實等於全部的列：C33 UNI 每折 143,616–149,504 列（上限 500,000）、CTransPath 27,489–28,616（500,000）、ResNet-50 5,929–6,076（10,000）。被截到的是 Virchow2（30,976–34,304 列，上限 10,000）和 C34 UNI（1,698,304–1,700,352 列，上限 500,000），這兩個重跑了。
+- **C34 UNI，塊內 R²（3 折平均，括號是折間標準差）**：
+
+  | 目標 | 全部的列（約 170 萬） | 500,000 列 | 論文（舊通道、500,000 列） | 打亂基準差（全部 / 500,000 / 論文） |
+  |---|---|---|---|---|
+  | cell density | 0.563 (0.004) | 0.523 | 0.553 | 0.34 / 0.32 / 0.42 |
+  | cancer | 0.242 (0.028) | 0.245 | 0.240 | 0.15 / 0.17 / 0.22 |
+  | healthy | 0.197 (0.010) | 0.200 | 0.211 | 0.20 / 0.21 / 0.21 |
+  | immune | 0.309 (0.007) | 0.296 | 0.166 | 0.16 / 0.15 / 0.13 |
+  | proliferative | 0.263 (0.018) | 0.262 | 0.232 | 0.18 / 0.19 / 0.21 |
+  | nonproliferative | 0.362 (0.005) | 0.329 | 0.308 | 0.25 / 0.22 / 0.24 |
+  | dead | −0.090 (0.028) | −0.118 | −0.114 | −0.02 / −0.03 / 0.01 |
+  | vasculature | −0.026 (0.042) | +0.010 | −0.001 | 0.20 / 0.24 / 0.22 |
+  | oxygen | −1.331 (0.011) | −1.403 | −1.663 | 0.05 / 0.03 / 0.03 |
+  | glucose | −1.040 (0.033) | −1.077 | −1.221 | 0.04 / 0.04 / 0.03 |
+
+  - C34 的列數本來就很多，從 50 萬加到 170 萬，R² 只小幅變動（cell density、nonproliferative、immune、dead、oxygen、glucose 稍升；vasculature 稍降），目標之間的排名不變。
+  - 「打亂基準差」是全域 R² 減去「訓練時把塊位置在 tile 內打亂」後的全域 R²（PixCell 的 `delta_shuffle`）。三種設定除了 dead 都是正的，所以塊的空間對應仍然有貢獻。
+- **C33 UNI（715 張，新目標）**：繪圖從 50,000 列換成全部的列（= 500,000 那次）以後，塊內 R² 變化很大：cell density 0.26 → 0.44、cancer −1.52 → −0.40、healthy 0.22 → 0.29、immune −0.08 → +0.11、proliferative −0.91 → −0.26、nonproliferative 0.30 → 0.37、dead −23.7 → −0.64、vasculature −0.46 → −0.28、oxygen −1.76 → −0.04、glucose −0.70 → +0.07。C33 只有 715 張，訓練列數少時塊內 R² 很不穩，所以 50,000 列下很負的值大多來自列數不夠。
+  - 追加 3 的 4(d) 方向在全部的列下仍成立（同一批 715 張、同樣全部的列，舊目標 → 新目標）：cancer +0.19 → −0.40、proliferative +0.47 → −0.26 變差；healthy +0.08 → +0.29、immune −0.08 → +0.11 變好。
+- **C33 Virchow2（184 張）**：全部的列和 10,000 列差很多（新目標：cell density −0.70 → +0.02、cancer −14.8 → −6.6、dead −268 → −49、oxygen −30.5 → −13.6）。論文的 Virchow2 值幾乎就是 10,000 列那次（old200：cell density 論文 −0.594，10,000 列 −0.585，全部的列 +0.237），所以換成全部的列以後，`si_channel_decodability_impact` a 的 Virchow2 不再是論文那個設定。dead 的塊內 R² 仍是 −49 這種量級：184 張裡大多數 tile 的 dead 目標全是 0，塊內 R² 由極少數 tile 決定，不能解讀。
+- **圖的改變（r2all 對 r2new，兩版 PQ 參考都看過；比較頁的圖在 `compare/a3/r2all/`）**：
+  - Fig 4b（ΔE、ΔPQ 對塊內 R²）：C33 的點不再落在折斷軸的左段，全部在 −0.7 到 0.4 之間（cancer −0.40、dead −0.64、proliferative −0.26）。Fig 4c 下排的 C33 長條和 Fig 4d（C33 對 C10）跟著變：cancer 和 proliferative 的 C33 與 C10 差距變小，oxygen、glucose 的 C33 接近 0。C34 的長條只有小幅變化。Fig 4e、f（LOO 排名和 ρ）不變。
+  - Fig 4b 的標籤由 PixCell 自動擺放，這版有幾個標籤壓到 x 軸刻度附近（Healthy、Immune 靠近 −0.5）；r2new 也有類似的擠壓。程式沒改。
+  - `si_threshold_sensitivity` 主要參考版：b 的 glucose 在 C33 從 R 變 N（每個百分位），vasculature 在 C34 從 N 變 R（30–70 百分位），immune 在 C33 第 30 百分位從 R 變 N；a 不變（仍只有 oxygen）。次要參考版：glucose 在 C33 從 R 變 N（a 和 b 都是），vasculature 在 C34 第 30 百分位從 N 變 R，immune 在 C33 第 30 百分位從 R 變 N。
+  - `si_cohort_invariance`：a、b 的橫軸是 UNI 塊內 R²，c 的「decodability spread」也用 R²，所以都跟著變（C33 的點右移，不再有 R² ≤ −2 的截斷）。ρ（C10 對 C33 0.58、C34 對 C33 0.88）只看 LOO，不變。**更正**：上面追加 3 結果寫「`si_cohort_invariance` … 只看 LOO，和 R² 無關」不完整，只有 ρ 和 R² 無關。
+  - `si_channel_decodability_impact`：a 的 UNI（C33）和 Virchow2 換成全部列的值；CTransPath、ResNet-50 本來就是全部的列，不變。
+  - `si_patient_generalization` 不用 R²，圖逐位元相同（JSON 只差暫存路徑）。
+- 輸出：S3 `figures_rerender/a3/{dec_all,r2all}/`；Hyak `dec_all_results.tar`、`out_r2all.tar`；本 repo `results/a3all/{a3all,rows}.json`、`compare/a3/r2all/`。
+
 ### 尚未完成
 
 - 論文 figure 重繪（作業 43427989，2026-11-20 12:00–12:59）：6 個步驟中 5 個成功，重繪的檔案在 S3 `figures_rerender/`（清單 `rendered.txt`）：Fig 2（`concat/fig2_architecture_performance.png`）、`si/ablation_grids_combined.png`、`si/si_performance_ranking.png`、`si/si_qualitative_variants.png`、`si/si_training_stability.png`、`individual/ablation_analysis/05_paired_ablation_grid.png`。
@@ -640,4 +677,4 @@
   - Fig 2b 四條訓練 loss 曲線幾乎重疊：四次訓練用同一個 seed 和同樣的批次順序，每 50 步記錄的是單一批次的 loss，所以批次之間的起伏主導曲線。各次的數值確實不同（例如第 6500 步：Concat 0.0901、Per-channel 0.0917、Grouped 和 bypass 都是 0.0930），不是同一個檔案讀了四次。
   - Fig 2 的 D、E、G 是 PixCell 原本的計分（參考 = Lin 輸入遮罩，也就是本文的次要 PQ），程式沒有改。用主要參考的版本見「追加 2」。
 - 本機比較頁：`compare/index.html`（原圖在 `compare/old/`，重繪在 `compare/new/`，追加 3 的圖在 `compare/a3/`；只在本機，不發佈）。
-- 規則 6 的可解碼性、Fig 4、a6、`si_channel_decodability_impact`、`si_threshold_sensitivity`、`si_patient_generalization`、`si_cohort_invariance`：追加 3 已完成（見「追加 3」執行結果）。仍是舊輸入的：C10 的 LOO 和 R²（沒有重建的資料）、raw MX 的 R²（建議改成「不變」，待確認）。待協調者決定：追加 3 偏離紀錄 1–7，以及 CTransPath 要不要改用縮減設定。
+- 規則 6 的可解碼性、Fig 4、a6、`si_channel_decodability_impact`、`si_threshold_sensitivity`、`si_patient_generalization`、`si_cohort_invariance`：追加 3 已完成，探針在追加 3b 改成全部的列並重繪（目前的版本是 `r2all`）。仍是舊輸入的：C10 的 LOO 和 R²（沒有重建的資料）、raw MX 的 R²（建議改成「不變」，待確認）。待協調者決定：追加 3 偏離紀錄 1–7。（「CTransPath 要不要改用縮減設定」已由使用者 2026-11-21「全部的列」的決定取代。）
