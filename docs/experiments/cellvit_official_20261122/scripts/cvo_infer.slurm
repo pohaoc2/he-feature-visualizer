@@ -22,7 +22,7 @@ zip_of() {
     RAW) echo $A/app2/zips/RAW.zip;;
     KP|KD|CP|CD|KE) echo $A/app8/zips/$1.zip;;
     NP|ND|N_crc36ho|K_crc36ho|R_crc36ho|N_crc33sec|K_crc33sec|R_crc33sec) echo $S3/zips/$1.zip;;
-    F2_*) echo $D/$RUN/zips/$1.zip;;
+    F2_*) echo $D/zips/$1.zip;;
     *) echo "STOP unknown name $1" >&2; exit 1;;
   esac
 }

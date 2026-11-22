@@ -75,7 +75,45 @@
 
 ## 5. B：hfv 論文 Fig 2 的 PQ
 
-這一節在任何 Fig 2 的新 CellViT 讀數出現之前另行補上（commit 並 push 後才跑 Fig 2 的 CellViT）。
+（2026-11-22 補上；stage-3 的推論已在跑，但這一節在任何 Fig 2 影像的新 CellViT 結果出現之前 commit 並 push。）
+
+**不影響決定**，只為論文數字正確。舊數字的來源見 hfv `docs/experiments/hfv_retrain_20261118/README.md`（參考帶表、變體表、「PQ 參考遮罩」一節）。
+
+### 5.1 這些 PQ 在算什麼
+
+- 所有 PQ 的「預測端」都是 CellViT 在生成圖上找到的核。「參考端」有兩種：
+  - **主要 PQ（論文的定義）：** 參考 = 同一張圖塊的**真實 H&E** 上的 CellViT 核。論文的作法是先把這些核畫成一張二值的 `cell_masks` 圖（核內 = 1），PixCell 讀回來時再取 8 連通區塊當成一個一個的核（`_load_gt_instance_mask`）。所以論文的 PQ 問的是：「生成圖的核，是不是長在真實組織有核的位置、形狀是否相近」。
+  - **次要 PQ（Lin 遮罩）：** 參考 = 重訓模型的輸入遮罩（Lin 的螢光核分割，R0 畫法），也就是模型被要求照著畫的那張遮罩。參考線 = 真實 H&E 的 CellViT 對同一張 Lin 遮罩的 PQ（真實組織本身能達到多少）。
+- **「換成 official 後處理」在兩端各代表什麼：**
+  - 預測端：生成圖的核改用 official 路徑切開。
+  - 參考端（主要 PQ）：真實 H&E 的核也改用 official 路徑，再照論文的方式畫成二值遮罩、讀回連通區塊。注意：二值化會把 official 已切開、但彼此相碰的核重新連成一塊。這就是論文流程本身會發生的事，所以主要讀數照做；另報一個**不二值化**的版本（參考 = official 的實例圖本身，`pq_inst`），看這一步的影響。
+  - 次要 PQ 的參考端是 Lin 遮罩，和 CellViT 無關，只有預測端改變；參考線的真實 H&E 端改變。
+
+### 5.2 影像（全部仍在，不重新生成）
+
+- **論文的舊模型影像（CRC33）：** S3 `share_space/04_inference/si_a1_a2/tiles/`：
+  - Vanilla ControlNet（`a2_off_shelf`）1,000 張，圖塊 = `metric_tile_ids.txt`（論文的 0.7035）；其中 Fig 2 的 100 張（`cache.json.bak_n100` 的 `metric_tile_ids`）= 論文的 0.6987。
+  - Concat（`a1_concat`）、Grouped + bypass（`a2_bypass_full_tme`）、Per-channel（`a1_per_channel`）各 100 張（同一組 100 張）。
+  - 真實 H&E：`tiles/gt/`（1,000 張）。
+  - **Grouped（production）不重算：** `tiles/production/` 的圖在 2026-07-23 被 `metrics_io select-tiles` 換成別組圖（重算得 0.7788，cache 寫 0.5694），論文那組原圖已經不在這個位置。照規則不重新生成，報告裡寫明。
+- **重訓模型影像（hfv_retrain_20261118）：** S3 `hfv_retrain_20261118/outputs/score_fig2_{crc36ho,crc33sec}.tar`，五個變體（Vanilla、Grouped、Concat、Grouped + bypass、Per-channel）各 300／100 張；真實 H&E = 同一個 tar 的 `tiles/gt`，閘門：和 stage-3 `zips/R_<set>.zip` 逐像素相同（是的話，真實 H&E 的 CellViT 直接用 §4 已在跑的 `R_<set>`）。
+- 本機下載後打包成 `F2_<組>_<變體>.zip`（P = 論文影像，36 = crc36ho，33 = crc33sec；van、grp、cat、gbp、pch），上傳到 `$D/zips/`，每個 zip 的 sha256 記在 `zips/manifest.json`。
+
+### 5.3 CellViT
+
+- 每個 zip 兩條路徑都在 Hyak cheme CPU 上跑（`cvo_infer.slurm`；official → `$D/full/cv`，runner → `$D/full_runner/cv`）。runner 也重跑，是為了讓新舊在**同一台機器、同一支程式**上逐張配對；論文和 README 的舊數字是 Colab GPU 上跑的 runner。
+- 重訓組真實 H&E 的 runner 結果直接用 stage-3 的 `cv/R_<set>`（同一個 runner、同一台機器類型）。
+
+### 5.4 讀數（`scripts/cvo_fig2.py`，PixCell 函式，未修改）
+
+每張圖塊、每個變體、每條路徑：`pq_main`（主要）、`pq_inst`（不二值化）、重訓組另有 `pq_lin`（次要）和 `ref_lin`（參考線）、生成圖與真實圖的物件數。
+
+### 5.5 報告
+
+- 每個變體、每組：舊（論文或 README 公布的數）｜runner 重跑｜official｜official − runner（配對差，區間），主要 PQ 和次要 PQ 各一張表；參考線同樣並列。
+- 變體 − Vanilla 的配對差（兩條路徑各一次）：看變體的排名和「比 Vanilla 高或低」在換後處理後是否一樣。只描述，不設規則。
+- **重現檢查（不是門檻）：** runner 重跑的平均值和公布值的差、逐張相同的比例（公布的逐張值：論文 100 張 = `eval/diag/pqmatrix_crc33fig2.json`；重訓組 = S3 `realref_fig2_<set>.tar`、`scoreres_fig2_<set>.tar` 的 `fig2_per_tile.csv`）。另外：重訓 Concat 的 runner 次要 PQ 要和 stage-3 的 `pq2_K` 逐張相同（同一批圖、同一台機器類型、同一支程式），不同就停下查。
+- 區間：圖塊 bootstrap 10,000 次、seed 42；每組一個抽樣矩陣，所有變體、路徑共用（配對）。論文 Vanilla 1,000 張和 100 張分開抽。
 
 ## 6. 統計、執行規則
 
