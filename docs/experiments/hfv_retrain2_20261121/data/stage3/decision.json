@@ -1,0 +1,37 @@
+{
+ "rule": "hfv_retrain2 PREREG \u00a75, \u00a79.5 (r2score.py decide)",
+ "fidelity_ci95": {
+  "pq:crc36ho": [
+   -0.03364659351515964,
+   -0.016792424769982436
+  ],
+  "f1:crc36ho": [
+   -0.025737879269707144,
+   -0.007539955590967909
+  ],
+  "pq:crc33sec": [
+   -0.011540495239151134,
+   0.027361394804333503
+  ],
+  "f1:crc33sec": [
+   -0.03349321425943862,
+   0.021774187552290936
+  ]
+ },
+ "fidelity_n_higher": false,
+ "delta_ci95": {
+  "NP-KP": [
+   -0.12088709201226579,
+   -0.056165487506140754
+  ],
+  "ND-KD": [
+   -0.14170157630871175,
+   -0.06330346235312413
+  ]
+ },
+ "delta_below_0": {
+  "NP-KP": true,
+  "ND-KD": true
+ },
+ "decision_row": "2: a delta N - K interval is entirely below 0 -> keep K, report why"
+}

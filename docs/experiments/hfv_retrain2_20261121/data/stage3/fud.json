@@ -1,0 +1,14 @@
+{
+ "fud": {
+  "N_crc36ho": 162.39400989733548,
+  "K_crc36ho": 154.37370079506346,
+  "N_crc33sec": 186.121277312466,
+  "K_crc33sec": 171.57091150399404
+ },
+ "n": {
+  "crc36ho": 300,
+  "crc33sec": 100
+ },
+ "real": "stored UNI of the R0 evaluation pack",
+ "generated": "UNI-2h, pxscore.py transform, CPU"
+}
