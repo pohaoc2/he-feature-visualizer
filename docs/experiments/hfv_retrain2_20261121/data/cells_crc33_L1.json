@@ -1,0 +1,43 @@
+{
+ "mode": "L1",
+ "slide": "crc33",
+ "sev": "32494f0e",
+ "n_train": 9418,
+ "margin_px": 8,
+ "lib": null,
+ "train": {
+  "tar": "/gscratch/cheme/chiu/hfv_retrain2_20261121/cells2/cells_crc33_L1.tar",
+  "tar_bytes": 141844480,
+  "mean_frac": {
+   "cell_masks": 0.17157000303268433,
+   "cell_type_healthy": 0.1319900006055832,
+   "cell_type_cancer": 0.006130000110715628,
+   "cell_type_immune": 0.03345999866724014,
+   "cell_state_prolif": 0.007930000312626362,
+   "cell_state_nonprolif": 0.1634099930524826,
+   "cell_state_dead": 0.0002300000051036477
+  },
+  "components_per_tile_median": 35.0,
+  "lin_centroids_in_tile": 398137,
+  "lin_centroids_on_mask_frac": 0.9998492981059284
+ },
+ "eval": {
+  "crc33sec": {
+   "n": 824,
+   "check": "tiles.csv:n_L1",
+   "component_mismatch": 0,
+   "examples": [],
+   "mean_frac": {
+    "cell_masks": 0.07964999973773956,
+    "cell_type_healthy": 0.07276000082492828,
+    "cell_type_cancer": 0.00033999999868683517,
+    "cell_type_immune": 0.006550000049173832,
+    "cell_state_prolif": 0.0010999999940395355,
+    "cell_state_nonprolif": 0.07846000045537949,
+    "cell_state_dead": 9.000000136438757e-05
+   },
+   "lin_centroids_on_mask_frac": 0.999872975547793
+  }
+ },
+ "t_total_s": 13
+}

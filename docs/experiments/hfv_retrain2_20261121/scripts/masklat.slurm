@@ -49,7 +49,7 @@ PYEOF
 fi
 for SL in crc33 crc36 eval_crc33sec eval_crc36ho; do
   [ -f $K/ok_$SL ] && continue
-  case $SL in crc33|crc36) T=$R/cells/cells_${SL}_$MODE.tar ;; *) T=$R/cells/${SL}_$MODE.tar ;; esac
+  case $SL in crc33|crc36) T=$R/cells2/cells_${SL}_$MODE.tar ;; *) T=$R/cells2/${SL}_$MODE.tar ;; esac
   rm -rf in_$SL ml_$SL; mkdir in_$SL
   tar -xf $T -C in_$SL --wildcards '*/cell_masks/*' || { st "STOP extract $SL"; exit 1; }
   M=$(find in_$SL -type d -name cell_masks | head -1); n=$(ls $M | wc -l)
