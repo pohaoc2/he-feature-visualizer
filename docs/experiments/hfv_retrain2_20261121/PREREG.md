@@ -194,3 +194,20 @@
 - 「真實細胞經 renderer」的路徑（應用 8 的 CRC16 輸入）在 `render_crop` 加一個預設關閉的選項 `separate_touching`，打開時套同一條留線規則。預設下輸出逐位元組不變。
 
 **§5 判讀表不變。** 模型 N 的訓練樣式遮罩改為 L1。
+
+## 8. 加一項便宜的 CPU 檢查：L1b（2026-11-21，在 L1b 任何數字出來之前寫下；協調者指示）
+
+**L1b 是什麼：** 真實訓練圖塊也用「模擬端的畫法」畫。
+- 和 R0 完全相同：Lin 中心點、外形庫輪廓 `NucleusShapes.pick(type, area, CellID)`、同一個外形庫、同一張細胞表（`cells_nuclei.npz` 的 `target_px`）。
+- 唯一不同：相碰的核用 `separate_instances` 分開（`render_crop(..., allow_contact=True, separate_touching=True)`，sim-exp-validation bc14b086），不再讓相碰的核連成一塊。
+
+**閘門（先過才算 L1b）：** 同一程式關掉 `separate_touching` 重畫，要和評估包裡的 R0 `cell_masks` 逐位元組相同；不同就停下回報，不算 L1b。
+
+**讀數：** 交叉 PQ，算法和評估圖塊與 §2.3 的 L1 完全相同（對 CellViT 和對 StarDist 的平均；crc33sec + crc36ho 合併，圖塊 bootstrap 10,000 次，seed 42）。另外報：
+- R0 → L1b：只靠「分開相碰的核」得到的差距；
+- L1b → L1：再加上「每個細胞用自己的形狀」得到的差距。
+兩段差距都用同一組 bootstrap 抽樣算配對差的 95 % 區間。
+
+**規則：**
+- L1b 的 95 % 區間和 L1 的重疊 → **建 L1b**。理由：真實訓練圖塊和模擬用同一條畫法，訓練輸入和 sim2real 輸入來自同一套規則。
+- 不重疊 → **建 L1**（自己的形狀），並註明模擬端用的是同一族群的外形庫輪廓。
