@@ -1,0 +1,25 @@
+{
+ "t16": 0.02243768021416608,
+ "tS": {
+  "crc36ho": 0.021964938593192773,
+  "crc33sec": 0.02025237538031727
+ },
+ "gates": {
+  "sha256": "10/10",
+  "tile_ids": {
+   "36": 300,
+   "33": 100
+  },
+  "r0_eq_evalpack": {
+   "36": 300,
+   "33": 100
+  },
+  "truenuc_repro_maxdiff_float32": 0.0,
+  "truenuc_repro_maxdiff_float64": 2.6205345393659485e-09
+ },
+ "versions": {
+  "skimage": "0.26.0",
+  "numpy": "2.5.4",
+  "numpy_file": "/gscratch/cheme/chiu/crc16-20261024/pylib/numpy/__init__.py"
+ }
+}

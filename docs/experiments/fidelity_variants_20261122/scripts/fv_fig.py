@@ -34,11 +34,11 @@ def clean(ax):
     ax.axhline(0, color=FS.GREY, lw=FS.LW_AX, ls=":", zorder=1)
 
 
-fig = plt.figure(figsize=(FS.W2, 3.55))
-W, H, X0, DX = 1.55, 1.05, 0.55, 2.35
+fig = plt.figure(figsize=(FS.W2, 3.3))
+W, H, X0, DX = 1.55, 1.0, 0.6, 2.35
 for j, (q, ql) in enumerate(Q):
-    ax = FS.axes(fig, X0 + j * DX, 0.15, W, H)
-    FS.letter(fig, X0 + j * DX - 0.5, 0.05, "abc"[j])
+    ax = FS.axes(fig, X0 + j * DX, 0.42, W, H)
+    FS.letter(fig, X0 + j * DX - 0.55, 0.05, "abc"[j])
     for i, (p, _) in enumerate(PAIRS):
         for k, (s, f) in enumerate(SL):
             eb(ax, i + (k - .5) * 2 * OFF, S["slides"][s]["quantities"][q]["diff"][p], FS.INK, f)
@@ -47,12 +47,12 @@ for j, (q, ql) in enumerate(Q):
     ax.set_ylabel("paired difference")
     ax.set_title(ql, fontsize=FS.FS_K, color=FS.INK, pad=3)
     clean(ax)
+    ax = FS.axes(fig, X0 + j * DX, 1.98, W, H)
+    FS.letter(fig, X0 + j * DX - 0.55, 1.83, "def"[j])
     if j == 0:
-        ax.plot([], [], "o", color=FS.INK, label="CRC36")
-        ax.plot([], [], "o", color=FS.INK, mfc="white", label="CRC33")
-        ax.legend(loc="lower left", handletextpad=.2, borderaxespad=.1)
-    ax = FS.axes(fig, X0 + j * DX, 2.0, W, H)
-    FS.letter(fig, X0 + j * DX - 0.5, 1.9, "def"[j])
+        ax.plot([], [], "o", color=FS.GREY, label="CRC36 (300 tiles)")
+        ax.plot([], [], "o", color=FS.GREY, mfc="white", label="CRC33 (100 tiles)")
+        ax.legend(loc="lower right", handletextpad=.2, borderaxespad=.5)
     for i, (a, _, c) in enumerate(ARMS):
         for k, (s, f) in enumerate(SL):
             eb(ax, i + (k - .5) * 2 * OFF, S["slides"][s]["quantities"][q]["diff"][f"{a}-real"], c, f)

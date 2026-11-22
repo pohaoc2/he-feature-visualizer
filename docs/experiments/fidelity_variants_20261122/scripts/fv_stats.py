@@ -16,12 +16,13 @@ from pathlib import Path
 
 import numpy as np
 
-E = Path(sys.argv[1])
+E = Path(sys.argv[1]).resolve()
 F2 = E.parent / "cellvit_official_20261122/data/fig2"
 B, SEED = 10000, 42
 GROUPS = {"36": "CRC36", "33": "CRC33"}
 VARS = ("van", "grp", "cat", "gbp", "pch")
-PAIRS = (("cat", "grp"), ("cat", "gbp"), ("grp", "gbp"))
+PAIRS = (("cat", "grp"), ("cat", "gbp"), ("grp", "gbp"),
+         ("van", "cat"), ("van", "grp"), ("van", "gbp"))  # last three: coordinator addition, descriptive
 RULE_Q = ("pq_official", "a", "c")
 QUANT = ("pq_official", "pq_runner", "a", "c", "b", "auc", "hmean", "a_tS", "b_tS")
 

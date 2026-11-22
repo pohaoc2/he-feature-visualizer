@@ -1,0 +1,11 @@
+### 2026-11-22T13:34:43-08:00 job 43466477 n3193 run full3 code 76d39ed
+/gscratch/cheme/chiu/hfv_lintype_20261118/hfv/stages/lin_typing/compare.py: OK
+15c968aa259c1c9ebebb9171d0ccbc83d8052b268ad8f063eb54592dcfe3b2ce  /gscratch/cheme/chiu/fidelity_variants_20261122/scripts/fv_hema.py
+gate sha256 ok
+gate tile ids ok {'36': 300, '33': 100}
+gate R0 == evalpack ok
+gate truenuc reproduction ok 0.0 float64 diff 2.6205345393659485e-09
+36 1800 rows
+33 600 rows
+DONE
+### 2026-11-22T13:35:22-08:00 DONE
