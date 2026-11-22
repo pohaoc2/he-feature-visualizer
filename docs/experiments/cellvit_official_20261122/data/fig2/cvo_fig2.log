@@ -1,0 +1,19 @@
+### 2026-11-22T12:58:42-08:00 job 43465963 n3389 pixcell compute_ablation_metrics md5 160c80a2c699ef9cf9235a51ae9ca544
+gate: real H&E crc36ho identical (300)
+gate: real H&E crc33sec identical (100)
+P van
+P cat
+P gbp
+P pch
+36 van
+36 grp
+36 cat
+36 gbp
+36 pch
+33 van
+33 grp
+33 cat
+33 gbp
+33 pch
+DONE
+### 2026-11-22T13:07:38-08:00 DONE
