@@ -11,7 +11,8 @@ Readouts (mask_truenuc_20261122 truenuc.py pix(), copied): hod = rgb2hed hematox
 Gates: zip sha256 == cellvit_official zips_manifest.json; tile ids equal across the five zips and retgt_<set>;
 R0 cell_masks == evalpack_<set>.tar cell_masks (pixels); truenuc real-H&E-vs-L1 a/b/c (t16) reproduced on 8 CRC16 tiles
 (float32 hematoxylin as truenuc part A; readouts here use float64 as truenuc part B; job 43466429 STOPPED on a float64
-comparison, max diff 2.6e-9).
+comparison, max diff 2.6e-9; job 43466455 STOPPED with float32 under the bare env numpy 2.0.2, 3.7e-9 -> the slurm
+now uses truenuc.slurm's PYTHONPATH, numpy 2.5.4).
 """
 import csv
 import hashlib
@@ -184,7 +185,7 @@ def main(out, nproc):
             w.writerows(res)
         print(k, len(res), "rows", flush=True)
     import skimage
-    info["versions"] = dict(skimage=skimage.__version__, numpy=np.__version__)
+    info["versions"] = dict(skimage=skimage.__version__, numpy=np.__version__, numpy_file=np.__file__)
     json.dump(info, open(out / "info.json", "w"), indent=1)
     print("DONE", flush=True)
 

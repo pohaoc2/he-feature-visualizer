@@ -19,6 +19,10 @@ echo "### $(date -Is) job $SLURM_JOB_ID $(hostname) run $RUN code $(cat $D/scrip
 echo "932ebd728e549a21eb668c59e98581f1  $HFV/stages/lin_typing/compare.py" | md5sum -c || { echo "STOP compare.py md5"; exit 1; }
 sha256sum $D/scripts/fv_hema.py
 PY=$CC/crc16-20261024/cellvit/env/bin/python
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=$HFV \
+# same PYTHONPATH as truenuc.slurm (its pylibs bring numpy 2.5.4 instead of the env's 2.0.2; job 43466455 STOPPED at
+# gate 4 with the bare env: (a), (b) identical, (c) off by <= 3.7e-9 from float32 summation)
+CA=$CC/he_celltype_audit_20261118
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONPATH=$CA/pylib:$CC/slidesel-20261023/pylib:$CC/crc16-20261024/pylib:$CC/hfv_figs_20261118/PixCell:$HFV \
   $PY -u $D/scripts/fv_hema.py $O $SLURM_CPUS_PER_TASK || { echo "$(date -Is) STOP fv_hema"; exit 1; }
 echo "### $(date -Is) DONE"
