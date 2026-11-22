@@ -25,7 +25,10 @@ CELL = ["cell_masks", "cell_type_healthy", "cell_type_cancer", "cell_type_immune
         "cell_state_nonprolif", "cell_state_dead"]
 ENV = ["vasculature", "oxygen", "glucose"]
 E2 = Path("/gscratch/cheme/chiu/hfv_retrain2_20261121")
-SETS = {"crc36ho": ("crc36", "c36/exp_channels", "c36_"), "crc33sec": ("crc33", "orion-crc33/exp_channels", "")}
+# set -> (slide, envc prefix, envc id prefix, name of the cells / mask-latent build). D2: crc33sec takes the build of all
+# 1,028 channel tiles of its pack (824 listed + 204 style-only tiles that carry channels), crc33secall.
+SETS = {"crc36ho": ("crc36", "c36/exp_channels", "c36_", "crc36ho"),
+        "crc33sec": ("crc33", "orion-crc33/exp_channels", "", "crc33secall")}
 
 
 def stop(m):
@@ -56,14 +59,14 @@ def main(R, EP, OUT):
     R, EP, OUT = map(Path, (R, EP, OUT))
     OUT.mkdir(parents=True, exist_ok=True)
     rep = {}
-    for s, (slide, epre, idp) in SETS.items():
+    for s, (slide, epre, idp, bn) in SETS.items():
         root = f"orion-{s}"
         old = members(EP / f"evalpack_{s}.tar", lambda n: True)
         ch_tiles = sorted({n.split("/")[-1].rsplit(".", 1)[0] for n in old if n.startswith(f"{root}/exp_channels/cell_masks/")})
         want_env = {f"{epre}/{c}/{idp}{t}.npy" for c in ENV for t in ch_tiles}
-        cells = members(R / f"cells/eval_{s}_OC.tar", lambda n: True)
+        cells = members(R / f"cells/eval_{bn}_OC.tar", lambda n: True)
         env = members(E2 / f"envc/{slide}/envc_{slide}.tar", lambda n: n in want_env)
-        ml = members(R / f"masklat/masklat_eval_{s}_OC.tar", lambda n: n.endswith("_mask_sd3_vae.npy"))
+        ml = members(R / f"masklat/masklat_eval_{bn}_OC.tar", lambda n: n.endswith("_mask_sd3_vae.npy"))
         if len(cells) != 7 * len(ch_tiles) or len(env) != 3 * len(ch_tiles) or len(ml) != len(ch_tiles):
             stop(f"{s}: cells {len(cells)} env {len(env)} ml {len(ml)} for {len(ch_tiles)} channel tiles")
         new, dmask = {}, []
@@ -90,7 +93,7 @@ def main(R, EP, OUT):
                 elif a.dtype != np.float32 or a.shape != (256, 256) or not np.isfinite(a).all() or a.min() < 0 or a.max() > 1:
                     stop(f"{s} {t} {c} {a.dtype} {a.shape}")
                 new[f"{root}/exp_channels/{c}/{t}.npy"] = b
-            b = ml[f"ml_eval_{s}/{t}_mask_sd3_vae.npy"]
+            b = ml[f"ml_eval_{bn}/{t}_mask_sd3_vae.npy"]
             a_new, a_old = npy(b), npy(old[f"{root}/vae_features/{t}_mask_sd3_vae.npy"])
             if a_new.shape != a_old.shape or a_new.dtype != a_old.dtype or not np.isfinite(a_new).all():
                 stop(f"{s} {t} mask latent {a_new.shape} {a_new.dtype} vs {a_old.shape} {a_old.dtype}")

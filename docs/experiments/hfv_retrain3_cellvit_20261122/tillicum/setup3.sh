@@ -16,7 +16,7 @@ st() { echo "### $(date -Is) $*"; }
 url() { python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['get'][sys.argv[2]])" $L $1; }
 get() { curl -sSf --retry 5 "$(url $1)"; }
 # v2: the three new tars are checked against the md5 written by pack.py (pack.json) while they stream in
-MD5_newch33_v3=TBD; MD5_masklat33_v3=TBD; MD5_c36train_v3=TBD
+MD5_newch33_v3=15d26cc2bcda62779110fda5970e8a50; MD5_masklat33_v3=d7e02b4fd002c4f5cf1bc825fdd62971; MD5_c36train_v3=3deb889fb697dcbd4b5e49c713280175
 getv() { mkdir -p $W/md5; get $1 | python3 -c "
 import hashlib, sys
 h = hashlib.md5(); i, o = sys.stdin.buffer, sys.stdout.buffer

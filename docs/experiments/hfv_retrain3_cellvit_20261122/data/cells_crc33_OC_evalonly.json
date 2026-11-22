@@ -1,0 +1,46 @@
+{
+ "slide": "crc33",
+ "sev": "32494f0e",
+ "sets": {
+  "crc33secall": {
+   "tar": "/gscratch/cheme/chiu/hfv_retrain3_cellvit_20261122/cells/eval_crc33secall_OC.tar",
+   "tar_bytes": 10885120,
+   "n_json": 16620,
+   "n_inst": 16620,
+   "n_comp": 16620,
+   "orphan_inst": 0,
+   "orphan_px": 0,
+   "n_unmatched": 1012,
+   "px_inst": 3303521,
+   "px_unmatched": 124270,
+   "lin_in": 21715,
+   "lin_in_hit": 14610,
+   "lin_in_multi": 400,
+   "lin_in_healthy": 19813,
+   "lin_in_cancer": 94,
+   "lin_in_immune": 1808,
+   "lin_in_hit_healthy": 13303,
+   "lin_in_hit_cancer": 55,
+   "lin_in_hit_immune": 1252,
+   "nuc_healthy": 14221,
+   "nuc_cancer": 58,
+   "nuc_immune": 1329,
+   "nuc_prolif": 255,
+   "nuc_nonprolif": 15331,
+   "nuc_dead": 22,
+   "n_tiles": 1028,
+   "unmatched_frac_count": 0.06089049338146811,
+   "unmatched_frac_px": 0.03761743908998914,
+   "lin_without_nucleus_frac": 0.32719318443472256,
+   "lin_without_nucleus_frac_by_pop": {
+    "healthy": 0.32857214959874825,
+    "cancer": 0.4148936170212766,
+    "immune": 0.3075221238938053
+   },
+   "lin_multi_frac": 0.018420446695832374,
+   "lost_in_gap": 0,
+   "nuclei_per_tile_median": 12.0
+  }
+ },
+ "t_total_s": 9
+}

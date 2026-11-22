@@ -177,7 +177,8 @@ def summary(rows):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    base = f"{OUT}/cells_{SLIDE}_OC"
+    tag = "_OC" if TRAIN != "-" else "_OC_evalonly"   # TRAIN "-" = evaluation sets only (D2: all CRC33 pack channel tiles)
+    base = f"{OUT}/cells_{SLIDE}{tag}"
     if os.path.exists(base + ".json"):
         stop(f"{base}.json exists")
     import glob
@@ -195,8 +196,8 @@ def main():
     log("mask", G["lab"].shape, G["lab"].dtype, int(G["lab"].max()), "json", len(G["json"]))
     if int(G["lab"].max()) > G["n"]:
         stop("mask labels above N")
-    train = open(TRAIN).read().split()
-    sets = [("train", train, PREFIX, IDP, base)] + [(s, open(f).read().split(), "exp_channels", "", f"{OUT}/eval_{s}_OC")
+    train = open(TRAIN).read().split() if TRAIN != "-" else []
+    sets = ([("train", train, PREFIX, IDP, base)] if train else []) + [(s, open(f).read().split(), "exp_channels", "", f"{OUT}/eval_{s}_OC")
                                                    for s, f in EVALS]
     for name, tiles, _, _, _ in sets:
         miss = [t for t in tiles if t not in G["json"]]
@@ -212,7 +213,7 @@ def main():
         rep["sets"][name] = dict(tar=tp + ".tar", tar_bytes=os.path.getsize(tp + ".tar"), **summary(list(rows.values())))
         log(name, json.dumps(rep["sets"][name]))
         allrows |= rows
-    with open(f"{OUT}/tiles_{SLIDE}_OC.csv", "w", newline="") as f:
+    with open(f"{OUT}/tiles_{SLIDE}{tag}.csv", "w", newline="") as f:
         w = csv.DictWriter(f, COLS)
         w.writeheader()
         for t in sorted(allrows):

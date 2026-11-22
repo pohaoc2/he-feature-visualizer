@@ -1,0 +1,27 @@
+{
+ "mode": "OC",
+ "newch33_v3": {
+  "path": "/gscratch/cheme/chiu/hfv_retrain3_cellvit_20261122/pack/newch33_v3.tar",
+  "members": 94181,
+  "bytes": 5706731520,
+  "md5": "15d26cc2bcda62779110fda5970e8a50",
+  "index_keys": [
+   "exp_256"
+  ],
+  "index_n": 9418
+ },
+ "masklat33_v3": {
+  "path": "/gscratch/cheme/chiu/hfv_retrain3_cellvit_20261122/pack/masklat33_v3.tar",
+  "members": 9418,
+  "bytes": 626872320,
+  "md5": "d7e02b4fd002c4f5cf1bc825fdd62971"
+ },
+ "c36train_v3": {
+  "path": "/gscratch/cheme/chiu/hfv_retrain3_cellvit_20261122/pack/c36train_v3.tar",
+  "members": 216464,
+  "bytes": 12488867840,
+  "md5": "3deb889fb697dcbd4b5e49c713280175",
+  "byte_copied_from_c36train": 33303
+ },
+ "t_total_s": 232
+}

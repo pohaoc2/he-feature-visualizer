@@ -1,0 +1,21 @@
+{
+ "crc36ho": {
+  "tiles": 300,
+  "identical": 300,
+  "need": 298,
+  "pq_min": 1.0,
+  "pq_mean": 1.0,
+  "count_diff_max": 0,
+  "not_identical": []
+ },
+ "crc33sec": {
+  "tiles": 100,
+  "identical": 100,
+  "need": 100,
+  "pq_min": 1.0,
+  "pq_mean": 1.0,
+  "count_diff_max": 0,
+  "not_identical": []
+ },
+ "pass": true
+}

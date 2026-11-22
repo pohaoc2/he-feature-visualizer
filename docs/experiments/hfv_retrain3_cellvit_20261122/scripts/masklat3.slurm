@@ -2,7 +2,7 @@
 #SBATCH --job-name=r3-masklat
 #SBATCH --account=ckpt-cheme
 #SBATCH --partition=ckpt
-#SBATCH --gpus=a100:1
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
 #SBATCH --time=3:00:00
@@ -48,7 +48,7 @@ PYEOF
   [ ${PIPESTATUS[0]} = 0 ] || { st "STOP devcheck compare"; exit 1; }
   touch $K/ok_devcheck
 fi
-for SL in crc33 crc36 eval_crc33sec eval_crc36ho; do
+for SL in ${ML_SETS:-crc33 crc36 eval_crc33sec eval_crc36ho}; do   # ML_SETS (env): D2 adds eval_crc33secall
   [ -f $K/ok_$SL ] && continue
   case $SL in crc33|crc36) T=$R/cells/cells_${SL}_$MODE.tar ;; *) T=$R/cells/${SL}_$MODE.tar ;; esac
   rm -rf in_$SL ml_$SL; mkdir in_$SL
