@@ -616,6 +616,21 @@
 - 從 S3 讀到 Hyak 的量（都是自己的 bucket，不需要核准）：`orion-crc33.zip` 5.19 GB × 最多 4 次（B 的四次嘗試）；`new_exp_channels_crc33_01.tar` 0.21 GB 和 `decodability_cpu_bundle.tgz` 0.18 GB，各最多 4 次；繪圖輸入（評估輸出 tar 3.52 GB + evalpack 2.24 GB）約 5.8 GB × 最多 6 次；小檔（CSV、折、程式）可忽略。總共最多約 60 GB。C34 的輸入從 Hyak 本地讀。
 - 輸出：S3 `hfv_retrain_20261118/figures_rerender/a3/{r2old_b,r2new,dec,dec_red}/`；比較頁的圖在 `compare/a3/{orig,r2old,r2new}/`。
 
+**追加 3b：探針一律用全部的訓練列（使用者 2026-11-21 決定；寫在全部列的任何結果出來之前）**
+
+- **決定**：使用者看過上面「塊內 R² 對訓練列數非常敏感」之後決定：所有可解碼性探針都不設列數上限，每一折的全部訓練列都拿來訓練（d1fc8a5 的 `--max-train-rows 0` = 不設上限）。理由：任何上限都是論文沒有記錄的任意設定，全部用就不需要挑一個。
+- **這取代了追加 3 決定 3 的選法**（「500,000 和 50,000 列哪個比較接近論文」）。論文的 R² 從此只拿來描述差異，不再用來挑設定。
+- 各編碼器的影響（下面的列數是 tile 數 × 格數 × 訓練折比例的估計；每折實際的有限訓練列數由 `eval/a3all.py` 從目標和折直接數出來，記在結果裡）：
+  - **C33 UNI（715 張，16 × 16 格，5 折）**：每折約 146,000 列，少於 500,000，所以追加 3 的「最多 500,000 列」那次就等於全部的列，**不需要重跑**。改變的只有繪圖用哪一次：從 50,000 列換成 500,000 列（= 全部）。
+  - **C33 CTransPath（715 張，7 × 7 格）**：每折約 28,000 列，原本選的 500,000 列那次就是全部的列，不變。
+  - **C33 ResNet-50（184 張，7 × 7 格，3 折）**：每折約 6,000 列，少於縮減設定的 10,000，所以原本那次就是全部的列，不變。
+  - **C33 Virchow2（184 張，16 × 16 格，3 折）**：每折約 31,000 列，10,000 列的上限有作用，**要重跑**（old200、old184、new184 三次；其他照縮減設定：最多 50 輪、隱藏層 128,32）。這偏離了 handover 寫的縮減設定；縮減設定曾把論文的 Virchow2 重現到中位數差 0.007，那次的結果保留，並列報告。
+  - **C34 UNI（9,958 張，16 × 16 格，3 折）**：每折約 1,700,000 列，500,000 的上限有作用，**要重跑**。這偏離了計畫文件裡的 C34 指令（500,000 列）。其他照原本：同一份特徵、目標、折（`cv_uni_16_crc34_kept.json`）、打亂基準、d1fc8a5 程式、隱藏層、輪數、批次。500,000 列的結果保留在上面，並列報告。
+- **執行**：`eval/a3all_hyak.slurm`（Hyak cheme CPU，40 核、170 GB，節點本機 `/tmp`，不自動重排，出錯就停）。輸入是追加 3 已存的 `dec_features.tar`、`dec_results.tar`；輸出 S3 `figures_rerender/a3/dec_all/` 和 Hyak `dec_all_results.tar`，兩者事先都不能存在。
+  - 記憶體估計（寫在執行前）：C34 每個 fit 的訓練矩陣是 1,700,000 × 1,536 的 fp32，約 10.4 GB；StandardScaler 再複製一份，測試集約 5.2 GB 加一份複製，打亂基準時又多一份訓練矩陣，所以每個平行程序最多約 36 GB。同時跑 3 個程序（每個 12 執行緒）約 110 GB，放得下 170 GB。
+  - 時間估計：500,000 列那次（5 程序 × 4 執行緒）31 分鐘；全部的列是 3.4 倍，作業上限設 12 小時。
+- **繪圖**：用 `a3render_hyak.slurm`，`A3_R2` 指向 `dec_all/r2all/`，`A3_TAG=r2all`，兩版（主要／次要 PQ 參考）。`r2all/` 裡：uni_16 = `uni_new715_r500000`、ctranspath_07 = `ctp_new715_r500000`、resnet50_07 = `res_new184`（以上三個是追加 3 已有、等於全部列的那幾次；`a3all.py` 會先確認每折的有限列數不超過那次的上限，否則停止），virchow2_16 和 uni_16_crc34 是這次的新結果。`r2new` 的圖保留，不覆蓋。
+
 ### 尚未完成
 
 - 論文 figure 重繪（作業 43427989，2026-11-20 12:00–12:59）：6 個步驟中 5 個成功，重繪的檔案在 S3 `figures_rerender/`（清單 `rendered.txt`）：Fig 2（`concat/fig2_architecture_performance.png`）、`si/ablation_grids_combined.png`、`si/si_performance_ranking.png`、`si/si_qualitative_variants.png`、`si/si_training_stability.png`、`individual/ablation_analysis/05_paired_ablation_grid.png`。
