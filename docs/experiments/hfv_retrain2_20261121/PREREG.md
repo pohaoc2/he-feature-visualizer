@@ -211,3 +211,53 @@
 **規則：**
 - L1b 的 95 % 區間和 L1 的重疊 → **建 L1b**。理由：真實訓練圖塊和模擬用同一條畫法，訓練輸入和 sim2real 輸入來自同一套規則。
 - 不重疊 → **建 L1**（自己的形狀），並註明模擬端用的是同一族群的外形庫輪廓。
+
+## 9. 修訂：第 3 階段的執行細節與判讀表的操作定義（2026-11-21 23:40，訓練中、任何 N 的影像或數字出現之前；協調者交辦的 agent 寫入）
+
+這一節只把 §5 寫得不夠細的地方定下來，不改 §5 的讀數和判讀表。
+
+### 9.1 讀數 1、2 的生成（Fig 2 設定）
+
+- N：PixCell cb62fa7 `tools/ablation_a1_a2/build_cache.py --variants a1_concat`（hfv Fig 2 的 Concat 路徑；30 步、導引 1.5、種子 42、該圖塊自己的 UNI），透過 `hfv_retrain_20261118/eval/evalgen.py` 的影子目錄執行，只產生 Concat。
+  - 圖塊：crc36ho 的 300 張（`crc36ho_p300_ids.txt`）、crc33sec 的 Fig 2 100 張（`crc33sec_fig2_ids.txt`）。
+  - 輸入：評估包 `evalpack_<set>.tar` 只換三樣——7 個細胞通道（`cells2/eval_<set>_L1.tar`）、ch7–9（`envc/<slide>/envc_<slide>.tar` 的方法 C）、遮罩 latent（`masklat/masklat_eval_<set>_L1.tar`）。UNI、H&E、H&E latent 不變。
+- K：沿用 2026-11-19 已生成的 Fig 2 Concat 影像（S3 `hfv_retrain_20261118/outputs/score_fig2_<set>.tar` 的 `tiles/a1_concat/`），不重生成。同一支程式、同一組設定、同一種 GPU（Colab L4）、同一套環境（torch 2.10.0+cu128）。
+- 硬體：N 也在 Colab L4 生成（理由見 9.4）。
+
+### 9.2 讀數 1、2 的打分（同一支程式、同一個裝置打兩個模型）
+
+- 新程式 `scripts/r2score.py`，在 Hyak cheme CPU 上對 N、K 和真實 H&E 用**同一個**設定重跑 CellViT（未修改的 hfv `run_cellvit_local.py`、CellViT-256、batch 32、原始解析度，與 sim2real 應用 8 相同）。K 在 11-19 的 L4 CellViT 結果不拿來配對，只拿來比對 K 的次要 PQ 平均（描述）。
+- **次要 PQ**：PixCell `_compute_pq`；參考 = 模型自己的訓練樣式遮罩（N：L1；K：R0，即評估包的 `cell_masks`），二值化後取連通區塊（PixCell 讀 `cell_masks` 的方式）；預測 = 生成圖 CellViT 的實例（`_cellvit_json_to_instance_mask`）。
+  - **參考線** = 同一張圖塊的真實 H&E CellViT 對同一個遮罩的 PQ。
+- **對 Lin 中心點的 F1**：`hfv_retrain_20261118/eval/robust.py` 讀數 2 的定義（Hungarian 一對一配對、配對半徑 r 沿用 `info_<set>.json`：crc36ho 9.06 px、crc33sec 8.83 px、邊緣規則相同）。參考線 = 真實 H&E 的同一個 F1（兩個模型共用）。
+- **忠實度**（每張圖塊）= 模型的值 − 參考線。比較 = N − K 的配對差，對圖塊 bootstrap 10,000 次、seed 42（`evalstats.py` 的慣例），95 % 百分位區間。
+- **外觀（讀數 2，描述）**：LPIPS（alex）、style_hed（`fig2tiles.py` 的寫法）逐張算，N − K 給同樣的配對區間；FUD 每組一個數（PixCell `compute_fid_from_stats`；真實側用評估包存的 UNI，生成側用 `pxscore.py` 的 UNI-2h 轉換在 CPU 上抽），沒有區間。
+- 主要 PQ（參考 = 真實 H&E 的 CellViT）也一併列出，描述。
+
+### 9.3 讀數 3 的臂與配對
+
+| 代號 | 模型 | ch0–6 | ch7–9 | 風格 | 來源 |
+|---|---|---|---|---|---|
+| NP | N | CRC16 L1（`eval/crc16_L1`） | 方法 C（`orion-crc16e`，同應用 8 KE） | own（`P_<tile>`） | **= 應用 10 的 KP 臂，同一次生成** |
+| ND | N | 同上 | 同上 | other（`D_<tile>`，應用 7 的排列） | 本實驗新生成 |
+| KP、KD | K | s3b（R0 畫法） | hfv mx | own／other | 應用 8，沿用 |
+
+- 生成設定：種子 42、43；20 步；導引 2.5；conditioning scale 1.0；`app8_gen_k.py` 的生成路徑；Colab L4。應用 10 預登記 §3 的設定與應用 8 §4 完全相同，所以 NP 與應用 10 共用，N − K 的配對成立。ND 用 `app8_gen_k.py` 的複本，只把「1,152 列」改成讀設計檔的列數、參考張量的鍵改成設計檔指定。
+- **真值單位**：每個模型用自己看到的那份遮罩。N：CRC16 L1 實例圖（`eval/crc16_L1/labels/<tile>.npy`，類型取自同一份 L1 通道）；K：應用 8 的 s3b 單位（`app8_stats.py` 不改）。真實 H&E（應用 2 `cv/RAW`）在兩種單位上各配對一次，兩個值都報告。
+- 配對規則、Δ、canc_neo、核面積：`app8_stats.py`。區間：同一個 (2,000 × 12) 視窗索引矩陣（`default_rng(20261128)`），所以 N − K 是配對差。
+- **描述讀數**（應用 9 結果 §4 預告）：圖塊內 Δ（應用 10 預登記 §6.2 的 Mantel–Haenszel 風險差）、核面積中位數，四個臂都算；以及 N − K 的配對差。
+
+### 9.4 放置（依實測）
+
+- Colab L4：應用 9 實測 1,152 張生成 2,739 s（每張 2.38 s），全程 2,998 s；hfv Fig 2 30 步 25.16 張／分。
+- Hyak GPU（2026-11-21 23:10 查）：ckpt 分區閒置的 GPU 只有 rtx6k／2080ti，A100、L40S、A40、L40 全部滿載；rtx6k 上沒有任何生成的實測速度。
+- K 的 Fig 2 與應用 8 的 KP／KD 都是 L4 生成；應用 10 預登記 §8 也指定 L4。N 用同一種 GPU，N − K 才不混入 GPU 型號的差別。
+- 所以：兩個 L4 session（`hfv_eval_L4_a`／`_b`），應用 10 的 4,608 張 + ND 384 張 + Fig 2 400 張（30 步）。
+
+### 9.5 判讀表的操作定義（§5 的表不變）
+
+- 「忠實度 N 高於 K」= 四個 N − K 區間（次要 PQ、F1 × crc36ho、crc33sec）**全部**整個 > 0。
+- 「忠實度沒有提高」= 不滿足上一條（任一個區間含 0 或 < 0）。
+- 「Δ 的 N − K 區間整個在 0 以下」= own 或 other 任一種風格的區間上界 < 0。
+- 套用順序：先看第 2 列（任一風格 Δ 區間 < 0 → 留 K）；再看第 1 列（忠實度四個區間都 > 0，且兩種風格的 Δ 區間都不在 0 以下 → 改用 N）；其餘 → 第 3 列（回報，遮罩選擇交給使用者）。
+- canc_neo、外觀、圖塊內 Δ、核面積不參與判讀，照實報告。
