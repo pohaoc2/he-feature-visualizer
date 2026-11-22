@@ -9,7 +9,7 @@ scripts/colab/app7_presign.py (bucket, 2026-11-11 bundle prefix BP).
                        read only; kit.tar.gz = r2_gen.py, evalgen_r2.py, pxrun.py, uploaded here; the job inputs from
                        hfv_retrain2_20261121/stage3/inputs/), PUT links for the log and one jobs_out_<out>.tar per job
                        -> OUT/boot_TAG.sh, OUT/TAG_curl.txt (the notebook line)
-  get OUT              OUT/get.txt "<name> <GET link>" for the three jobs_out_*.tar (Hyak)
+  get OUT [NAMES]      OUT/get.txt "<name> <GET link>" for the jobs_out_*.tar (all, or the NAMES given) (Hyak)
   fetch OUT            colab logs and jobs_out_*.tar into OUT
 Every signed GET object must exist (head_object) before the boot is written.
 """
@@ -34,8 +34,10 @@ IP = "pohao/hfv_retrain2_20261121/stage3/inputs/"
 K2 = "pohao/sim-exp-validation/colab/sim2real-app10-20261121/infer_tr_concat2_e20.tar"
 # 2026-11-21 ch6 ablation first (sim-exp-validation prereg_ch6_ablation.md): each session runs one half of it; session B
 # then runs the retrain-2 stage-3 jobs (independent of the ablation). App 10 waits for the ablation's rule.
-SESS = {"c6A": ["r2gen:ch6a"], "r2B": ["r2gen:ch6b", "r2gen:r2ND", "fig2c:crc36ho", "fig2c:crc33sec"]}
-KINP = {"r2ND": IP, "ch6a": "pohao/sim-exp-validation/colab/sim2real-ch6-20261121/inputs/",
+SESS = {"c6A": ["r2gen:ch6a"], "r2B": ["r2gen:ch6b", "r2gen:r2ND", "fig2c:crc36ho", "fig2c:crc33sec"],
+        # 2026-11-22: the ch6 rule stopped app-10 generation, so arm NP (= the app-10 KP rows) is its own job (s3prep npkin)
+        "r2C": ["r2gen:r2NP"]}
+KINP = {"r2ND": IP, "r2NP": IP, "ch6a": "pohao/sim-exp-validation/colab/sim2real-ch6-20261121/inputs/",
         "ch6b": "pohao/sim-exp-validation/colab/sim2real-ch6-20261121/inputs/"}
 LISTS = {"crc36ho": "crc36ho_p300_ids.txt", "crc33sec": "crc33sec_fig2_ids.txt"}
 
@@ -91,7 +93,10 @@ def main():
         private(out / f"{tag}_curl.txt", line)
         print(f"{tag}: {out / f'{tag}_curl.txt'}; log s3://{B}/{RP}colab_{tag}.log; jobs {SESS[tag]}")
     elif mode == "get":
-        private(out / "get.txt", "".join(f"{n} {link('get_object', RP + n)}\n" for n in OUTS))
+        want = sys.argv[3:] or OUTS  # optional subset of jobs_out_*.tar names
+        if not set(want) <= set(OUTS):
+            raise SystemExit(f"unknown {sorted(set(want) - set(OUTS))}")
+        private(out / "get.txt", "".join(f"{n} {link('get_object', RP + n)}\n" for n in want))
         print(out / "get.txt")
     elif mode == "fetch":
         for n in [f"colab_{t}.log" for t in SESS] + OUTS:

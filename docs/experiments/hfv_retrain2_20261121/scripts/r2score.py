@@ -62,6 +62,8 @@ def zips(G, which):
     G = Path(G)
     Z = G / "zips"
     Z.mkdir(parents=True, exist_ok=True)
+    if which == "NP":  # 2026-11-22: arm NP generated as its own job (ch6 STOP), CellViT names NP__<window>__<tile>__<seed>
+        return arm_zip(G, "NP")
     srcs = {"KR": ("K", "R"), "N": ("N",)}[which]
     rep = {}
     for s in SETS:
@@ -85,24 +87,36 @@ def zips(G, which):
         (Z / "zips_KR.json").write_text(json.dumps(rep, indent=1) + "\n")
         print(rep)
         return
-    d = G / "gen/r2ND"
+    rep.update(arm_zip(G, "ND", write=False))
+    (Z / "zips_N.json").write_text(json.dumps(rep, indent=1) + "\n")
+    print(rep)
+
+
+def arm_zip(G, arm, write=True):
+    Z = G / "zips"
+    Z.mkdir(parents=True, exist_ok=True)
+    if (Z / f"{arm}.zip").exists():
+        stop(f"{arm}.zip exists")
+    d = G / f"gen/r2{arm}"
     st = json.loads((d / "status.json").read_text())
     if st["state"] != "complete" or st["images"] != 384:
-        stop(f"r2ND status {st}")
+        stop(f"r2{arm} status {st}")
     items = []
     for r in json.loads((d / "rows.json").read_text()):
         b = (d / r["image"]).read_bytes()
         if hashlib.sha256(b).hexdigest() != r["image_sha256"]:
             stop(f"sha256 {r['image']}")
-        items.append((f"ND__{r['window']}__{r['tile']}__{r['seed']}.png", b))
+        items.append((f"{arm}__{r['window']}__{r['tile']}__{r['seed']}.png", b))
     if len(items) != 384 or len({n for n, _ in items}) != 384:
-        stop(f"ND {len(items)}")
-    with zipfile.ZipFile(Z / "ND.zip", "w", zipfile.ZIP_STORED) as z:
+        stop(f"{arm} {len(items)}")
+    with zipfile.ZipFile(Z / f"{arm}.zip", "w", zipfile.ZIP_STORED) as z:
         for n, b in sorted(items):
             z.writestr(n, b)
-    rep["ND"] = 384
-    (Z / "zips_N.json").write_text(json.dumps(rep, indent=1) + "\n")
-    print(rep)
+    rep = {arm: 384}
+    if write:
+        (Z / f"zips_{arm}.json").write_text(json.dumps(rep, indent=1) + "\n")
+        print(rep)
+    return rep
 
 
 # -------------------------------------------------------------------------------------------------------------- metrics

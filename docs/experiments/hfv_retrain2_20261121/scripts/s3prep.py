@@ -132,17 +132,20 @@ def packs(R, EP, IDS, OUT):
     (OUT / "packs.json").write_text(json.dumps(rep, indent=1) + "\n")
 
 
-def ndkin(R, A8, OUT, PIX):
+def ndkin(R, A8, OUT, PIX, arm="ND"):
+    """arm ND (app 8 KD styles, D_ vectors) or NP (app 8 KP styles, P_ vectors; 2026-11-22: the app-10 KP arm that was to
+    serve as NP is not generated after the ch6 STOP, so NP is generated here as its own stage-3 job, same rows)."""
     R, A8, OUT, PIX = (Path(p).resolve() for p in (R, A8, OUT, PIX))
-    K = OUT / "kin_r2ND"
+    kc, vp = {"ND": ("KD", "D_"), "NP": ("KP", "P_")}[arm]
+    K = OUT / f"kin_r2{arm}"
     if K.exists():
         stop(f"{K} exists")
     src = R / "eval/crc16_L1/exp_channels"
     tl = [t.strip() for t in open(R / "eval/crc16_L1/tiles.txt") if t.strip()]
     d8 = json.loads((A8 / "kin/design_k.json").read_text())["rows"]
-    kd = {r["tile"]: r for r in d8 if r["cond"] == "KD" and r["seed"] == 42}
+    kd = {r["tile"]: r for r in d8 if r["cond"] == kc and r["seed"] == 42}
     if sorted(tl) != sorted(kd) or len(tl) != 192:
-        stop(f"tiles {len(tl)} != app 8 KD tiles {len(kd)}")
+        stop(f"tiles {len(tl)} != app 8 {kc} tiles {len(kd)}")
     u8 = np.load(A8 / "kin/uni.npz")
     e7 = np.load(Path("/gscratch/cheme/chiu/sim2real_apps_20261120/app7/held/embeddings.npz"))
     uni, ref, rows = {}, {}, []
@@ -151,7 +154,7 @@ def ndkin(R, A8, OUT, PIX):
         (dst / c).mkdir(parents=True)
     for t in tl:
         k = kd[t]["reference"]
-        if not k.startswith("D_") or u8[k].tobytes() != e7[k].tobytes() or u8[k].dtype != np.float32:
+        if not k.startswith(vp) or u8[k].tobytes() != e7[k].tobytes() or u8[k].dtype != np.float32:
             stop(f"style {t} {k}")
         uni[k] = u8[k]
         for c in CELL:
@@ -178,21 +181,21 @@ def ndkin(R, A8, OUT, PIX):
         ref[f"{t}__n"] = a
     for seed in (42, 43):
         for t in tl:
-            rows.append(dict(id=f"N_ND.{t}_{seed}", model="N", cond="ND", root="orion-crc16L1", tile=t,
+            rows.append(dict(id=f"N_{arm}.{t}_{seed}", model="N", cond=arm, root="orion-crc16L1", tile=t,
                              window=kd[t]["window"], seed=seed, reference=kd[t]["reference"],
                              style_source=kd[t]["style_source"], ref_key=f"{t}__n", guidance=2.5, steps=20,
                              conditioning_scale=1.0))
     np.savez_compressed(K / "ref.npz", **ref)
     np.savez(K / "uni.npz", **uni)
     (K / "design.json").write_text(json.dumps(dict(n_rows=len(rows), rows=rows,
-                                                   rule="hfv_retrain2 PREREG §9.3 arm ND (s3prep.py ndkin)"), indent=1) + "\n")
-    with tarfile.open(OUT / "kin_r2ND.tar", "w") as tf:
+                                                   rule=f"hfv_retrain2 PREREG §9.3 arm {arm} (s3prep.py ndkin)"), indent=1) + "\n")
+    with tarfile.open(OUT / f"kin_r2{arm}.tar", "w") as tf:
         tf.add(K, arcname=".")
-    rep = dict(rows=len(rows), tiles=len(tl), kin_tar=str(OUT / "kin_r2ND.tar"), kin_sha256=sha(OUT / "kin_r2ND.tar"),
+    rep = dict(arm=arm, rows=len(rows), tiles=len(tl), kin_tar=str(OUT / f"kin_r2{arm}.tar"), kin_sha256=sha(OUT / f"kin_r2{arm}.tar"),
                manifest_sha256=sha(R / "eval/crc16_L1/manifest.json"))
-    (OUT / "ndkin.json").write_text(json.dumps(rep, indent=1) + "\n")
+    (OUT / f"{arm.lower()}kin.json").write_text(json.dumps(rep, indent=1) + "\n")
     print(json.dumps(rep))
 
 
 if __name__ == "__main__":
-    {"packs": packs, "ndkin": ndkin}[sys.argv[1]](*sys.argv[2:])
+    {"packs": packs, "ndkin": ndkin, "npkin": lambda *a: ndkin(*a, arm="NP")}[sys.argv[1]](*sys.argv[2:])

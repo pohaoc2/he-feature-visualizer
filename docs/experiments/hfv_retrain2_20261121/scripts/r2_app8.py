@@ -34,7 +34,9 @@ import msi_s3b_edits as S3B  # noqa: E402
 NB, SEED, HELD, area = A8S.NB, A8S.SEED, A8S.HELD, A8S.area
 E = S3B.E
 L1, CVR, CV8, CV10, CVND = map(Path, (L1, CVR, CV8, CV10, CVND))
-SRC_N = {"R_L1": (CVR / "RAW", "real", (0,)), "NP": (CV10 / "KP", "KP", (42, 43)), "ND": (CVND, "ND", (42, 43))}
+# 2026-11-22: after the ch6 STOP, NP is its own stage-3 job; pass CV10 = stage3 cv (holds NP/ with NP__...json)
+NPSRC = (CV10 / "NP", "NP") if (CV10 / "NP").is_dir() else (CV10 / "KP", "KP")
+SRC_N = {"R_L1": (CVR / "RAW", "real", (0,)), "NP": (*NPSRC, (42, 43)), "ND": (CVND, "ND", (42, 43))}
 SRC_K = {"R_s3b": (CVR / "RAW", "real", (0,)), "KP": (CV8 / "KP", "KP", (42, 43)), "KD": (CV8 / "KD", "KD", (42, 43))}
 
 
