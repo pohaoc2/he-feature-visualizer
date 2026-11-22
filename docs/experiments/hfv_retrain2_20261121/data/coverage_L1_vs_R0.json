@@ -1,0 +1,66 @@
+{
+ "crc33": {
+  "n_train": 9418,
+  "n_matched": 9418,
+  "missing": 0,
+  "R0": {
+   "cell_masks": 0.16760000586509705,
+   "cell_type_healthy": 0.12919999659061432,
+   "cell_type_cancer": 0.005799999926239252,
+   "cell_type_immune": 0.032600000500679016,
+   "cell_state_prolif": 0.007799999788403511,
+   "cell_state_nonprolif": 0.15960000455379486,
+   "cell_state_dead": 0.00019999999494757503
+  },
+  "L1": {
+   "cell_masks": 0.17159999907016754,
+   "cell_type_healthy": 0.13199999928474426,
+   "cell_type_cancer": 0.006099999882280827,
+   "cell_type_immune": 0.03350000083446503,
+   "cell_state_prolif": 0.007899999618530273,
+   "cell_state_nonprolif": 0.16339999437332153,
+   "cell_state_dead": 0.00019999999494757503
+  },
+  "tile_corr": {
+   "cell_masks": 0.999,
+   "cell_type_healthy": 0.999,
+   "cell_type_cancer": 0.999,
+   "cell_type_immune": 0.999,
+   "cell_state_prolif": 0.999,
+   "cell_state_nonprolif": 0.999,
+   "cell_state_dead": 0.996
+  }
+ },
+ "crc36": {
+  "n_train": 16651,
+  "n_matched": 16651,
+  "missing": 0,
+  "R0": {
+   "cell_masks": 0.31299999356269836,
+   "cell_type_healthy": 0.07959999889135361,
+   "cell_type_cancer": 0.10779999941587448,
+   "cell_type_immune": 0.12559999525547028,
+   "cell_state_prolif": 0.06930000334978104,
+   "cell_state_nonprolif": 0.243599995970726,
+   "cell_state_dead": 9.999999747378752e-05
+  },
+  "L1": {
+   "cell_masks": 0.32089999318122864,
+   "cell_type_healthy": 0.08020000159740448,
+   "cell_type_cancer": 0.11209999769926071,
+   "cell_type_immune": 0.12860000133514404,
+   "cell_state_prolif": 0.07190000265836716,
+   "cell_state_nonprolif": 0.24889999628067017,
+   "cell_state_dead": 9.999999747378752e-05
+  },
+  "tile_corr": {
+   "cell_masks": 0.999,
+   "cell_type_healthy": 0.999,
+   "cell_type_cancer": 0.999,
+   "cell_type_immune": 0.999,
+   "cell_state_prolif": 0.999,
+   "cell_state_nonprolif": 0.999,
+   "cell_state_dead": 0.997
+  }
+ }
+}

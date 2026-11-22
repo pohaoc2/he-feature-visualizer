@@ -14,7 +14,7 @@
 # method C ch7-9 (tillicum/setup2.sh, run before on the login node). Same PixCell cb62fa7, train_wrap.py, config
 # config_controlnet_exp_a1_concat, effective batch 80, 20 epochs, seed 42, no TF32 override. One H200, 4:00:00 at most
 # ($0.90 / h = $3.60). Checkpoints every 2nd epoch + the last to this run's S3 outputs/ (presign2.py slots).
-# NOT submitted by the stage-2 worker: the user logs into Tillicum first.
+# Submitted 2026-11-21 after the user logged into Tillicum (coordinator relay); budget cap $40, about $22 left.
 set -u
 W=/gpfs/scrubbed/pohaoc2/hfv_retrain2_20261121; P=$W/PixCell; D=$W/data/orion-crc33
 PY=/gpfs/projects/bagherilab/pohaoc2/envs/pixcell/bin/python; RUN=tr_concat2; LOG=$W/logs/$SLURM_JOB_NAME-$SLURM_JOB_ID.out

@@ -16,7 +16,7 @@ st() { echo "### $(date -Is) $*"; }
 url() { python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['get'][sys.argv[2]])" $L $1; }
 get() { curl -sSf --retry 5 "$(url $1)"; }
 # v2: the three new tars are checked against the md5 written by pack.py (pack.json) while they stream in
-MD5_newch33_v2=@MD5_newch33_v2@; MD5_masklat33_v2=@MD5_masklat33_v2@; MD5_c36train_v2=@MD5_c36train_v2@
+MD5_newch33_v2=2f4ecd0c7853439851a9ed7fabb8a790; MD5_masklat33_v2=68725e4ee023746366b22ace524fe3b3; MD5_c36train_v2=6a0f9478627b252afc7e97067367b964
 getv() { mkdir -p $W/md5; get $1 | python3 -c "
 import hashlib, sys
 h = hashlib.md5(); i, o = sys.stdin.buffer, sys.stdout.buffer
@@ -66,6 +66,8 @@ mkdir -p data
 # v2: the three old environment channels are left out too (replaced by method C in newch33_v2)
 X='^orion-crc33/(exp_channels/(cell_masks|cell_type_healthy|cell_type_cancer|cell_type_immune|cell_state_prolif|cell_state_nonprolif|cell_state_dead|vasculature|oxygen|glucose)/|metadata/exp_index\.hdf5$|vae_features/[^/]*_mask_sd3_vae\.npy$)'
 [ -f ok_orion ] || { get orion-crc33 | python3 $TL/streamunzip.py data "$X"; st orion-crc33; touch ok_orion; }
+# v2: PRE_ONLY=1 stops here (the v2 tars are still being packed); a later run skips the finished phases by their markers
+[ "${PRE_ONLY:-}" = 1 ] && { st "pre-only phases done"; exit 0; }
 D=$W/data/orion-crc33
 getv newch33_v2 | tar -x -C data; chk newch33_v2   # v2: 7 L1 cell channels + method C ch7-9 + index
 for c in $D/exp_channels/*; do echo "$(ls $c | wc -l) $c"; done

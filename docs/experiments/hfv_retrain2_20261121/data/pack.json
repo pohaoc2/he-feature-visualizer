@@ -1,0 +1,27 @@
+{
+ "mode": "L1",
+ "newch33_v2": {
+  "path": "/gscratch/cheme/chiu/hfv_retrain2_20261121/pack/newch33_v2.tar",
+  "members": 94181,
+  "bytes": 5725839360,
+  "md5": "2f4ecd0c7853439851a9ed7fabb8a790",
+  "index_keys": [
+   "exp_256"
+  ],
+  "index_n": 9418
+ },
+ "masklat33_v2": {
+  "path": "/gscratch/cheme/chiu/hfv_retrain2_20261121/pack/masklat33_v2.tar",
+  "members": 9418,
+  "bytes": 626872320,
+  "md5": "68725e4ee023746366b22ace524fe3b3"
+ },
+ "c36train_v2": {
+  "path": "/gscratch/cheme/chiu/hfv_retrain2_20261121/pack/c36train_v2.tar",
+  "members": 216464,
+  "bytes": 12541358080,
+  "md5": "6a0f9478627b252afc7e97067367b964",
+  "byte_copied_from_c36train": 33303
+ },
+ "t_total_s": 184
+}

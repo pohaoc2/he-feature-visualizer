@@ -35,7 +35,7 @@ if [ ! -f $K/ok_devcheck ]; then
   sed 's#c36/exp_channels/cell_masks/\(.*\)\.png#c36/vae_features/\1_mask_sd3_vae.npy#' dc/list > dc/list2
   tar -xf /gscratch/cheme/chiu/hfv_crc36_20261118/data/c36train.tar -T dc/list -T dc/list2
   mv c36/exp_channels/cell_masks/* dc/m/; mv c36/vae_features/* dc/ref/
-  ML dc/m dc/out
+  ML $G/dc/m $G/dc/out || { st "STOP devcheck extract"; exit 1; }
   $PY - dc/out dc/ref <<'PYEOF' | tee $K/devcheck.json
 import json, sys, glob, os, numpy as np
 o, r = sys.argv[1:3]
@@ -45,6 +45,7 @@ for f in sorted(glob.glob(f"{r}/*.npy")):
     d.append(np.abs(a - b).max()); sc.append(np.abs(b).max())
 print(json.dumps(dict(n=len(d), max_abs_diff=float(max(d)), median_max_abs_diff=float(np.median(d)), median_abs_max_value=float(np.median(sc)))))
 PYEOF
+  [ ${PIPESTATUS[0]} = 0 ] || { st "STOP devcheck compare"; exit 1; }
   touch $K/ok_devcheck
 fi
 for SL in crc33 crc36 eval_crc33sec eval_crc36ho; do
@@ -52,8 +53,8 @@ for SL in crc33 crc36 eval_crc33sec eval_crc36ho; do
   case $SL in crc33|crc36) T=$R/cells2/cells_${SL}_$MODE.tar ;; *) T=$R/cells2/${SL}_$MODE.tar ;; esac
   rm -rf in_$SL ml_$SL; mkdir in_$SL
   tar -xf $T -C in_$SL --wildcards '*/cell_masks/*' || { st "STOP extract $SL"; exit 1; }
-  M=$(find in_$SL -type d -name cell_masks | head -1); n=$(ls $M | wc -l)
-  ML $M ml_$SL; rc=$?; m=$(ls ml_$SL | grep -c _mask_sd3_vae.npy)
+  M=$(find $G/in_$SL -type d -name cell_masks | head -1); n=$(ls $M | wc -l)
+  ML $M $G/ml_$SL; rc=$?; m=$(ls ml_$SL | grep -c _mask_sd3_vae.npy)
   st "$SL rc $rc latents $m of $n"
   [ $rc = 0 ] && [ $m = $n ] || { st "STOP masklat $SL"; exit 1; }
   tar -cf $K/masklat_${SL}_$MODE.tar.part ml_$SL && mv $K/masklat_${SL}_$MODE.tar.part $K/masklat_${SL}_$MODE.tar && touch $K/ok_$SL

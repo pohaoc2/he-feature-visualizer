@@ -121,7 +121,12 @@ def main():
     if os.path.exists(base + ".json"):
         stop(f"{base}.json exists")
     c = np.load(f"{LIN}/cells_labels.npz")
-    nuc = np.load(f"{LIN}/cells_nuclei.npz")
+    if os.path.exists(f"{LIN}/cells_nuclei.npz"):
+        nuc = dict(np.load(f"{LIN}/cells_nuclei.npz"))
+    elif MODE == "L1":   # L1 draws from the mask; target_px only feeds L1b (e.g. msi s3b_crc16b has no cells_nuclei.npz)
+        nuc = dict(cell_id=c["cell_id"], target_px=np.ones(len(c["cell_id"])))
+    else:
+        stop("L1b needs cells_nuclei.npz")
     if not (np.array_equal(c["cell_id"], np.arange(1, len(c["cell_id"]) + 1)) and np.array_equal(c["cell_id"], nuc["cell_id"])):
         stop("cell_id is not 1..N in label order")
     G.update(n=len(c["cell_id"]), ty=c["ty"].astype(int), st=c["st"].astype(int),
