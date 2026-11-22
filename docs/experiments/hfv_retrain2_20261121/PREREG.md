@@ -120,7 +120,10 @@
 ## 4. 第 2 階段：環境通道（方法 C）
 
 - 照 `scripts/analysis/heldout/real_env_c.py`，分 tissue → coarse → contract → solve 四步，在 Hyak cheme CPU 上跑。
-- CRC33_01 用十月凍結的 AF1 擬合；CRC36 依同一規則自己擬合一次整張切片的參數。十月的常數只對 CRC33 有效。
+- AF1 擬合：兩張切片都用十月凍結的常數（`contract_vessels.FIT_VALUES`，在 CRC33 上擬合）。
+  - **修訂（2026-11-21，在任何通道數字出現之前）**：原本寫「CRC36 自己擬合」。查證後發現 sim2real 的方法 C 在 CRC16、CRC34、CRC10 上都直接沿用 CRC33 的凍結常數（`real_env_c.py` → `contract_vessels.contract`），沒有逐張重擬。
+  - 要「和 sim2real 相同」，CRC36 也用凍結常數。
+  - 另外在 CRC36 上照十月的規則重擬一次，只做描述：報告重擬常數，以及兩版 contract 線的 Dice。
 - 之後在每張訓練圖塊上取出：
   - ch7 = level 0 的 8 µm contract 線；
   - ch8–9 = 氧、葡萄糖。
