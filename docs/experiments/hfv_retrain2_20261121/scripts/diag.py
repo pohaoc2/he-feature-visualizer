@@ -90,6 +90,16 @@ def init(set_, tif, lin_dir, realhe, realcv, sd_dir, pack, r):
     G["sd"] = sd
 
 
+def window(x0, y0):
+    """Lin labels of the tile plus an M-px margin; outside the slide = background (zero padding)."""
+    lab = G["lab"]
+    out = np.zeros((TILE + 2 * M, TILE + 2 * M), np.int64)
+    ya, yb = max(y0 - M, 0), min(y0 + TILE + M, lab.shape[0])
+    xa, xb = max(x0 - M, 0), min(x0 + TILE + M, lab.shape[1])
+    out[ya - (y0 - M):yb - (y0 - M), xa - (x0 - M):xb - (x0 - M)] = lab[ya:yb, xa:xb]
+    return out
+
+
 def lin_near(x0, y0, pad):
     a, b = np.searchsorted(G["x"], [x0 - pad, x0 + TILE + pad])
     i = np.arange(a, b)
@@ -107,9 +117,7 @@ def one(t):
     x0, y0 = map(int, t.split("_"))
     he = np.asarray(Image.open(G["realhe"] / f"{t}.png").convert("RGB"))
     hod = CP.hematoxylin(he)
-    labw = np.asarray(G["lab"][y0 - M:y0 + TILE + M, x0 - M:x0 + TILE + M]).astype(np.int64)
-    if labw.shape != (TILE + 2 * M, TILE + 2 * M):
-        return None
+    labw = window(x0, y0)
     _, loose = NU.erode_labels(labw)
     cellm = labw[M:-M, M:-M]
     L = loose[M:-M, M:-M].astype(np.int64)
@@ -224,7 +232,7 @@ def two(job):
     x0, y0 = map(int, t.split("_"))
     he = np.asarray(Image.open(G["realhe"] / f"{t}.png").convert("RGB"))
     hod = CP.hematoxylin(he)
-    labw = np.asarray(G["lab"][y0 - M:y0 + TILE + M, x0 - M:x0 + TILE + M]).astype(np.int64)
+    labw = window(x0, y0)
     _, loose = NU.erode_labels(labw)
     L = loose[M:-M, M:-M].astype(np.int64)
     r = G["r"]
