@@ -2,7 +2,9 @@
 
 ## 1. 模擬端：選中的遮罩，renderer 畫不畫得出來
 
-> 第 1 階段照規則選出 **H1**（見 `RESULTS_stage1.md`）。下面 L 系列的段落保留當對照。H1 帶來的模擬端密度問題要使用者決定，見 `RESULTS_stage1.md` §3。
+> 第 1 階段照規則選出 H1（見 `RESULTS_stage1.md`），**使用者改選 L1**（`PREREG.md` §7）。第 2 階段照下面 L1 的段落做；H 系列的段落只留作紀錄。
+>
+> 實作時的修正：留線改成 sim-exp-validation 的共用函式 `separate_instances` 加 `render_crop(separate_touching=False)`，hfv 的 L1 建置也呼叫同一個函式，兩邊的規則只有一份。
 
 **現況（查程式得知）：**
 

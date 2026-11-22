@@ -165,3 +165,32 @@
 - 不改 PixCell、share-space-paper。
 - 不動正在跑的 hfv 全部列探針，也不動應用 9。
 - 第 1 階段不送 GPU 作業。
+
+## 7. 修訂：遮罩改用 L1（使用者決定，2026-11-21）
+
+**時間點：** 第 1 階段的診斷結果出來之後、任何訓練開始之前。依 §2.3 的規則選出的是 H1（`RESULTS_stage1.md` §2），使用者改選 **L1**。這是**偏離 §2.3 規則、由使用者做的決定**。
+
+**使用者的理由（原話）：**
+
+> 「stardist不夠準…會有一堆undersegmentation (False negative)…那感覺是segmentation model的問題？為什麼反而是我們的模擬要去配合？」
+
+**對應的診斷數字（D2，`RESULTS_stage1.md`）：**
+- 兩種分割器都沒配上的 Lin 核，校正後有 70 %（crc33sec）／84 %（crc36ho）在 H&E 上有蘇木素（hematoxylin）訊號。
+- 也就是說，H1 和 L1 之間交叉 PQ 的差距，很大一部分來自分割器漏抓（偽陰性），不是 Lin 的核在 H&E 上不存在。交叉 PQ 是拿分割器當參考，分割器漏抓時，畫出所有細胞的 L1 會被扣分。
+- 限制（照實寫）：在密集區，Lin loose 核大約和整個細胞一樣大，所以 D2 的「看得到」會偏高一些。
+
+**L1 的定義：**
+- 每個 Lin 細胞都畫：用它自己的 loose 核形狀（`stages/lin_typing/nuclei.erode_labels` 的 loose）。
+- 相碰處留 1 px 背景線（`diag.separate` 的規則：一個像素若八鄰域碰到編號較小的非零標記，就清掉）。
+- 類型、狀態照現在的 CELESTA + Lin Fig. 3d 標記。
+
+**隨之取消的東西：**
+- 模擬端不丟細胞（不做 H1 需要的 thinning）。`RESULTS_stage1.md` §3 的選項 (a)(b) 都不做。
+- 不用 StarDist 外形庫，也不用對訓練圖塊跑 StarDist。
+
+**模擬端（§3 的具體化）：**
+- 外形庫不換：ARCADE 用的 `nucleus_shapes_lin_*.npz` 本來就是 Lin loose 核。
+- ARCADE 模擬本來就八鄰域分開（`paired_positions`），不用改。
+- 「真實細胞經 renderer」的路徑（應用 8 的 CRC16 輸入）在 `render_crop` 加一個預設關閉的選項 `separate_touching`，打開時套同一條留線規則。預設下輸出逐位元組不變。
+
+**§5 判讀表不變。** 模型 N 的訓練樣式遮罩改為 L1。
