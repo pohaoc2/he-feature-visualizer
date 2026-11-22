@@ -15,6 +15,22 @@ Usage:
         --out processed/cellvit \
         --checkpoint ~/checkpoints/CellViT-256.pth \
         --cellvit-repo ~/CellViT
+
+Post-processing (``--postprocess``):
+    runner   (default, unchanged, keeps every earlier number reproducible): ImageNet
+             normalisation, sigmoid of nuclei_binary_map channel 1 >= 0.5, 3x3
+             opening, external contours with area 30-6000 px; the HV maps are not
+             used, so touching nuclei stay one object.
+    official (opt-in): the CellViT repository's own inference
+             (cell_segmentation/inference/cell_detection.py, TIO-IKIM/CellViT):
+             normalisation from the checkpoint config
+             (transformations.normalize.mean / std), softmax over
+             nuclei_binary_map and nuclei_type_map, then
+             model.calculate_instance_map(magnification=...) = HoVer-Net style
+             HV-map watershed that splits touching nuclei; per-instance type =
+             CellViT's majority vote of the type-map argmax inside the instance
+             (background -> second most frequent), type_prob = that type's pixel
+             fraction. Output JSON has the same keys as the runner path.
 """
 
 from __future__ import annotations
@@ -50,7 +66,7 @@ MAX_NUCLEUS_AREA = 6000
 NUC_THRESHOLD = 0.5
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--zip", required=True, type=Path, help="Input zip of H&E patches (*.png).")
     p.add_argument("--out", required=True, type=Path, help="Output directory for per-patch JSON.")
@@ -64,7 +80,13 @@ def parse_args() -> argparse.Namespace:
                    help="Optional output zip path. Default: <out>.zip")
     p.add_argument("--patch-glob", default="**/*.png",
                    help="Glob inside extracted zip dir to find patches.")
-    return p.parse_args()
+    p.add_argument("--postprocess", choices=("runner", "official"), default="runner",
+                   help="runner (default, legacy) or official CellViT post-processing; see module docstring.")
+    p.add_argument("--magnification", type=int, choices=(20, 40), default=40,
+                   help="official path only: magnification passed to calculate_instance_map (x40 checkpoints: 40).")
+    p.add_argument("--save-instances", type=Path, default=None,
+                   help="official path only: also write an .npz with stems and int32 instance maps.")
+    return p.parse_args(argv)
 
 
 def extract_patches(zip_path: Path, dest: Path) -> Path:
@@ -80,8 +102,10 @@ def strip_prefix(sd: dict, prefix: str = "module.") -> dict:
     return OrderedDict((k[len(prefix):] if k.startswith(prefix) else k, v) for k, v in sd.items())
 
 
-def build_model(checkpoint_path: Path, cellvit_repo: Path, device: torch.device):
-    """Mirror notebook cell 6 (load-model) — CellViT256 / CellViTSAM selection."""
+def build_model(checkpoint_path: Path, cellvit_repo: Path, device: torch.device, return_config: bool = False):
+    """Mirror notebook cell 6 (load-model) — CellViT256 / CellViTSAM selection.
+
+    Returns (model, num_nuclei), or (model, num_nuclei, config) with return_config=True."""
     if str(cellvit_repo) not in sys.path:
         sys.path.insert(0, str(cellvit_repo))
     from models.segmentation.cell_segmentation.cellvit import CellViT256, CellViTSAM  # noqa: E402
@@ -127,7 +151,59 @@ def build_model(checkpoint_path: Path, cellvit_repo: Path, device: torch.device)
     missing, unexpected = model.load_state_dict(sd, strict=False)
     print(f"Loaded weights. missing={len(missing)} unexpected={len(unexpected)}")
     model.to(device).eval()
+    if return_config:
+        return model, num_nuclei, config
     return model, num_nuclei
+
+
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
+
+def checkpoint_normalisation(config: dict) -> tuple[list[float], list[float]]:
+    """mean / std the CellViT repository uses for this checkpoint (cell_detection.py reads
+    run_conf["transformations"]["normalize"]; the stored config is flat with dotted keys).
+    Falls back to (0.5, 0.5), CellViT's default when the config has no normalize entry."""
+    if not isinstance(config, dict):
+        return [0.5] * 3, [0.5] * 3
+    if "transformations.normalize.mean" in config:
+        mean, std = config["transformations.normalize.mean"], config["transformations.normalize.std"]
+    else:
+        norm = (config.get("transformations", {}) or {}).get("normalize", {}) or {}
+        mean, std = norm.get("mean", (0.5, 0.5, 0.5)), norm.get("std", (0.5, 0.5, 0.5))
+    return [float(v) for v in mean], [float(v) for v in std]
+
+
+def official_cell_dict(cell: dict) -> dict:
+    """One entry of calculate_instance_map's per-image dict -> the runner's JSON cell format
+    (centroid [x, y], contour [[x, y], ...], bbox [[rmin, cmin], [rmax, cmax]])."""
+    t = int(cell["type"])
+    cx, cy = (float(v) for v in np.asarray(cell["centroid"], dtype=float).ravel()[:2])
+    tp = cell.get("type_prob")
+    return {
+        "centroid": [round(cx, 2), round(cy, 2)],
+        "contour": [[int(x), int(y)] for x, y in np.asarray(cell["contour"]).reshape(-1, 2)],
+        "bbox": [[int(v) for v in row] for row in np.asarray(cell["bbox"]).reshape(2, 2)],
+        "type_cellvit": t,
+        "type_name": CELL_TYPE_NAMES.get(t, "unknown"),
+        "type_prob": None if tp is None else round(float(tp), 4),
+    }
+
+
+def official_postprocess(model, outputs: dict, magnification: int = 40):
+    """CellViT repository post-processing of one batch of raw model outputs.
+
+    Softmax over the binary and type maps (cell_detection.py get_cell_predictions_with_tokens),
+    then model.calculate_instance_map. Returns (instance maps (B, H, W) int32, per-image cell lists)."""
+    pred = OrderedDict(
+        nuclei_binary_map=torch.softmax(outputs["nuclei_binary_map"], dim=1),
+        nuclei_type_map=torch.softmax(outputs["nuclei_type_map"], dim=1),
+        hv_map=outputs["hv_map"],
+    )
+    inst, type_preds = model.calculate_instance_map(pred, magnification=magnification)
+    inst = np.asarray(inst.cpu().numpy() if hasattr(inst, "cpu") else inst).astype(np.int32)
+    cells = [[official_cell_dict(c) for _, c in sorted(d.items(), key=lambda kv: int(kv[0]))] for d in type_preds]
+    return inst, cells
 
 
 class PatchDataset(Dataset):
@@ -184,8 +260,11 @@ def detect_cells(pred_map: np.ndarray, num_nuclei: int) -> list[dict]:
     return cells
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    official = args.postprocess == "official"
+    if args.save_instances is not None and not official:
+        raise SystemExit("--save-instances needs --postprocess official")
     args.out.mkdir(parents=True, exist_ok=True)
     bundle_zip = args.bundle_zip or args.out.with_suffix(".zip")
 
@@ -209,12 +288,18 @@ def main() -> None:
             todo = patches
         print(f"Patches to process: {len(todo)}")
 
-        model, num_nuclei = build_model(args.checkpoint, args.cellvit_repo, device)
+        model, num_nuclei, config = build_model(args.checkpoint, args.cellvit_repo, device, return_config=True)
 
+        if official:
+            mean, std = checkpoint_normalisation(config)
+            print(f"Post-processing: official (normalise mean={mean} std={std}, softmax, "
+                  f"HV watershed, magnification={args.magnification})")
+        else:
+            mean, std = IMAGENET_MEAN, IMAGENET_STD
+            print("Post-processing: runner (legacy)")
         tfm = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
+            transforms.Normalize(mean=mean, std=std),
         ])
         ds = PatchDataset(patch_root, todo, tfm)
         loader = DataLoader(ds, batch_size=args.batch_size,
@@ -223,10 +308,22 @@ def main() -> None:
                             shuffle=False)
 
         total_cells = 0
+        inst_stems, inst_maps = [], []
         with torch.inference_mode():
             for imgs, fnames in tqdm(loader, desc="Patches"):
                 imgs = imgs.to(device)
                 outputs = model(imgs)
+                if official:
+                    inst, cells_b = official_postprocess(model, outputs, args.magnification)
+                    for b, fname in enumerate(fnames):
+                        patch_id = Path(fname).stem
+                        with open(args.out / f"{patch_id}.json", "w") as f:
+                            json.dump({"patch": patch_id, "cells": cells_b[b]}, f)
+                        total_cells += len(cells_b[b])
+                    if args.save_instances is not None:
+                        inst_stems += [Path(f).stem for f in fnames]
+                        inst_maps.append(inst)
+                    continue
                 nuc_prob = torch.sigmoid(outputs["nuclei_binary_map"])[:, 1, :, :]
                 hv_x = outputs["hv_map"][:, 0, :, :]
                 hv_y = outputs["hv_map"][:, 1, :, :]
@@ -243,6 +340,10 @@ def main() -> None:
                         json.dump({"patch": patch_id, "cells": cells}, f)
                     total_cells += len(cells)
 
+        if args.save_instances is not None:
+            args.save_instances.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(args.save_instances, stems=np.array(inst_stems),
+                                inst=np.concatenate(inst_maps) if inst_maps else np.zeros((0, 256, 256), np.int32))
         n = max(len(todo), 1)
         print(f"\nDone. {len(todo)} patches, {total_cells:,} cells total. "
               f"Avg cells/patch: {total_cells / n:.1f}")
