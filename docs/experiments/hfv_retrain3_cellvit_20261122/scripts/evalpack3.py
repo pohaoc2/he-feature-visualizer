@@ -1,7 +1,7 @@
 """hfv_retrain3_cellvit_20261122 (PREREG §5.1): full evaluation packs with the official-CellViT inputs, Hyak CPU.
 
   python -I evalpack3.py R EVALPACKS OUT
-For crc36ho (all 1,092 held-out tiles) and crc33sec (824 channel tiles + 209 style-only tiles): every member of the
+For crc36ho (all 1,092 held-out tiles) and crc33sec (824 listed tiles + 204 style-only tiles that carry channels): every member of the
 hfv_retrain_20261118 evalpack_<set>.tar is copied byte for byte, except three things (as hfv_retrain2 s3prep.py packs):
   the 7 cell channels   <- R/cells/eval_<set>_OC.tar exp_channels/<ch>/<t>.png
   ch7-9 (method C)      <- hfv_retrain2 envc/<slide>/envc_<slide>.tar (CRC36 members carry c36_), the training-build bytes
