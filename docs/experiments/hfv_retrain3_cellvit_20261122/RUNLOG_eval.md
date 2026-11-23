@@ -22,13 +22,14 @@
 |---|---|---|---|
 | CRC36 保留區 消融生成 | Hyak ckpt A100（43469094） | Colab hfv_eval_L4_b | 共 7021 s，每種模式 3338 s，9600 張 |
 | CRC33 次要組 消融生成 | Hyak ckpt A100（43469095） | Colab hfv_eval_L4_b（沿用同一個 runtime） | 共 6799 s（生成 6661 s），9568 張 |
-| CRC36 保留區 Fig 2 生成 | Hyak ckpt A40（43470820） | Colab hfv_eval_L4_b（沿用同一個 runtime） | 進行中；第一步（5 個模型各產一張）4113 s |
+| CRC36 保留區 Fig 2 生成 | Hyak ckpt A40（43470820） | Colab hfv_eval_L4_b（沿用同一個 runtime） | 共 15975 s：第一步 4113 s，第二步 11627 s，6600 張；02:08 刪除 runtime |
 | CRC33 次要組 Fig 2 生成 | Hyak ckpt A40（43470821） | Colab hfv_eval_L4_a | 共 5678 s：第一步 1445 s，第二步（4 個重訓模型逐一移除通道組重繪）3981 s，2200 張 |
 | CRC36 保留區 消融評分 | Hyak cheme CPU | 同左（43471220，40 核，n3026） | 計算 12465 s；作業共 3:46:14，完成（見 D11） |
-| CRC33 次要組 消融評分 | Hyak cheme CPU | 同左（43472897，40 核） | 進行中 |
+| CRC33 次要組 消融評分 | Hyak cheme CPU | 同左（43472897，40 核） | 作業共 3:23:43，完成 |
 | CRC33 次要組 Fig 2 評分 | Hyak cheme CPU | 同左（43474560，40 核） | 作業共 0:16:19，完成 |
+| CRC36 保留區 Fig 2 評分 | Hyak cheme CPU | 同左（43476463，40 核，避開慢節點） | 進行中 |
 
-統計結果（本機跑 `evalstats.py`／`r3stats.py`，PixCell cb62fa7）：`data/stats_abl_crc36ho.json`、`data/stats_fig2_crc33sec.json`。
+統計結果（本機跑 `evalstats.py`／`r3stats.py`，PixCell cb62fa7）：`data/stats_abl_crc36ho.json`、`data/stats_abl_crc33sec.json`、`data/stats_fig2_crc33sec.json`。
 
 Colab 的啟動檔都由 `eval/presign_eval3.py` 產生（一天有效的 presigned 連結，只存在本機暫存區，不進 repo）。開機程式內容和重訓 1 的 `boot_eval.sh` 相同，沒有改動。
 

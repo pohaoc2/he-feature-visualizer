@@ -1,0 +1,10 @@
+{
+ "rule": "input-mask nucleus fraction > median of the 300 CRC36 held-out tiles; random.Random(42).sample(sorted candidates, 3)",
+ "median": 0.2422943115234375,
+ "candidates": 150,
+ "tiles": [
+  "49408_44288",
+  "47616_41984",
+  "51200_42496"
+ ]
+}
