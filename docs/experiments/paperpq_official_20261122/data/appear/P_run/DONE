@@ -1,0 +1,21 @@
+{
+ "rc_gen": 0,
+ "rc_appear": 0,
+ "n": {
+  "a1_concat": 100,
+  "production": 100,
+  "a2_bypass_full_tme": 100,
+  "a1_per_channel": 100,
+  "a2_off_shelf": 100
+ },
+ "timing": {
+  "generate_s": 1593.9528512954712,
+  "a1_concat_img_per_min": 24.24,
+  "production_img_per_min": 23.74,
+  "a2_bypass_full_tme_img_per_min": 24.35,
+  "a1_per_channel_img_per_min": 24.22,
+  "a2_off_shelf_img_per_min": 16.41,
+  "appearance_s": 93.92732357978821
+ },
+ "gpu": "NVIDIA L4"
+}

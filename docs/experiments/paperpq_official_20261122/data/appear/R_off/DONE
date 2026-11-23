@@ -1,0 +1,19 @@
+{
+ "rc_gen": 0,
+ "rc_appear": 0,
+ "n": {
+  "a1_concat": 100,
+  "production": 100,
+  "a2_bypass_full_tme": 100,
+  "a1_per_channel": 100
+ },
+ "timing": {
+  "generate_s": 1048.487120628357,
+  "a1_concat_img_per_min": 25.02,
+  "production_img_per_min": 24.8,
+  "a2_bypass_full_tme_img_per_min": 24.74,
+  "a1_per_channel_img_per_min": 24.62,
+  "appearance_s": 68.40603733062744
+ },
+ "gpu": "NVIDIA L4"
+}

@@ -1,0 +1,173 @@
+{
+ "ids": {
+  "ok": true,
+  "detail": {
+   "paper": 100,
+   "hfv": 100,
+   "same": true
+  }
+ },
+ "sources_complete": {
+  "ok": true,
+  "detail": {}
+ },
+ "real_he_identical": {
+  "ok": true,
+  "detail": {
+   "n_diff": 0,
+   "e": []
+  }
+ },
+ "cell_channels_binary": {
+  "ok": true,
+  "detail": {
+   "n": 0,
+   "e": []
+  }
+ },
+ "official_json": {
+  "ok": true,
+  "detail": {
+   "missing": 0
+  }
+ },
+ "runner_redraw_eq_paper_cell_masks": {
+  "ok": true,
+  "detail": {
+   "identical": 48,
+   "of": 100
+  },
+  "descriptive": true
+ },
+ "family_uni_identical": {
+  "ok": true,
+  "detail": {
+   "identical": 100,
+   "of": 100
+  },
+  "descriptive": true
+ },
+ "family_vasculature_identical": {
+  "ok": true,
+  "detail": {
+   "identical": 100,
+   "of": 100
+  },
+  "descriptive": true
+ },
+ "family_oxygen_identical": {
+  "ok": true,
+  "detail": {
+   "identical": 100,
+   "of": 100
+  },
+  "descriptive": true
+ },
+ "family_glucose_identical": {
+  "ok": true,
+  "detail": {
+   "identical": 100,
+   "of": 100
+  },
+  "descriptive": true
+ },
+ "transfer_checks": {
+  "ok": true,
+  "detail": {
+   "outside": [],
+   "multi_label": 0
+  }
+ },
+ "official_mask_shared": {
+  "ok": true,
+  "detail": {
+   "identical": 100
+  }
+ },
+ "root_P_run_complete": {
+  "ok": true,
+  "detail": {
+   "cell_masks": 100,
+   "cell_type_healthy": 100,
+   "cell_type_cancer": 100,
+   "cell_type_immune": 100,
+   "cell_state_prolif": 100,
+   "cell_state_nonprolif": 100,
+   "cell_state_dead": 100,
+   "vasculature": 100,
+   "oxygen": 100,
+   "glucose": 100,
+   "features": 100,
+   "he": 100
+  }
+ },
+ "root_P_off_complete": {
+  "ok": true,
+  "detail": {
+   "cell_masks": 100,
+   "cell_type_healthy": 100,
+   "cell_type_cancer": 100,
+   "cell_type_immune": 100,
+   "cell_state_prolif": 100,
+   "cell_state_nonprolif": 100,
+   "cell_state_dead": 100,
+   "vasculature": 100,
+   "oxygen": 100,
+   "glucose": 100,
+   "features": 100,
+   "he": 100
+  }
+ },
+ "root_R_run_complete": {
+  "ok": true,
+  "detail": {
+   "cell_masks": 100,
+   "cell_type_healthy": 100,
+   "cell_type_cancer": 100,
+   "cell_type_immune": 100,
+   "cell_state_prolif": 100,
+   "cell_state_nonprolif": 100,
+   "cell_state_dead": 100,
+   "vasculature": 100,
+   "oxygen": 100,
+   "glucose": 100,
+   "features": 100,
+   "he": 100
+  }
+ },
+ "root_R_off_complete": {
+  "ok": true,
+  "detail": {
+   "cell_masks": 100,
+   "cell_type_healthy": 100,
+   "cell_type_cancer": 100,
+   "cell_type_immune": 100,
+   "cell_state_prolif": 100,
+   "cell_state_nonprolif": 100,
+   "cell_state_dead": 100,
+   "vasculature": 100,
+   "oxygen": 100,
+   "glucose": 100,
+   "features": 100,
+   "he": 100
+  }
+ },
+ "perch_config": {
+  "ok": true,
+  "detail": {
+   "active_channels": [
+    "cell_masks",
+    "cell_type_healthy",
+    "cell_type_cancer",
+    "cell_type_immune",
+    "cell_state_prolif",
+    "cell_state_nonprolif",
+    "cell_state_dead",
+    "vasculature",
+    "oxygen",
+    "glucose"
+   ]
+  }
+ },
+ "roots_sha256": "c70b5916303fd040ee54e98331b356bc1e1a72768a3a1b5fac9f5d3182a5ea2c"
+}

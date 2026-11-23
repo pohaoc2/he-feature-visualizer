@@ -21,11 +21,11 @@ X = [0, 1, 2, 3, 4, 5.6, 6.6, 7.6, 8.6]
 COL = {"off": "#0b76a0", "run": "#e97132"}
 PANELS = [("pq", "Paper-style PQ\n(input mask = reference)"), ("a", "Hematoxylin readout (a)\nmask pixels stained"),
           ("c", "Hematoxylin readout (c)\nnucleus-background contrast"), ("lpips", "LPIPS to real H&E\n(lower = closer)")]
-fig = F.plt.figure(figsize=(F.W2, 95 * F.MM))
-pw, ph, gx, x0, y0 = 1.42, 1.85, 0.42, 0.42, 0.18
+fig = F.plt.figure(figsize=(F.W2, 84 * F.MM))
+pw, ph, gx, x0, y0 = 1.30, 1.55, 0.43, 0.45, 0.72
 for i, (q, lab) in enumerate(PANELS):
     ax = F.axes(fig, x0 + i * (pw + gx), y0, pw, ph)
-    F.letter(fig, x0 + i * (pw + gx) - 0.38, 0.05, "abcd"[i])
+    F.letter(fig, x0 + i * (pw + gx) - 0.40, 0.04, "abcd"[i])
     for pipe, dx in (("off", -0.15), ("run", 0.15)):
         for x, (fam, v, _) in zip(X, ARMS):
             d = S["arms"][f"{fam}|{pipe}|{v}"].get(q)
@@ -39,13 +39,14 @@ for i, (q, lab) in enumerate(PANELS):
     ax.axvline(4.8, color=F.LIGHT, lw=0.6)
     ax.set_xticks(X)
     ax.set_xticklabels([a[2] for a in ARMS], rotation=90, fontsize=F.FS_K - 0.6)
-    ax.set_title(lab, fontsize=F.FS, pad=3)
+    ax.set_title(lab, fontsize=F.FS, pad=19)
     ax.spines[["top", "right"]].set_visible(False)
     ax.set_xlim(-0.6, 9.2)
     if i == 0:
-        yt = ax.get_ylim()[1]
-        ax.text(2, yt, "CellViT-mask\ngenerators", ha="center", va="bottom", fontsize=F.FS_K - 0.6, color=F.GREY)
-        ax.text(7.1, yt, "shape-library-mask\ngenerators", ha="center", va="bottom", fontsize=F.FS_K - 0.6, color=F.GREY)
+        tr = ax.get_xaxis_transform()
+        ax.text(2, 1.01, "CellViT-mask\ngenerators", transform=tr, ha="center", va="bottom", fontsize=F.FS_K - 0.6, color=F.GREY)
+        ax.text(7.1, 1.01, "shape-library-mask\ngenerators", transform=tr, ha="center", va="bottom", fontsize=F.FS_K - 0.6,
+                color=F.GREY)
 h = [F.plt.Line2D([], [], color=COL["off"], marker="o", ls="", ms=3, label="official-consistent pipeline"),
      F.plt.Line2D([], [], color=COL["run"], marker="o", mfc="white", ls="", ms=3, label="runner-consistent pipeline"),
      F.plt.Line2D([], [], color=F.GREY, lw=0.6, label="real H&E (solid: official, dashed: runner)")]
