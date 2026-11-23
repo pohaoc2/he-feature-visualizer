@@ -24,9 +24,11 @@
 | CRC33 次要組 消融生成 | Hyak ckpt A100（43469095） | Colab hfv_eval_L4_b（沿用同一個 runtime） | 共 6799 s（生成 6661 s），9568 張 |
 | CRC36 保留區 Fig 2 生成 | Hyak ckpt A40（43470820） | Colab hfv_eval_L4_b（沿用同一個 runtime） | 進行中；第一步（5 個模型各產一張）4113 s |
 | CRC33 次要組 Fig 2 生成 | Hyak ckpt A40（43470821） | Colab hfv_eval_L4_a | 共 5678 s：第一步 1445 s，第二步（4 個重訓模型逐一移除通道組重繪）3981 s，2200 張 |
-| CRC36 保留區 消融評分 | Hyak cheme CPU | 同左（43471220，40 核） | 計算 12465 s |
+| CRC36 保留區 消融評分 | Hyak cheme CPU | 同左（43471220，40 核，n3026） | 計算 12465 s；作業共 3:46:14，完成（見 D11） |
 | CRC33 次要組 消融評分 | Hyak cheme CPU | 同左（43472897，40 核） | 進行中 |
-| CRC33 次要組 Fig 2 評分 | Hyak cheme CPU | 同左（43474560，40 核） | 排隊中 |
+| CRC33 次要組 Fig 2 評分 | Hyak cheme CPU | 同左（43474560，40 核） | 作業共 0:16:19，完成 |
+
+統計結果（本機跑 `evalstats.py`／`r3stats.py`，PixCell cb62fa7）：`data/stats_abl_crc36ho.json`、`data/stats_fig2_crc33sec.json`。
 
 Colab 的啟動檔都由 `eval/presign_eval3.py` 產生（一天有效的 presigned 連結，只存在本機暫存區，不進 repo）。開機程式內容和重訓 1 的 `boot_eval.sh` 相同，沒有改動。
 
@@ -57,6 +59,11 @@ D1–D3 的細節在 `STAGE_inputs.md` §7，這裡只列摘要；D4、D5 來自
   - cpm_tracks 的代理關掉 hfv_eval_L4_a 並交還後才用它。Hyak A40 作業 43470821 排隊 2 小時 09 分（19:54 送出、22:03 取消），從未開始。
   - 第一次連線時頁面停在「Allocating runtime」約 10 分鐘（頁面沒有更新），重新載入頁面後再連線才成功。21:59 啟動，228 s 進到輸入階段，GPU 是 NVIDIA L4。
   - 總共 5678 s，產出 2200 張並上傳；23:37 用「Disconnect and delete runtime」刪除 runtime。
+- **D11 CRC36 保留區 消融評分的節點寫入很慢**
+  - 作業 43471220 在 n3026 上，12465 s 時分數已算完，但把結果複製到 /gscratch 時約 16 分鐘只寫了 130 個小檔，`tar` 一直在等磁碟。
+  - 從作業內部實測：n3026 寫一個小檔 1.84 s；登入節點約 0.006 s，另外兩個評分節點（n3104、n3324）0.11–0.36 s。
+  - n3026 已記進共用的慢節點登錄（3 天內避開）。沒有取消作業，改用 `srun --overlap` 從節點的 /tmp 直接把結果（608 個檔）串流回本機，5 s 完成。
+  - 一分鐘後作業自己也完成了複製和 S3 上傳（23:53，COMPLETED），兩份結果來自同一次評分。之後送的評分作業都加上 `--exclude=$(slow_nodes.sh list)`。
 - 同時使用的 L4 runtime 從未超過 2 個。
 
 ## 4. 還沒做完
