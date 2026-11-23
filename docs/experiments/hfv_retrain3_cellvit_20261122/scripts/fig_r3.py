@@ -55,7 +55,7 @@ def heat(ax, st, title):
             if e is None:
                 continue
             z[i, j] = e.get("pixcell_mean", e.get("mean"))
-            sig[i, j] = bool(e.get("excludes_0"))
+            sig[i, j] = bool(e.get("excludes_0")) and m != "fud"   # FUD: one number per image set, no interval
     zn = z / np.nanmax(np.abs(z), axis=0, keepdims=True)   # per-metric scale: colour = sign and relative size
     ax.imshow(zn, cmap="RdBu_r", norm=TwoSlopeNorm(0, -1, 1), aspect="auto")
     for i in range(z.shape[0]):
@@ -96,7 +96,7 @@ def main():
                 ax.set_ylabel(t, fontsize=fs.FS_K * .85, labelpad=1)
     # b per-model means
     y0 = hA + 0.3
-    fs.letter(fig, 0.02, y0 - 0.05, "b")
+    fs.letter(fig, 0.02, y0 - 0.22, "b")
     pw = (W - 0.55 - 3 * 0.42) / 4
     for k, (m, lab) in enumerate(MET):
         ax = fs.axes(fig, 0.45 + k * (pw + 0.42), y0 + 0.05, pw, hB - 0.45)
@@ -114,10 +114,18 @@ def main():
         ax.set_xticks(range(5), [LAB[v] for v in V5], rotation=90, fontsize=fs.FS_K * .9)
         ax.set_title(lab, fontsize=fs.FS_K, pad=2)
         ax.set_xlim(-.6, 4.6)
+        if m == "dice":   # legend: marker = evaluation set, line = real H&E reference
+            from matplotlib.lines import Line2D
+            hs = [Line2D([], [], ls="", marker="o", ms=2.6, color=fs.GREY, mfc=fs.GREY, mew=.7),
+                  Line2D([], [], ls="", marker="s", ms=2.6, color=fs.GREY, mfc="white", mew=.7),
+                  Line2D([], [], color=fs.INK, lw=.6, ls="--"), Line2D([], [], color=fs.INK, lw=.6, ls=":")]
+            ax.legend(hs, ["CRC36 held-out (n = 300)", "CRC33 Fig 2 tiles (n = 100)",
+                           "real H&E, CRC36", "real H&E, CRC33"], loc="lower left", fontsize=fs.FS_K * .75,
+                      frameon=False, handlelength=1.4, borderaxespad=.1, labelspacing=.25)
         style(ax)
     # c readouts
     y1 = y0 + hB + 0.35
-    fs.letter(fig, 0.02, y1 - 0.05, "c")
+    fs.letter(fig, 0.02, y1 - 0.22, "c")
     for k, (m, lab) in enumerate(RD):
         ax = fs.axes(fig, 0.45 + k * (pw + 0.42), y1 + 0.05, pw, hC - 0.45)
         for i, v in enumerate(V5):

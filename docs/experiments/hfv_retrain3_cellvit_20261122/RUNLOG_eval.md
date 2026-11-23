@@ -1,4 +1,4 @@
-# 重訓 3 執行紀錄：訓練、生成、評分（2026-11-22，進行中）
+# 重訓 3 執行紀錄：訓練、生成、評分（2026-11-22 → 11-23，完成）
 
 這份是流水帳，記下每一步實際在哪裡跑、花多久、和預先登記不同的地方。最後的數字與結論寫在 `RESULTS.md`。
 模型名稱照 `docs/TERMINOLOGY.md`：Concat、Grouped、Grouped + bypass、Per-channel、PixCell 原版。
@@ -27,7 +27,7 @@
 | CRC36 保留區 消融評分 | Hyak cheme CPU | 同左（43471220，40 核，n3026） | 計算 12465 s；作業共 3:46:14，完成（見 D11） |
 | CRC33 次要組 消融評分 | Hyak cheme CPU | 同左（43472897，40 核） | 作業共 3:23:43，完成 |
 | CRC33 次要組 Fig 2 評分 | Hyak cheme CPU | 同左（43474560，40 核） | 作業共 0:16:19，完成 |
-| CRC36 保留區 Fig 2 評分 | Hyak cheme CPU | 同左（43476463，40 核，避開慢節點） | 進行中 |
+| CRC36 保留區 Fig 2 評分 | Hyak cheme CPU | 同左（43476463，n3249，40 核，避開慢節點） | 作業共 0:39:20，完成 |
 
 統計結果（本機跑 `evalstats.py`／`r3stats.py`，PixCell cb62fa7）：`data/stats_abl_crc36ho.json`、`data/stats_abl_crc33sec.json`、`data/stats_fig2_crc33sec.json`。
 
@@ -67,7 +67,9 @@ D1–D3 的細節在 `STAGE_inputs.md` §7，這裡只列摘要；D4、D5 來自
   - 一分鐘後作業自己也完成了複製和 S3 上傳（23:53，COMPLETED），兩份結果來自同一次評分。之後送的評分作業都加上 `--exclude=$(slow_nodes.sh list)`。
 - 同時使用的 L4 runtime 從未超過 2 個。
 
-## 4. 還沒做完
+## 4. 收尾
 
-- CRC36 保留區 Fig 2 生成（hfv_eval_L4_b）跑完後：核對張數、送評分、刪除 runtime。
-- 兩組 Fig 2 評分 → `eval/r3stats.py`（排名照預先登記 §5.4）；兩組消融評分 → `evalstats.py`；`scripts/fig_r3.py` 畫圖；寫 `RESULTS.md`。
+- 全部完成（2026-11-23）。
+  - CRC36 Fig 2 生成：15975 s，6600 張，核對過；hfv_eval_L4_b 02:08 已刪除。
+  - 統計：`data/stats_fig2.json`、`data/stats_abl_*.json`；圖：`figures/fig_r3_main.*`、`figures/fig_r3_abl33.*`；結果：`RESULTS.md`。
+  - Colab 上只剩另一個代理的 day0K_L4，沒有動。
